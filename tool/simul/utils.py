@@ -2285,16 +2285,23 @@ class UniverseUtils:
                     key_mouse_manager.press('f')
                     key_mouse_manager.wait()
                     self.should_update_map = False
+                    first_visit = self.mini_state <= 1
                     if self.nof(must_be="challenge"):
                         CUS_LOGGER.info(f"最后一次，{factor}回想起那个朝阳初升的时刻，自己曾刻下理想的雏形…")
                         key_mouse_manager.keyUp("w")
-                        if self.is_run():
+                        if not self.is_run():
+                            break
+                        if first_visit:
+                            self.mini_state += 2
                             key_mouse_manager.press("esc")
                             key_mouse_manager.wait()
                             self.update_state("ui")
                             self.should_update_map = False
                             return
-                    break
+                        self.is_find_end = self.move_to_end(mode=2, device=1)
+                        if self.is_find_end:
+                            continue
+                        break
                 else:
                     CUS_LOGGER.info(f"{factor}为它取另外一个名字——「救世主」。而他自己的名，就此在记忆中零落。")
             if not self.is_run():
