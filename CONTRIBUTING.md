@@ -88,7 +88,7 @@
 ### 前置要求
 
 - [Git](https://git-scm.com/)
-- 项目所需的运行时环境(见 `README.md` 或 `pyproject.toml` / `package.json`)
+- uv 及 `pyproject.toml` 要求的 Python 运行环境
 
 ### 获取代码
 
@@ -105,28 +105,21 @@ git remote add upstream https://github.com/<用户名>/<仓库名>.git
 
 ### 安装依赖
 
-```bash
-# Python 项目示例
-pip install -r requirements.txt
+当前依赖以 `pyproject.toml` 为准，使用 uv 管理，不新增 requirements 文件作为第二套依赖来源。命令找不到时先检查 PATH 或使用已确认的绝对路径，不直接判断未安装。具体步骤见[运行环境规范](docs/development/运行环境与命令执行.md)。
 
-# Node.js 项目示例
-npm install
+```powershell
+uv sync
 ```
 
 ### 运行测试
 
-```bash
-# 确认环境正常
-pytest            # Python
-# 或
-npm test          # Node.js
-```
+Python 脚本通过 `uv run --no-sync python <脚本路径>` 执行，模块通过 `uv run --no-sync python -m <模块名>` 执行；将占位内容替换为实际目标。先确认相关测试的依赖与副作用，不能直接批量运行会接管键鼠的脚本，也不假定测试框架已经安装。
 
 ---
 
 ## 开发流程
 
-1. **同步上游**:开始工作前,确保本地主分支是最新的。
+1. **检查分支与工作区**:先确认已有改动和当前分支，再根据任务需要同步上游；不要自动切换分支或覆盖用户工作。以下同步命令仅在确认分支与工作区允许后执行。
 
    ```bash
    git checkout main
@@ -142,21 +135,20 @@ npm test          # Node.js
 
 3. **编写代码**:遵循[代码规范](#代码规范),为新增或修改的功能补充测试。
 
+   使用 AI 辅助开发时，贡献者必须先阅读[AI 开发规范与改动总则](docs/development/AI开发规范与改动总则.md)，并明确要求 AI 在修改前阅读总则及与本次任务相关的专题文档。不能假定 AI 会自动加载这些文件；贡献者仍需审查生成内容，确认符合规范并完成必要验证。
+
 4. **本地验证**:提交前运行测试和静态检查,确保通过。
 
-   ```bash
-   # 测试
-   pytest
-   # 代码格式检查(如已配置)
-   ruff check .   # Python
-   # 或
-   npm run lint   # Node.js
+   测试按上文选取实际入口；对涉及的文件运行已配置的静态检查，例如：
+
+   ```powershell
+   uv run --no-sync python -m ruff check <修改的文件路径>
    ```
 
 5. **提交并推送**:
 
    ```bash
-   git add .
+   git add <本次修改的文件路径>
    git commit -m "feat: add xxx feature"
    git push origin feat/add-xxx
    ```
@@ -167,10 +159,12 @@ npm test          # Node.js
 
 请尽量遵循以下约定(如已有具体规范,以项目内配置为准):
 
+详细要求见[开发规范入口](docs/development/AI开发规范与改动总则.md)，包括中文注释与 Google 风格 docstring、单次固定值内联、已有逻辑复用、状态建模和日志分级。
+
 - **可读性优先**:变量、函数命名清晰,必要时添加注释说明「为什么」而非「做了什么」。
 - **保持一致性**:遵循项目现有的代码风格,不要混用不同风格。
-- **单一职责**:一个函数只做一件事,函数尽量短小。
-- **避免重复**:抽取公共逻辑,尽量不要复制粘贴代码。
+- **职责清晰**:连续逻辑直接表达，不为缩短函数机械拆分，不增加无用抽象层。
+- **避免重复**:优先复用已有实现，相同业务规则集中维护，不仅因代码形似而强行抽象。
 - **妥善处理错误**:不吞掉异常,给用户清晰的错误提示。
 - **补充测试**:新功能应有对应测试,修复 Bug 应添加能复现该 Bug 的回归测试。
 - **不提交无关文件**:避免提交调试代码、临时文件、编译产物等,必要时添加 `.gitignore`。
@@ -209,6 +203,8 @@ git commit -m "docs: update installation guide"
 ---
 
 ## Pull Request 流程
+
+具体的提交范围、标题正文、验证证据和发布边界见[提交与 PR 规范](docs/development/提交与PR规范.md)。以下步骤按用户授权和实际任务范围执行，文档编辑本身不意味着需要推送或创建 PR。
 
 1. **推送分支后**,在 GitHub 上点击「Compare & pull request」。
 2. **填写 PR 描述**,包含以下内容:
