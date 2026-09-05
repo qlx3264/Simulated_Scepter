@@ -4,6 +4,9 @@ import random
 import shutil
 import sqlite3
 import time
+import datetime
+import enum
+import re
 
 import cv2 as cv
 import yaml
@@ -40,9 +43,111 @@ from tool.utils.ocr_num import (
 )
 from tool.utils.tool import find_latest_modified_file
 from tool.window_recorder import WindowRecorder
-import datetime
 
 
+class SilverWolfState(enum.IntEnum):
+    """银狼秘技状态机"""
+    IDLE = 0          # 未激活 / 已重置
+    CASTED = 1        # 秘技已释放，等待进入战斗
+    WAITING_CLEAR = 2 # 已进入战斗，等待区域弹窗清除后重放
+
+TRIGGER_AREAS = ("精英", "事件", "奖励", "首领")
+PIG_MARKERS = ("pig1", "pig2")
+AREA_KEYWORDS = ("战斗", "精英", "事件", "冒险", "奖励", "休整", "交易", "首领", "空白", "虫群")
+class SilverWolfManager:
+    """银狼秘技管理器，封装所有银狼相关逻辑"""
+
+    def __init__(self, parent: 'IronBloodUniverse'):
+        self.parent = parent
+        self.state = SilverWolfState.IDLE
+
+    # ---------- 派生属性 ----------
+    @property
+    def is_pig_node(self) -> bool:
+        """当前节点是否为扑满（从 start_nodes 推导）"""
+        node = getattr(self.parent, 'start_nodes', None)
+        return self._node_has_pig_marker(node)
+
+    @property
+    def block_role_switch(self) -> bool:
+        """扑满节点内或银狼秘技生效期间禁止切回一号位"""
+        return self.is_pig_node or self.state != SilverWolfState.IDLE
+
+    # ---------- 核心方法 ----------
+    def try_activate(self) -> bool:
+        """
+        尝试激活银狼秘技。
+        若状态为 IDLE 且检测到银狼，且当前区域为触发区域或扑满节点，则执行激活序列并返回 True。
+        若已激活或已触发 need_end，则直接返回当前状态是否为激活态。
+        """
+        if self.parent.need_end:
+            return False
+        if self.state != SilverWolfState.IDLE:
+            return True
+        # 只有扑满节点或触发区域才允许激活
+        if not (self.is_pig_node or any(kw in self.parent.area for kw in TRIGGER_AREAS)):
+            return False
+        if self._detect_silver_wolf():
+            self._activate()
+            return True
+        return False
+
+    def process(self):
+        """状态机主循环，需在每轮 normal() 中调用"""
+        if self.parent.need_end:
+            self.state = SilverWolfState.IDLE
+            return
+
+        # 离开触发区域时重置
+        if not (self.is_pig_node or any(kw in self.parent.area for kw in TRIGGER_AREAS)):
+            if self.state != SilverWolfState.IDLE:
+                CUS_LOGGER.info("银狼：已离开触发区域，重置秘技状态")
+                self.state = SilverWolfState.IDLE
+            return
+
+        # 状态转移
+        if self.state == SilverWolfState.CASTED:
+            if self.parent.state == "battle":
+                CUS_LOGGER.info("银狼：秘技已消耗")
+                self.state = SilverWolfState.WAITING_CLEAR
+        elif self.state == SilverWolfState.WAITING_CLEAR:
+            text = self._read_area_text()
+            if text and any(kw in text for kw in AREA_KEYWORDS):
+                CUS_LOGGER.debug(f"银狼：弹窗已清除（区域: {text}），重新释放秘技")
+                self._activate()
+
+    # ---------- 辅助方法 ----------
+    @staticmethod
+    def _node_has_pig_marker(node: Optional[dict]) -> bool:
+        marker = ((node or {}).get('orig') or {}).get('corner_marker')
+        return bool(marker) and marker.get('name') in PIG_MARKERS
+
+    def _detect_silver_wolf(self) -> bool:
+        """在二号位头像固定位置做局部模板匹配"""
+        return self.parent._check_character("yinlang", 0.9378, 0.3801, threshold=0.85, fresh=True)
+
+    def _activate(self):
+        """执行激活序列：1 → 0.15s → 2 → 0.6s → E"""
+        CUS_LOGGER.debug("执行银狼秘技激活")
+        key_mouse_manager.press("1")
+        time.sleep(0.15)#等待切换完成,过短可能会导致切换无效
+        key_mouse_manager.press("2")
+        time.sleep(0.6)#等待秘技可用,过短会导致秘技释放无效
+        key_mouse_manager.press('e', force=True)
+        key_mouse_manager.wait()
+        self.state = SilverWolfState.CASTED
+        CUS_LOGGER.info("银狼秘技已激活")
+
+    def _read_area_text(self) -> str:
+        ocr_text = self.parent.ts.find_with_box(
+            box=[53, 104, 12, 42], forward=True, re_screen=True
+        )
+        text = merge_text(ocr_text) if len(ocr_text) else ""
+        return re.sub(r'[・·、]', '', text)
+
+    def reset(self):
+        """重置状态（用于结束轮回、暂离等场景）"""
+        self.state = SilverWolfState.IDLE
 class IronBloodUniverse(SimulatedUniverse):
     def __init__(
             self):
@@ -95,6 +200,7 @@ class IronBloodUniverse(SimulatedUniverse):
         self.kill_count =0
         self.run_start_time = time.time()
         self.need_end=False
+        self.silver_wolf_manager = SilverWolfManager(self)
         self.record = self.opt.get("recording_iron_blood", True)
         self.recorder = WindowRecorder('logs/video/', fps=30, window_title="崩坏：星穹铁道",window_class_name="UnityWndClass",see_time=self.opt.get("record_add_label", True), offsets=[10, 50, 10, 10], overlay_map=self.opt.get("record_add_label", True) and self._show_map, simul_instance=self)
         self.early_stop=self.opt.get("early_stop", False)
@@ -130,25 +236,26 @@ class IronBloodUniverse(SimulatedUniverse):
         elapsed = int(time.time() - self.run_start_time)
         record_file = "config/backup/kill_record.txt"
         try:
-            if self.plane_floor==3:
-                self.kill_count+=1
+            if self.plane_floor == 3:
+                self.kill_count += 1
             os.makedirs("config/backup", exist_ok=True)
+            start_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.run_start_time))
+            total_min = elapsed // 60
+            total_sec = elapsed % 60
+            line = f"轮回次数:{self.count}, 开始时间:{start_time_str}, 用时:{total_min}分{total_sec}秒,击杀数:{self.kill_count:02d}"
             with open(record_file, "a", encoding="utf-8") as file:
-                now_lunhuirizhi = datetime.datetime.now()
-                timestamp_lunhuirizhi = now_lunhuirizhi.strftime("%Y年%m月%d日%H点%M分%S秒")
-                file.write(f"{timestamp_lunhuirizhi}, 轮回次数:{self.count}, 击杀数:{self.kill_count:02d}, 用时:{elapsed // 60}分{elapsed % 60}秒\n")
-                # file.write(f"轮回次数:{self.count}, 击杀数:{self.kill_count}, 用时:{elapsed // 60}分{elapsed % 60}秒\n")
+                file.write(line + "\n")
         except Exception as e:
             CUS_LOGGER.error(f"写入击杀记录文件失败{e}")
         self.run_start_time = time.time()  # 开始下一局计时
-        self.need_end=False
+        self.need_end = False
         self.init_map()
-        if self.kill_count>=40:
-            if self.count>10000:
+        if self.kill_count >= 40:
+            if self.count > 10000:
                 CUS_LOGGER.info("寰宇或为您的意志撼动，但「毁灭」的道路，注定无法手捧鲜花……")
-            elif self.count>1000:
+            elif self.count > 1000:
                 CUS_LOGGER.info("…不必考量本心，不必渴求胜利，只须知道，铁血战士——让人感到愤怒！")
-            elif self.count>100:
+            elif self.count > 100:
                 CUS_LOGGER.info("无所谓，旅途本就会改变一个人。")
             self.stop()
             CUS_LOGGER.info("恭喜，您获得了铁血战士！")
@@ -202,40 +309,81 @@ class IronBloodUniverse(SimulatedUniverse):
                 self.count = new_cnt
             except Exception as e:
                 CUS_LOGGER.error(f"写入铁血计数失败 {e}")
+    def _check_character(self, template_name, x_ratio, y_ratio, threshold=0.7, fresh=False):
+        """在固定比例坐标附近进行局部模板匹配"""
+        if fresh:
+            img = self.get_screen()
+        else:
+            img = self.screen
+        h, w = img.shape[:2]
+        px, py = int(x_ratio * w), int(y_ratio * h)
+        template_path = os.path.join(PATHS["root"], "resource", "imgs", template_name + ".jpg")
+        tpl = cv.imread(template_path, cv.IMREAD_GRAYSCALE)
+        if tpl is None:
+            CUS_LOGGER.error(f"模板文件不存在: {template_path}")
+            return False
+        th, tw = tpl.shape[:2]
+        half_w, half_h = tw, th
+        x0 = max(0, px - half_w)
+        y0 = max(0, py - half_h)
+        x1 = min(w, px + half_w)
+        y1 = min(h, py + half_h)
+        if x1 - x0 < tw or y1 - y0 < th:
+            return False
+        roi = img[y0:y1, x0:x1]
+        roi_gray = cv.cvtColor(roi, cv.COLOR_BGR2GRAY)
+        res = cv.matchTemplate(roi_gray, tpl, cv.TM_CCOEFF_NORMED)
+        _, max_val, _, _ = cv.minMaxLoc(res)
+        return max_val >= threshold
     def normal(self):
         bk_lst_changed = self.last_interact_time
         self.last_interact_time = time.time()
         self.ts.forward(self.get_screen())
         res,state = self.run_static()
-        if self.state=="run":
+
+        # ===== 优先更新区域信息(避免与早退产生意想不到的冲突) =====
+        if not self.need_end:
+            ocr_text = self.ts.find_with_box(box=[55, 164, 12, 40], forward=True, re_screen=False)
+            self.area = merge_text(ocr_text) if len(ocr_text) else ""
+            CUS_LOGGER.debug(f"当前区域{self.area}")
+        # ===== 银狼状态机 =====
+        self.silver_wolf_manager.process()
+
+        if self.state == "run":
             CUS_LOGGER.info("那朵微弱的火苗，启程之初便已种进他的心里。")
-            #检查黄泉
-            if not self.quan and self.check("huangquan", 0.0578,0.7083):
-                key_mouse_manager.press("1")
-                self.quan = 1
-            if not self.bai_e and self.check("bai_e", 0.0625,0.7092):
-                key_mouse_manager.press("1")
-                self.bai_e = 1
-            # 当前节点为祝福猪节点时切2号位并重置黄泉/白厄状态
-            start_node = getattr(self, 'start_nodes', None)
-            if start_node is not None:
-                cm = (start_node.get('orig') or {}).get('corner_marker')
-                if cm and cm.get('name') in ('pig1', 'pig2'):
-                    CUS_LOGGER.info("梦中那刺骨的愤怒与对自我的憎恨仍在震动着他的心。")
+
+            # 扑满节点处理
+            if self.silver_wolf_manager.is_pig_node:
+                CUS_LOGGER.info("梦中那刺骨的愤怒与对自我的憎恨仍在震动着他的心。")
+                key_mouse_manager.press("2")
+                self.quan = 0
+                self.bai_e = 0
+                if not self.silver_wolf_manager.try_activate():
+                    CUS_LOGGER.info("未检测到银狼，手动切换二号位抓猪")
                     key_mouse_manager.press("2")
-                    self.quan = 0
-                    self.bai_e = 0
-            #上次交互时间
+            else:
+                self.silver_wolf_manager.try_activate()
+
+            # 黄泉/白厄检测
+            if not self.silver_wolf_manager.block_role_switch:
+                if not self.quan and self.check("huangquan", 0.0578, 0.7083):
+                    key_mouse_manager.press("1")
+                    self.quan = 1
+                if not self.bai_e and self.check("bai_e", 0.0625, 0.7092):
+                    key_mouse_manager.press("1")
+                    self.bai_e = 1
+                key_mouse_manager.wait()
+
+            # 重置上次交互时间
             self.last_interact_time = bk_lst_changed
-            # 刚进图，初始化一些数据
+
+            # ---------- 地图加载和寻路（原有逻辑，但删除了内部重复的 area 读取） ----------
             if not self.need_end:
-                ocr_text = self.ts.find_with_box(box=[55, 164, 12, 40],forward=True,re_screen=False)
-                self.area=merge_text(ocr_text) if len(ocr_text) else ""
-                CUS_LOGGER.debug(f"当前区域{self.area}")
                 battle_map_root = os.path.join(PATHS["image"], "nmaps")
                 if (("战斗" in self.area or "精英" in self.area or "首领" in self.area)
                         and self.loaded_map_root not in (None, battle_map_root)):
                     self.init_map()
+
                 if "战斗" in self.area:
                     if not self.big_map_init:
                         key_mouse_manager.clean()
@@ -243,7 +391,7 @@ class IronBloodUniverse(SimulatedUniverse):
                         key_mouse_manager.wait()
                         if self._stop:
                             return 1
-                        self.find,self.need_record,state=self.map_data_load()
+                        self.find, self.need_record, state = self.map_data_load()
                         CUS_LOGGER.info(f"{factor}将燃烧…会燃尽。成为这一世的盗火行者。杀死神明和伙伴，夺走火种。")
                         if self._stop or not state:
                             return 1
@@ -255,6 +403,7 @@ class IronBloodUniverse(SimulatedUniverse):
                     else:
                         # 无先验寻路
                         self.get_path_only_minimap()
+
                 elif "精英" in self.area or "首领" in self.area:
                     if not self.big_map_init:
                         key_mouse_manager.clean()
@@ -262,7 +411,7 @@ class IronBloodUniverse(SimulatedUniverse):
                         key_mouse_manager.wait()
                         if self._stop:
                             return 1
-                        self.find, self.need_record,state = self.map_data_load()
+                        self.find, self.need_record, state = self.map_data_load()
                         CUS_LOGGER.info("面对「纷争」的半神……你绝无可能以和平的姿态取走这枚火种。")
                         if self._stop or not state:
                             return 1
@@ -274,37 +423,41 @@ class IronBloodUniverse(SimulatedUniverse):
                     else:
                         # 无先验寻路
                         self.get_path_only_minimap(True)
+
                 elif "事件" in self.area or "奖励" in self.area:
                     if self.record_special_map_or_navigate(self.get_event_only_minimap):
                         return 1
+
                 elif "休整" in self.area:
                     if self.record_special_map_or_navigate(self.get_rest_only_minimap):
                         return 1
+
                 elif "交易" in self.area:
                     if self.record_special_map_or_navigate(self.get_shop_only_minimap):
                         return 1
+
                 elif "冒险" in self.area:
-                    # if not self.big_map_init:
-                    #     self.map_data_load()
-                    # self.recording_map()
+                    # 冒险关卡处理
                     self.get_adventure()
+
                 else:
-                    #背景有光污染，字都认不出来
+                    # 背景有光污染，字都认不出来
                     key_mouse_manager.mouse_move(1)
                     key_mouse_manager.wait()
-            # 长时间未交互/战斗，暂离或重开
-            if ((time.time() - self.last_interact_time >= self.max_interact_time) and not self.need_record )or self.need_end:
+
+            # ---------- 长时间未交互/战斗，暂离或重开 ----------
+            if ((time.time() - self.last_interact_time >= self.max_interact_time) and not self.need_record) or self.need_end:
                 key_mouse_manager.clean()
                 key_mouse_manager.wait()
                 key_mouse_manager.keyUp("w")
                 key_mouse_manager.press("esc")
                 key_mouse_manager.wait()
-                tm=time.time()
-                found=False
-                #esc有时不一定生效，比如释放秘技时
-                while time.time()-tm<3:
-                    if self.click_text(text="暂离", box=[1321, 1383, 787, 821],click=False,allow_fail=True):
-                        found=True
+                tm = time.time()
+                found = False
+                # esc有时不一定生效，比如释放秘技时
+                while time.time() - tm < 3:
+                    if self.click_text(text="暂离", box=[1321, 1383, 787, 821], click=False, allow_fail=True):
+                        found = True
                         break
                 if not found:
                     return 1
@@ -987,6 +1140,7 @@ class IronBloodUniverse(SimulatedUniverse):
                 key_mouse_manager.wait()
                 return
             self.try_analysis_map(mode=2)
+            self.silver_wolf_manager.reset()
             if self.next_node is not None:
                 self.start_nodes=self.next_node
                 x,y=int(self.next_node["cx"]),int(self.next_node["cy"])
@@ -1050,6 +1204,10 @@ class IronBloodUniverse(SimulatedUniverse):
         self.special_interaction_failures.clear()
         self.native_special_map_root = None
         self.loaded_map_root = None
+        #此处重置防止初始角色判断错误
+        self.quan = 0
+        self.bai_e = 0
+        self.silver_wolf_manager.reset()
         if add:
             self.node_count+=1
     def strange_shop(self):
