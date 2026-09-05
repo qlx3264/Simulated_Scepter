@@ -154,14 +154,14 @@ class FingerSnap(IronBloodUniverse):
         except Exception as e:
             CUS_LOGGER.error(f"写入倒计时记录文件失败{e}")
         self.run_start_time = time.time()  # 开始下一局计时
-        self.need_end = False
+        self.need_end=False
         self.init_map()
-        if self.countdown >= 80:
-            if self.count > 10000:
+        if self.countdown>=80:
+            if self.count>10000:
                 CUS_LOGGER.info("跨越此世的所有恨与爱，为故事写下新的篇章吧♪")
-            elif self.count > 1000:
+            elif self.count>1000:
                 CUS_LOGGER.info("而记忆，化作往昔的涟漪，向着明日荡去。")
-            elif self.count > 100:
+            elif self.count>100:
                 CUS_LOGGER.info("迷迷，等待。开拓，世界！")
             self.stop()
             CUS_LOGGER.info("恭喜，您获得了弹指一挥！")

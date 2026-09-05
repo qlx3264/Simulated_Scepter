@@ -11,6 +11,7 @@ import re
 import cv2 as cv
 import yaml
 
+from typing import Optional
 from route import PATHS
 from simul import SimulatedUniverse
 from tool import EXTRA
@@ -236,8 +237,8 @@ class IronBloodUniverse(SimulatedUniverse):
         elapsed = int(time.time() - self.run_start_time)
         record_file = "config/backup/kill_record.txt"
         try:
-            if self.plane_floor == 3:
-                self.kill_count += 1
+            if self.plane_floor==3:
+                self.kill_count+=1
             os.makedirs("config/backup", exist_ok=True)
             start_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.run_start_time))
             total_min = elapsed // 60
@@ -248,14 +249,14 @@ class IronBloodUniverse(SimulatedUniverse):
         except Exception as e:
             CUS_LOGGER.error(f"写入击杀记录文件失败{e}")
         self.run_start_time = time.time()  # 开始下一局计时
-        self.need_end = False
+        self.need_end=False
         self.init_map()
-        if self.kill_count >= 40:
-            if self.count > 10000:
+        if self.kill_count>=40:
+            if self.count>10000:
                 CUS_LOGGER.info("寰宇或为您的意志撼动，但「毁灭」的道路，注定无法手捧鲜花……")
-            elif self.count > 1000:
+            elif self.count>1000:
                 CUS_LOGGER.info("…不必考量本心，不必渴求胜利，只须知道，铁血战士——让人感到愤怒！")
-            elif self.count > 100:
+            elif self.count>100:
                 CUS_LOGGER.info("无所谓，旅途本就会改变一个人。")
             self.stop()
             CUS_LOGGER.info("恭喜，您获得了铁血战士！")
@@ -383,7 +384,6 @@ class IronBloodUniverse(SimulatedUniverse):
                 if (("战斗" in self.area or "精英" in self.area or "首领" in self.area)
                         and self.loaded_map_root not in (None, battle_map_root)):
                     self.init_map()
-
                 if "战斗" in self.area:
                     if not self.big_map_init:
                         key_mouse_manager.clean()
@@ -391,7 +391,7 @@ class IronBloodUniverse(SimulatedUniverse):
                         key_mouse_manager.wait()
                         if self._stop:
                             return 1
-                        self.find, self.need_record, state = self.map_data_load()
+                        self.find,self.need_record,state=self.map_data_load()
                         CUS_LOGGER.info(f"{factor}将燃烧…会燃尽。成为这一世的盗火行者。杀死神明和伙伴，夺走火种。")
                         if self._stop or not state:
                             return 1
@@ -403,7 +403,6 @@ class IronBloodUniverse(SimulatedUniverse):
                     else:
                         # 无先验寻路
                         self.get_path_only_minimap()
-
                 elif "精英" in self.area or "首领" in self.area:
                     if not self.big_map_init:
                         key_mouse_manager.clean()
@@ -411,7 +410,7 @@ class IronBloodUniverse(SimulatedUniverse):
                         key_mouse_manager.wait()
                         if self._stop:
                             return 1
-                        self.find, self.need_record, state = self.map_data_load()
+                        self.find, self.need_record,state = self.map_data_load()
                         CUS_LOGGER.info("面对「纷争」的半神……你绝无可能以和平的姿态取走这枚火种。")
                         if self._stop or not state:
                             return 1
@@ -423,41 +422,37 @@ class IronBloodUniverse(SimulatedUniverse):
                     else:
                         # 无先验寻路
                         self.get_path_only_minimap(True)
-
                 elif "事件" in self.area or "奖励" in self.area:
                     if self.record_special_map_or_navigate(self.get_event_only_minimap):
                         return 1
-
                 elif "休整" in self.area:
                     if self.record_special_map_or_navigate(self.get_rest_only_minimap):
                         return 1
-
                 elif "交易" in self.area:
                     if self.record_special_map_or_navigate(self.get_shop_only_minimap):
                         return 1
-
                 elif "冒险" in self.area:
-                    # 冒险关卡处理
+                    # if not self.big_map_init:
+                    #     self.map_data_load()
+                    # self.recording_map()
                     self.get_adventure()
-
                 else:
-                    # 背景有光污染，字都认不出来
+                    #背景有光污染，字都认不出来
                     key_mouse_manager.mouse_move(1)
                     key_mouse_manager.wait()
-
-            # ---------- 长时间未交互/战斗，暂离或重开 ----------
-            if ((time.time() - self.last_interact_time >= self.max_interact_time) and not self.need_record) or self.need_end:
+            # 长时间未交互/战斗，暂离或重开
+            if ((time.time() - self.last_interact_time >= self.max_interact_time) and not self.need_record )or self.need_end:
                 key_mouse_manager.clean()
                 key_mouse_manager.wait()
                 key_mouse_manager.keyUp("w")
                 key_mouse_manager.press("esc")
                 key_mouse_manager.wait()
-                tm = time.time()
-                found = False
-                # esc有时不一定生效，比如释放秘技时
-                while time.time() - tm < 3:
-                    if self.click_text(text="暂离", box=[1321, 1383, 787, 821], click=False, allow_fail=True):
-                        found = True
+                tm=time.time()
+                found=False
+                #esc有时不一定生效，比如释放秘技时
+                while time.time()-tm<3:
+                    if self.click_text(text="暂离", box=[1321, 1383, 787, 821],click=False,allow_fail=True):
+                        found=True
                         break
                 if not found:
                     return 1
