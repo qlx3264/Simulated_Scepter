@@ -127,7 +127,7 @@ class AnyFateUniverse(SimulatedUniverse):
         self.special_interaction_failures = {}
         self.native_special_map_root = None
         self.loaded_map_root = None
-        self.already_switch_2_role = False # 是否已切换为2号位角色
+        self.current_role = 1  # 当前控制角色序号
         CUS_LOGGER.info("宇宙的中心有一团火种,它愈烧愈旺,直至燃尽整片星河。")
 
     def restart_recording(self):
@@ -190,16 +190,14 @@ class AnyFateUniverse(SimulatedUniverse):
         res,state = self.run_static()
         if self.state=="run":
             CUS_LOGGER.info("那朵微弱的火苗，启程之初便已种进他的心里。")
-            # 如果已切换为2号位角色，则切回1号位角色
-            if self.already_switch_2_role:
+            # 如果当前不是1号位角色，则切回1号位角色
+            if self.current_role != 1:
                 key_mouse_manager.press("1")
-                self.already_switch_2_role = False
-            #检查黄泉
+                self.current_role = 1
+            # 检查黄泉和白厄
             if not self.quan and self.check("huangquan", 0.0578,0.7083):
-                key_mouse_manager.press("1")
                 self.quan = 1
-            if not self.bai_e and self.check("bai_e", 0.0625,0.7092):
-                key_mouse_manager.press("1")
+            elif not self.bai_e and self.check("bai_e", 0.0625,0.7092):
                 self.bai_e = 1
             # 当前节点为祝福猪节点时切2号位并重置黄泉/白厄状态
             start_node = getattr(self, 'start_nodes', None)
@@ -210,9 +208,9 @@ class AnyFateUniverse(SimulatedUniverse):
                     # 根据用户设置决定是否遇猪切换2号位角色
                     if self.opt.get("pig_switch_2_role", False):
                         key_mouse_manager.press("2")
-                        self.already_switch_2_role = True
-                    self.quan = 0
-                    self.bai_e = 0
+                        self.current_role = 2
+                        self.quan = 0
+                        self.bai_e = 0
             #上次交互时间
             self.last_interact_time = bk_lst_changed
             # 刚进图，初始化一些数据
