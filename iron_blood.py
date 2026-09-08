@@ -33,6 +33,7 @@ class IronBloodUniverse(AnyFateUniverse):
         self.first_plane_count = self.opt.get("first_plane", 14)
         self.second_plane_count = self.opt.get("second_plane", 31)
         self.first_plane_min_weight = self.opt.get("first_plane_min_weight", 6)
+        self.third_plane_pause_count = self.opt.get("third_plane_pause_count", 0)
         self.fate = "毁灭"
         self.my_fate = config.fates.index(self.fate)
         self.tk = text_keys(self.my_fate)
