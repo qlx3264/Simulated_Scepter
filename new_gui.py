@@ -268,10 +268,10 @@ class MainWindow(QMainWindowLog):
 
         # 连接信号以实现动态更新
         self.connect_dependency_signals()
-        
+
         # 由 eventFilter 在编辑动作生效前拦截；提示状态持久化在 settings.json
         self._battle_weight_warning_shown = data.get("battle_weight_warning_shown", False)
-        
+
         self.restore_action.triggered.connect(self.run_iron_blood)
 
 
@@ -528,7 +528,7 @@ class MainWindow(QMainWindowLog):
         except (OSError, json.JSONDecodeError):
             # 配置写入失败时仍避免在当前会话内重复阻断用户操作
             pass
-    
+
     def closeEvent(self, event):
         """
         窗口关闭事件，清理键盘监听器
