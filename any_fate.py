@@ -250,6 +250,7 @@ class AnyFateUniverse(SimulatedUniverse):
                             key_mouse_manager.press('e')
                             CUS_LOGGER.debug("已解除银狼秘技")
                             key_mouse_manager.sleep(0.6)
+                        self.skill_num = self.skill_num if (self.skill_num != 99) 0
                 key_mouse_manager.wait()
                 battle_map_root = os.path.join(PATHS["image"], "nmaps")
                 if (("战斗" in self.area or "精英" in self.area or "首领" in self.area)
