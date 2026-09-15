@@ -1393,6 +1393,17 @@ border:none</string>
                 </layout>
                </item>
                <item>
+                <layout class="QHBoxLayout" name="horizontalLayout_boss_before_39_pause">
+                 <item>
+                  <widget class="QCheckBox" name="Iron_blood_boss_before_39_pause_checkbox">
+                   <property name="text">
+                    <string>最终首领格前达到39战及以上时暂停</string>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
+               </item>
+               <item>
                 <layout class="QHBoxLayout" name="horizontalLayout_interact_time">
                  <item>
                   <widget class="QLabel" name="label_interact_time">
