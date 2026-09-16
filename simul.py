@@ -501,7 +501,8 @@ class SimulatedUniverse(UniverseUtils):
     def re_init(self):
         if self.end:
             key_mouse_manager.press('esc')
-            self._stop = 1
+            key_mouse_manager.wait()  # 停止会清空队列，先完成退出按键。
+            self.stop()
             CUS_LOGGER.info('燃烧，聚变，然后湮灭。若想迎接新生，就必先投身终结。')
             return 1
         key_mouse_manager.click(0.3448, 0.4926)
