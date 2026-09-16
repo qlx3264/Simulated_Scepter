@@ -189,7 +189,7 @@ class DivergentUniverse(UniverseUtils):
             self.press('esc')
             time.sleep(2)
             self.press('esc')
-            self._stop = True
+            self.stop()
 
     def do_action(self, action) -> int:
         if isinstance(action, str):
