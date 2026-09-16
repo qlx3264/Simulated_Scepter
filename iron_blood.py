@@ -159,7 +159,6 @@ class IronBloodUniverse(AnyFateUniverse):
         self.try_analysis_map(1,1)
         if self.early_stop and self.gwypzmgzcndqlp:
             CUS_LOGGER.debug(f"当前一面最低期望{self.first_plane_min_weight}，识别到开局期望{self.expectation_weight}")
-            self.first_plane_weight = self.expectation_weight
             if self.plane_floor==1:
                 self.first_plane_weight = self.expectation_weight
                 if self.expectation_weight < self.first_plane_min_weight:
