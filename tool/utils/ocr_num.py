@@ -187,6 +187,7 @@ def match_numbers_in_region(or_image, threshold=0.9):
     number_str = ''.join([m['name'] for m in sorted_matches])
     return number_str
 
+
 def match_skill_numbers_in_region(or_image, threshold=0.75):
     # 识别秘技点数量，支持 0~11。单数字直接识别，两位数按左右两个数字拼接。
     or_image = or_image[823:870, 1675:1713].copy()
@@ -227,6 +228,7 @@ def match_skill_numbers_in_region(or_image, threshold=0.75):
             if rw >= 2 and rh >= 8:
                 regions.append((start + rx, ry, rw, rh))
     if not regions:
+        CUS_LOGGER.debug("未能成功识别秘技点数量，当前识别结果：无")
         return None
 
     # 从左到右排序
@@ -263,6 +265,7 @@ def match_skill_numbers_in_region(or_image, threshold=0.75):
                 best_digit = int(template_name)
 
         if best_digit is None or best_score < threshold:
+            CUS_LOGGER.debug(f"未能成功识别秘技点数量，当前识别结果：{best_digit}")
             return None
 
         matched_digits.append(str(best_digit))
@@ -270,6 +273,8 @@ def match_skill_numbers_in_region(or_image, threshold=0.75):
     # 秘技点只可能是 0~11
     result = int("".join(matched_digits))
     if 0 <= result <= 11:
+        CUS_LOGGER.debug(f"识别到当前秘技点数量: {result}点")
         return result
 
+    CUS_LOGGER.debug(f"未能成功识别秘技点数量，当前识别结果：{result}")
     return None
