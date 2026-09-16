@@ -238,6 +238,8 @@ class MainWindow(QMainWindowLog):
         self.config_save_btn.clicked.connect(self.save_config)
         self.Currency_save_btn.clicked.connect(self.save_currency_config)
         self.Iron_blood_save_btn.clicked.connect(self.save_iron_config)
+        self.Iron_blood_manual_settings_btn.clicked.connect(lambda: self.advanced_settings_stack.setCurrentWidget(self.iron_blood_manual_page))
+        self.Iron_blood_manual_back_btn.clicked.connect(lambda: self.advanced_settings_stack.setCurrentWidget(self.advanced_settings_main_page))
         self.Any_fate_save_btn.clicked.connect(self.save_any_fate_config)
         self.Finger_snap_save_btn.clicked.connect(self.save_finger_snap_config)
         self.Aboutupdatelock.clicked.connect(self.show_unlock_dialog)
@@ -262,6 +264,7 @@ class MainWindow(QMainWindowLog):
         self.Iron_blood_battle_weight_input.setText(str(data.get("battle_weight", 1.2)))
         self.Iron_blood_first_plane_min_weight_input.setText(str(data.get("first_plane_min_weight", 6)))
         self.Iron_blood_third_plane_pause_input.setText(str(data.get("third_plane_pause_count", 0)))
+        self.Iron_blood_boss_before_pause_input.setText(str(data.get("boss_before_pause_count", 0)))
         self.Iron_blood_interact_time_input.setText(str(data.get("max_interact_time", 40)))
         self.debug_checkox2.setChecked(data.get("debug", True))
 
@@ -375,6 +378,7 @@ class MainWindow(QMainWindowLog):
         data["battle_weight"] = float(self.Iron_blood_battle_weight_input.text())
         data["first_plane_min_weight"] = float(self.Iron_blood_first_plane_min_weight_input.text())
         data["third_plane_pause_count"] = int(self.Iron_blood_third_plane_pause_input.text())
+        data["boss_before_pause_count"] = int(self.Iron_blood_boss_before_pause_input.text())
         data["max_interact_time"] = int(self.Iron_blood_interact_time_input.text())
         data["debug"] = self.debug_checkox2.isChecked()
 
@@ -486,6 +490,7 @@ class MainWindow(QMainWindowLog):
         self.Iron_blood_second_plane_input.setEnabled(early_stop_enabled)
         self.Iron_blood_first_plane_min_weight_input.setEnabled(early_stop_enabled)
         self.Iron_blood_third_plane_pause_input.setEnabled(early_stop_enabled)
+        self.Iron_blood_boss_before_pause_input.setEnabled(early_stop_enabled)
 
     def connect_dependency_signals(self):
         self.debug_checkox2.stateChanged.connect(lambda: self.update_dependent_controls_state())
