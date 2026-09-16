@@ -19,6 +19,7 @@ from tool.currency.settings import (
     load_currency_settings,
     save_currency_settings,
 )
+from tool.GLOBAL import set_global_stop_flag
 from tool.log import log_emitter
 from tool.thread import ThreadWithException
 from tool.utils.image_tool import find_image_by_name, load_all_images_from_directory
@@ -26,7 +27,7 @@ from tool.utils.image_tool import find_image_by_name, load_all_images_from_direc
 load_all_images_from_directory()
 import faulthandler
 
-from PyQt5.QtCore import Qt, pyqtSignal, pyqtSlot, QEvent
+from PyQt5.QtCore import Qt, pyqtSignal, pyqtSlot, QEvent, QTimer
 from PyQt5.QtWidgets import (
     QApplication,
     QDialog,
@@ -62,6 +63,9 @@ class MainWindow(QMainWindowLog):
         # 任务管理相关属性
         self.current_task = None
         self.task_thread = None
+        self._task_monitor_timer = QTimer(self)
+        self._task_monitor_timer.setInterval(100)
+        self._task_monitor_timer.timeout.connect(self._check_task_thread)
         self._last_key_time = {}
         self._task_running_warning = None
 
@@ -86,12 +90,41 @@ class MainWindow(QMainWindowLog):
         """
         启动一个新任务
         """
-        if self.is_task_running():
-            raise RuntimeError("已有任务正在运行")
-        self.task_thread = ThreadWithException(target=task_func,name="主任务线程")
+        if self.task_thread is not None:
+            if self.task_thread.is_alive():
+                raise RuntimeError("上一个任务仍在停止，请稍候")
+            self.task_thread = None
+            self.current_task = None
+
+        set_global_stop_flag(False)
+        self.task_thread = ThreadWithException(target=task_func, name="主任务线程")
         self.task_thread.start()
         # 更新任务状态标签为"运行中"
         self.Label_RunningState.setText("任务序列线程状态: 运行中")
+
+        # 启动异步线程状态监控
+        if not self._task_monitor_timer.isActive():
+            self._task_monitor_timer.start()
+
+    def _check_task_thread(self):
+        """
+        异步检查任务线程是否已经退出。
+        不使用 join，避免阻塞 Qt 主线程。
+        """
+        if self.task_thread is None:
+            self._task_monitor_timer.stop()
+            return
+
+        if self.task_thread.is_alive():
+            return
+
+        # 线程已经确认退出，现在才清理引用
+        self.task_thread = None
+        self.current_task = None
+        set_global_stop_flag(False)
+
+        self.Label_RunningState.setText("任务序列线程状态: 未运行")
+        self._task_monitor_timer.stop()
 
     def is_task_running(self):
         """
@@ -101,24 +134,27 @@ class MainWindow(QMainWindowLog):
 
     def stop_task(self):
         """
-        停止当前任务
+        请求停止当前任务。
+        不等待线程退出，由 QTimer 异步检查线程状态。
         """
-        # 设置全局停止标志（用于__init__中的阻塞等待）
-        from tool.GLOBAL import set_global_stop_flag
+        if self.task_thread is None:
+            set_global_stop_flag(False)
+            return False
+
+        # 发出停止请求
         set_global_stop_flag(True)
 
         if self.current_task and hasattr(self.current_task, 'stop'):
             self.current_task.stop()
-            self.task_thread = None
-            self.current_task = None
-            # 更新任务状态标签为"未运行"
-            self.Label_RunningState.setText("任务序列线程状态: 未运行")
-            set_global_stop_flag(False)
-            return True
 
-        set_global_stop_flag(False)
+        # 不在 Qt 主线程中 join，避免阻塞 GUI
+        self.Label_RunningState.setText("任务序列线程状态: 停止中")
+
+        # 确保异步监控正在运行
+        if not self._task_monitor_timer.isActive():
+            self._task_monitor_timer.start()
+
         return False
-
 
     def show_error_message(self, title, error_msg):
         """显示错误消息弹窗，支持复制内容并强制置顶"""
