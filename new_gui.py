@@ -263,6 +263,7 @@ class MainWindow(QMainWindowLog):
         self.Iron_blood_second_plane_input.setText(str(data.get("second_plane", 31)))
         self.Iron_blood_battle_weight_input.setText(str(data.get("battle_weight", 1.2)))
         self.Iron_blood_first_plane_min_weight_input.setText(str(data.get("first_plane_min_weight", 6)))
+        self.skip_zero_kill_checkbox.setChecked(data.get("skip_zero_kill", False))
         self.Iron_blood_third_plane_pause_input.setText(str(data.get("third_plane_pause_count", 0)))
         self.Iron_blood_boss_before_pause_input.setText(str(data.get("boss_before_pause_count", 0)))
         self.Iron_blood_interact_time_input.setText(str(data.get("max_interact_time", 40)))
@@ -377,6 +378,7 @@ class MainWindow(QMainWindowLog):
         data["second_plane"] = int(self.Iron_blood_second_plane_input.text())
         data["battle_weight"] = float(self.Iron_blood_battle_weight_input.text())
         data["first_plane_min_weight"] = float(self.Iron_blood_first_plane_min_weight_input.text())
+        data["skip_zero_kill"] = self.skip_zero_kill_checkbox.isChecked()
         data["third_plane_pause_count"] = int(self.Iron_blood_third_plane_pause_input.text())
         data["boss_before_pause_count"] = int(self.Iron_blood_boss_before_pause_input.text())
         data["max_interact_time"] = int(self.Iron_blood_interact_time_input.text())
@@ -489,6 +491,7 @@ class MainWindow(QMainWindowLog):
         self.Iron_blood_first_plane_input.setEnabled(early_stop_enabled)
         self.Iron_blood_second_plane_input.setEnabled(early_stop_enabled)
         self.Iron_blood_first_plane_min_weight_input.setEnabled(early_stop_enabled)
+        self.skip_zero_kill_checkbox.setEnabled(early_stop_enabled)
         self.Iron_blood_third_plane_pause_input.setEnabled(early_stop_enabled)
         self.Iron_blood_boss_before_pause_input.setEnabled(early_stop_enabled)
 
