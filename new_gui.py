@@ -202,6 +202,8 @@ class MainWindow(QMainWindowLog):
         self.config_save_btn.clicked.connect(self.save_config)
         self.Currency_save_btn.clicked.connect(self.save_currency_config)
         self.Iron_blood_save_btn.clicked.connect(self.save_iron_config)
+        self.Iron_blood_manual_settings_btn.clicked.connect(lambda: self.advanced_settings_stack.setCurrentWidget(self.iron_blood_manual_page))
+        self.Iron_blood_manual_back_btn.clicked.connect(lambda: self.advanced_settings_stack.setCurrentWidget(self.advanced_settings_main_page))
         self.Any_fate_save_btn.clicked.connect(self.save_any_fate_config)
         self.Finger_snap_save_btn.clicked.connect(self.save_finger_snap_config)
         self.Aboutupdatelock.clicked.connect(self.show_unlock_dialog)
