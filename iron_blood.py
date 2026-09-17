@@ -38,6 +38,7 @@ class IronBloodUniverse(AnyFateUniverse):
         self.fate = "毁灭"
         self.my_fate = config.fates.index(self.fate)
         self.tk = text_keys(self.my_fate)
+        self.first_plane_weight = 0 # 保存第一面期望
         # 铁血战士使用毁灭专属事件优先级
         config_file = "config/config/event_info2.yml"
         example_file = "config/config/info_example.yml"
@@ -81,7 +82,7 @@ class IronBloodUniverse(AnyFateUniverse):
             start_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.run_start_time))
             total_min = self.elapsed_time // 60
             total_sec = self.elapsed_time % 60
-            line = f"轮回次数:{self.count}, 开始时间:{start_time_str}, 用时:{total_min}分{total_sec}秒,击杀数:{self.kill_count:02d}"
+            line = f"轮回次数:{self.count}, 开始时间:{start_time_str}, 用时:{total_min}分{total_sec}秒, 击杀数:{self.kill_count:02d}, 第一面期望:{self.first_plane_weight:.2f}"
             with open(record_file, "a", encoding="utf-8") as file:
                 file.write(line + "\n")
         except Exception as e:
@@ -159,9 +160,11 @@ class IronBloodUniverse(AnyFateUniverse):
         self.try_analysis_map(1,1)
         if self.early_stop and self.gwypzmgzcndqlp:
             CUS_LOGGER.debug(f"当前一面最低期望{self.first_plane_min_weight}，识别到开局期望{self.expectation_weight}")
-            if self.plane_floor==1 and self.expectation_weight < self.first_plane_min_weight:
-                CUS_LOGGER.warning("如果不能将此世从「毁灭」中拯救它，那就让寰宇在愤怒中燃烧吧......")
-                self.need_end=True
+            if self.plane_floor==1:
+                self.first_plane_weight = self.expectation_weight
+                if self.expectation_weight < self.first_plane_min_weight:
+                    CUS_LOGGER.warning("如果不能将此世从「毁灭」中拯救它，那就让寰宇在愤怒中燃烧吧......")
+                    self.need_end=True
         for _ in range(5):
             self.click_text(text="进入位面", box=[907, 1009, 857, 891])
             self.node_count = 0
