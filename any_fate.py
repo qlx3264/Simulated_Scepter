@@ -238,7 +238,6 @@ class AnyFateUniverse(SimulatedUniverse):
                     if self.current_role == 1 and self.check("silverwolf", 0.0609,0.7037):
                         bean = self.check("bean", 0.1536,0.7056)
                         skill_num = match_skill_numbers_in_region(self.get_screen())
-                        CUS_LOGGER.debug(f"当前秘技点数量：{skill_num}")
                         self.skill_num = skill_num if (skill_num is not None) else 5
                         # 秘技未施放时，秘技点超过1，或者秘技点为1且当前区域无小怪，则施放银狼秘技
                         if not bean and (self.skill_num >= 2 or (self.skill_num == 1 and ("战斗" not in self.area or pig))):
