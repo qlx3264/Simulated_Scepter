@@ -41,6 +41,7 @@ from tool.utils.ocr_num import (
 from tool.utils.tool import find_latest_modified_file
 from tool.window_recorder import WindowRecorder
 from tool.utils.ocr_num import match_skill_numbers_in_region
+from tool.silver_wolf_manager import SilverWolfManager
 
 
 class AnyFateUniverse(SimulatedUniverse):
@@ -130,6 +131,7 @@ class AnyFateUniverse(SimulatedUniverse):
         self.native_special_map_root = None
         self.loaded_map_root = None
         self.current_role = 1  # 当前控制角色序号
+        self.silver_wolf_manager = SilverWolfManager(self)
         self.now_area=[]
         CUS_LOGGER.info("宇宙的中心有一团火种,它愈烧愈旺,直至燃尽整片星河。")
 
@@ -195,7 +197,16 @@ class AnyFateUniverse(SimulatedUniverse):
             return True
         else:
             return False
-    
+
+    def use_e(self, face=False, fixed=False):
+        """使用秘技；二号位银狼秘技开启时，改用普通攻击以保留秘技点。"""
+        if not fixed and self.silver_wolf_manager.should_skip_skill():
+            CUS_LOGGER.debug("银狼秘技：为保留秘技点，本次改为普通攻击")
+            key_mouse_manager.click(0.5, 0.5)
+            key_mouse_manager.wait()
+            return
+        super().use_e(face=face, fixed=fixed)
+
     def normal(self):
         bk_lst_changed = self.last_interact_time
         self.last_interact_time = time.time()
@@ -215,24 +226,22 @@ class AnyFateUniverse(SimulatedUniverse):
                 ocr_text = self.ts.find_with_box(box=[55, 164, 12, 40],forward=True,re_screen=False)
                 self.area=merge_text(ocr_text) if len(ocr_text) else ""
                 CUS_LOGGER.debug(f"当前区域{self.area}")
-                # 当前节点为祝福猪节点时切2号位并重置黄泉/白厄状态
+                # 当前节点为祝福猪节点时，根据开关决定切人策略
                 start_node = getattr(self, 'start_nodes', None)
+                pig = False
                 if "精英" not in self.area and start_node is not None:
                     cm = (start_node.get('orig') or {}).get('corner_marker')
                     if cm and cm.get('name') in ('pig1', 'pig2'):
                         CUS_LOGGER.info("梦中那刺骨的愤怒与对自我的憎恨仍在震动着他的心。")
                         pig = True
-                        # 根据用户设置决定是否遇猪切换2号位角色
-                        if self.opt.get("pig_switch_2_role", False):
-                            self.switch_current_role(num=2)
-                            self.quan = 0
-                            self.bai_e = 0
-                    else:
+                # 银狼秘技优先；未启用银狼时按自定义切人切到配置位置
+                if self.opt.get("silver_wolf_enable", False):
+                    if not self.silver_wolf_manager.activate():
                         self.switch_current_role(num=1)
-                        pig = False
+                elif pig and self.opt.get("pig_switch_2_role", False):
+                    self.silver_wolf_manager.switch_to_configured_role()
                 else:
                     self.switch_current_role(num=1)
-                    pig = False
                 if "黑塔的办公" not in self.area:
                     # 判断是否施放银狼秘技
                     if self.current_role == 1 and self.check("silverwolf", 0.0609,0.7037):
@@ -963,6 +972,7 @@ class AnyFateUniverse(SimulatedUniverse):
         else:
             self.click_text(text="确认移动", box=[1611, 1759, 964, 998])
         self.new_node=True
+        self.silver_wolf_manager.reset_lock()
 
     def calculated_roll(self):
         if self.nodes is None or self.plane_floor==-1:
