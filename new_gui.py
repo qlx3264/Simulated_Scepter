@@ -257,7 +257,7 @@ class MainWindow(QMainWindowLog):
         self.early_stop_checkbox.setChecked(data.get("early_stop", False))
         self.pig_switch_2_role.setChecked(data.get("pig_switch_2_role", False))
         self.silver_wolf_enable.setChecked(data.get("silver_wolf_enable", False))
-        silver_wolf_switch = data.get("silver_wolf_switch", "二号位")
+        silver_wolf_switch = data.get("silver_wolf_switch", "一号位")
         switch_idx = self.silver_wolf_switch_combo.findText(silver_wolf_switch)
         if switch_idx >= 0:
             self.silver_wolf_switch_combo.setCurrentIndex(switch_idx)
