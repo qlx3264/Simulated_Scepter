@@ -1325,7 +1325,7 @@ border:none</string>
                         <string>二号位银狼秘技</string>
                        </property>
                        <property name="toolTip">
-                        <string>位于首领、精英、事件、奖励、事件虫群区域时，切换至二号位并启用秘技</string>
+                        <string>位于首领、精英、事件、奖励、事件虫群与携带祝福铺满的战斗区域时，切换至二号位并启用秘技</string>
                        </property>
                       </widget>
                      </item>
