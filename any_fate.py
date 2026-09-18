@@ -118,6 +118,7 @@ class AnyFateUniverse(SimulatedUniverse):
         self.need_end=False
         self.record = self.opt.get("recording_iron_blood", True)
         self.recorder = WindowRecorder('logs/video/', fps=30, window_title="崩坏：星穹铁道",window_class_name="UnityWndClass",see_time=self.opt.get("record_add_label", True), offsets=[10, 50, 10, 10], overlay_map=self.opt.get("record_add_label", True) and self._show_map, simul_instance=self)
+        self.auto_attack_breakable=self.opt.get("auto_attack_breakable", False)
         self.del_record_time=self.opt.get("del_record_time", 31)
         self.max_interact_time=self.opt.get("max_interact_time", 40)
         self.area="战斗"
@@ -237,7 +238,7 @@ class AnyFateUniverse(SimulatedUniverse):
                 if "黑塔的办公" not in self.area:
                     key_mouse_manager.clean()
                     # 歪比巴卜：空打一拳
-                    if time.time() - self.attack_time >= 5:
+                    if self.auto_attack_breakable and time.time() - self.attack_time >= 5:
                         key_mouse_manager.click(0.5, 0.5)
                         CUS_LOGGER.debug("尝试空打一拳")
                         self.attack_time = time.time()
