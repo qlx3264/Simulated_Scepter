@@ -831,7 +831,7 @@ class MainWindow(QMainWindowLog):
         QMessageBox.information(self, "提示", "货币战争配置已保存")
 
     def open_iron_blood_record_stats(self):
-        os.startfile(PATHS["root"] + "\\resource\\html\\iron_blood-Record_stats.html")
+        os.startfile(PATHS["root"] + "\\resource\\html\\iron_blood-record_stats.html")
     
     def save_iron_config(self):
         self.save_ui_settings()
