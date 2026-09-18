@@ -1430,13 +1430,6 @@ border:none</string>
                     </layout>
                    </item>
                    <item>
-                    <widget class="QCheckBox" name="skip_zero_kill_checkbox">
-                     <property name="text">
-                      <string>跳过 0 杀轮回的计数与记录</string>
-                     </property>
-                    </widget>
-                   </item>
-                   <item>
                     <layout class="QHBoxLayout" name="horizontalLayout_interact_time">
                      <item>
                       <widget class="QLabel" name="label_interact_time">
