@@ -62,16 +62,9 @@ class SilverWolfManager:
         return bool(corner_marker) and corner_marker.get('name') in ('pig1', 'pig2')
 
     def switch_to_configured_role(self):
-        """切到 silver_wolf_switch 配置的位置。
-
-        三、四号位暂未适配起点 crop 识别，切过去会卡寻路，暂时回退到二号位。
-        """
-        switch_text = self.parent.opt.get("silver_wolf_switch", "二号位")
-        target = self._ROLE_MAP.get(switch_text, 2)
-        if target in (3, 4):
-            CUS_LOGGER.warning(f"目标{switch_text}暂未适配，回退到二号位")
-            target = 2
-            switch_text = "二号位"
+        """切到 silver_wolf_switch 配置的位置。"""
+        switch_text = self.parent.opt.get("silver_wolf_switch", "一号位")
+        target = self._ROLE_MAP.get(switch_text, 1)
         CUS_LOGGER.debug(f"按设置切至{switch_text}（键位 {target}）")
         self.parent.switch_current_role(target)
         self.parent.quan = 0
