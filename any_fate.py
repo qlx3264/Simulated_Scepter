@@ -226,14 +226,10 @@ class AnyFateUniverse(SimulatedUniverse):
                 ocr_text = self.ts.find_with_box(box=[55, 164, 12, 40],forward=True,re_screen=False)
                 self.area=merge_text(ocr_text) if len(ocr_text) else ""
                 CUS_LOGGER.debug(f"当前区域{self.area}")
-                # 当前节点为祝福猪节点时，根据开关决定切人策略
-                start_node = getattr(self, 'start_nodes', None)
-                pig = False
-                if "精英" not in self.area and start_node is not None:
-                    cm = (start_node.get('orig') or {}).get('corner_marker')
-                    if cm and cm.get('name') in ('pig1', 'pig2'):
-                        CUS_LOGGER.info("梦中那刺骨的愤怒与对自我的憎恨仍在震动着他的心。")
-                        pig = True
+                # 当前节点为祝福扑满且非精英区域时，根据开关决定切人策略
+                pig = self.silver_wolf_manager.is_pig_node() and "精英" not in self.area
+                if pig:
+                    CUS_LOGGER.info("梦中那刺骨的愤怒与对自我的憎恨仍在震动着他的心。")
                 # 银狼秘技优先；未启用银狼时按自定义切人切到配置位置
                 if self.opt.get("silver_wolf_enable", False):
                     if not self.silver_wolf_manager.activate():
@@ -972,7 +968,6 @@ class AnyFateUniverse(SimulatedUniverse):
         else:
             self.click_text(text="确认移动", box=[1611, 1759, 964, 998])
         self.new_node=True
-        self.silver_wolf_manager.reset_lock()
 
     def calculated_roll(self):
         if self.nodes is None or self.plane_floor==-1:

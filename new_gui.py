@@ -261,24 +261,6 @@ class MainWindow(QMainWindowLog):
         switch_idx = self.silver_wolf_switch_combo.findText(silver_wolf_switch)
         if switch_idx >= 0:
             self.silver_wolf_switch_combo.setCurrentIndex(switch_idx)
-        # 禁用“三号位”和“四号位”选项(等待适配三四号位)
-        model = self.silver_wolf_switch_combo.model()
-        for i in range(self.silver_wolf_switch_combo.count()):
-            text = self.silver_wolf_switch_combo.itemText(i)
-            if text in ("三号位", "四号位"):
-                item = model.item(i)
-                if item is not None:
-                    item.setFlags(item.flags() & ~Qt.ItemIsEnabled)
-        # 如果当前选中的正好是被禁用的项，自动切换到第一个可用项(等待适配三四号位)
-        current_idx = self.silver_wolf_switch_combo.currentIndex()
-        current_item = model.item(current_idx)
-        if current_item is not None and not (current_item.flags() & Qt.ItemIsEnabled):
-            for i in range(self.silver_wolf_switch_combo.count()):
-                item = model.item(i)
-                if item is not None and (item.flags() & Qt.ItemIsEnabled):
-                    self.silver_wolf_switch_combo.setCurrentIndex(i)
-                    break
-
         self.recording_time_input.setText(str(data.get("del_record_time", 31)))
         self.record_event_map_checkbox.setChecked(data.get("record_event_map", False))
         self.Iron_blood_max_run_input.setText(str(int(data.get("max_run_time", 0))))

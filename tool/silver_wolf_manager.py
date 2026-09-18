@@ -15,7 +15,6 @@ class SilverWolfManager:
 
     def __init__(self, parent):
         self.parent = parent
-        self.locked = False
 
     def _check_character(self, template_name, x_ratio, y_ratio, threshold=0.7, fresh=False):
         """在固定比例坐标附近进行局部模板匹配。
@@ -54,7 +53,7 @@ class SilverWolfManager:
         _, max_val, _, _ = cv.minMaxLoc(res)
         return max_val >= threshold
 
-    def _is_pig_node(self):
+    def is_pig_node(self):
         """当前节点是否为祝福扑满。"""
         start_node = getattr(self.parent, 'start_nodes', None)
         if start_node is None:
@@ -63,14 +62,20 @@ class SilverWolfManager:
         return bool(corner_marker) and corner_marker.get('name') in ('pig1', 'pig2')
 
     def switch_to_configured_role(self):
-        """切到 silver_wolf_switch 配置的位置。"""
+        """切到 silver_wolf_switch 配置的位置。
+
+        三、四号位暂未适配起点 crop 识别，切过去会卡寻路，暂时回退到二号位。
+        """
         switch_text = self.parent.opt.get("silver_wolf_switch", "二号位")
         target = self._ROLE_MAP.get(switch_text, 2)
+        if target in (3, 4):
+            CUS_LOGGER.warning(f"目标{switch_text}暂未适配，回退到二号位")
+            target = 2
+            switch_text = "二号位"
         CUS_LOGGER.debug(f"按设置切至{switch_text}（键位 {target}）")
         self.parent.switch_current_role(target)
         self.parent.quan = 0
         self.parent.bai_e = 0
-        self.locked = False
 
     def should_skip_skill(self):
         """判断是否应跳过秘技、改用普通攻击以保留秘技点。
@@ -97,13 +102,19 @@ class SilverWolfManager:
         return skill_num <= threshold
 
     def activate(self):
-        """尝试释放银狼秘技。..."""
+        """尝试释放银狼秘技。
+
+        Returns:
+            True 表示已处理完毕（切二号位、已释放、或已切回一号位），
+            调用方不要干涉角色切换；
+            False 表示当前无需处理，调用方按常规流程切回一号位。
+        """
         if self.parent.need_end:
             return False
         if not self.parent.opt.get("silver_wolf_enable", False):
             return False
         in_trigger = any(kw in self.parent.area for kw in ("精英", "奖励", "事件", "首领"))
-        in_pig = self._is_pig_node()
+        in_pig = self.is_pig_node()
         if not (in_trigger or in_pig):
             return False
         # 精英即使带扑满角标也按普通触发区域处理
@@ -131,7 +142,6 @@ class SilverWolfManager:
                 return True
             CUS_LOGGER.debug("银狼秘技：秘技点为 0，切回一号位")
             self.parent.switch_current_role(1)
-            self.locked = False
             return True
 
         if not self._check_character("silverwolf", 0.9385, 0.3833, threshold=0.85, fresh=True):
@@ -140,7 +150,6 @@ class SilverWolfManager:
         self.parent.switch_current_role(2)
         self.parent.quan = 0
         self.parent.bai_e = 0
-        self.locked = True
         key_mouse_manager.sleep(0.05)
         if self._check_character("bean", 0.8464, 0.3787, threshold=0.7, fresh=True):
             CUS_LOGGER.debug("银狼秘技图标已存在，跳过释放")
@@ -149,7 +158,3 @@ class SilverWolfManager:
         key_mouse_manager.press("e")
         key_mouse_manager.wait()
         return True
-
-    def reset_lock(self):
-        """节点移动完成后解除银狼的锁定切换状态。"""
-        self.locked = False

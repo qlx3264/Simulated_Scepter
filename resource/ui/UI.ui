@@ -1293,7 +1293,7 @@ border:none</string>
                      <item>
                       <widget class="QCheckBox" name="pig_switch_2_role">
                        <property name="text">
-                        <string>自定义遇猪切人(等待适配三四号位)</string>
+                        <string>自定义遇猪切人</string>
                        </property>
                       </widget>
                      </item>
@@ -1313,8 +1313,6 @@ border:none</string>
                          </property>
                          <item><property name="text"><string>一号位</string></property></item>
                          <item><property name="text"><string>二号位</string></property></item>
-                         <item><property name="text"><string>三号位</string></property></item>
-                         <item><property name="text"><string>四号位</string></property></item>
                         </widget>
                        </item>
                       </layout>
@@ -1325,7 +1323,7 @@ border:none</string>
                         <string>二号位银狼秘技</string>
                        </property>
                        <property name="toolTip">
-                        <string>位于首领、精英、事件、奖励、事件虫群与携带祝福铺满的战斗区域时，切换至二号位并启用秘技</string>
+                        <string>位于首领、精英、事件、奖励、事件虫群与携带祝福扑满的战斗区域时，切换至二号位并启用秘技</string>
                        </property>
                       </widget>
                      </item>
