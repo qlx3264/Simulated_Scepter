@@ -1298,6 +1298,13 @@ border:none</string>
                       </widget>
                      </item>
                      <item>
+                      <widget class="QCheckBox" name="auto_attack_breakable">
+                       <property name="text">
+                        <string>自动攻击可破坏物（实验性，可能影响近战角色寻路）</string>
+                       </property>
+                      </widget>
+                     </item>
+                     <item>
                       <widget class="QPushButton" name="Aboutupdatelock">
                        <property name="text">
                         <string>关于高级用户功能解锁</string>
