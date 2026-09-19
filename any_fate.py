@@ -114,9 +114,11 @@ class AnyFateUniverse(SimulatedUniverse):
         self.max_limited = None
         self.run_start_time = time.time()
         self.elapsed_time = 0 # 本轮演算持续时间
+        self.attack_time = 0 # 上次空打一拳时间
         self.need_end=False
         self.record = self.opt.get("recording_iron_blood", True)
         self.recorder = WindowRecorder('logs/video/', fps=30, window_title="崩坏：星穹铁道",window_class_name="UnityWndClass",see_time=self.opt.get("record_add_label", True), offsets=[10, 50, 10, 10], overlay_map=self.opt.get("record_add_label", True) and self._show_map, simul_instance=self)
+        self.auto_attack_breakable=self.opt.get("auto_attack_breakable", False)
         self.del_record_time=self.opt.get("del_record_time", 31)
         self.max_interact_time=self.opt.get("max_interact_time", 40)
         self.area="战斗"
@@ -234,6 +236,13 @@ class AnyFateUniverse(SimulatedUniverse):
                     self.switch_current_role(num=1)
                     pig = False
                 if "黑塔的办公" not in self.area:
+                    key_mouse_manager.clean()
+                    # 歪比巴卜：空打一拳
+                    if self.auto_attack_breakable and time.time() - self.attack_time >= 5:
+                        key_mouse_manager.click(0.5, 0.5)
+                        CUS_LOGGER.debug("尝试空打一拳")
+                        self.attack_time = time.time()
+                        key_mouse_manager.sleep(0.6)
                     # 判断是否施放银狼秘技
                     if self.current_role == 1 and self.check("silverwolf", 0.0609,0.7037):
                         bean = self.check("bean", 0.1536,0.7056)
