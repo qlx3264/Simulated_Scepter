@@ -122,7 +122,7 @@ uv run new_gui.py
 
 # Configuration Recommendations
 
-It is recommended to place characters in the first slot in the following order: Bai'e, Huangquan, or other ranged basic attack characters. Characters in other slots can be arbitrary. The team needs at least 3 members for the script to run properly.
+It is recommended to place characters in the first slot in the following order: Bai'e, Huangquan, Silver Wolf LV.999, or other ranged basic attack characters. Characters in other slots can be arbitrary. The team needs at least 3 members for the script to run properly.
 
 PLEASE NOTE!!!!! Do not move the game window after starting execution/calibration! Avoid incorrect script execution!! If you need to move it, press F5 to stop automation first!
 
