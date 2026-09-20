@@ -220,7 +220,7 @@ class AnyFateUniverse(SimulatedUniverse):
         self.bai_e = 0
 
     def use_e(self, face=False, fixed=False):
-        """使用秘技；二号位银狼秘技开启时，改用普通攻击以保留秘技点。"""
+        """使用秘技；银狼位于非一号位且银狼秘技开关勾选时，改用普通攻击以保留秘技点。"""
         if not fixed and self.silver_wolf_manager.should_skip_skill():
             CUS_LOGGER.debug("银狼秘技：为保留秘技点，本次改为普通攻击")
             key_mouse_manager.click(0.5, 0.5)

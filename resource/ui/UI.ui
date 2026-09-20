@@ -1320,7 +1320,7 @@ border:none</string>
                      <item>
                       <widget class="QCheckBox" name="silver_wolf_enable">
                        <property name="text">
-                        <string>银狼秘技</string>
+                        <string>银狼秘技(暂不支持三号与四号位)</string>
                        </property>
                        <property name="toolTip">
                         <string>位于一号位时，切换至银狼并启用秘技,若开启遇猪切人会切换至所选位置(一号位银狼不建议开启自定义遇猪切人)
