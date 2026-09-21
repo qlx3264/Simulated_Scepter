@@ -24,29 +24,42 @@
     --badge-tan-bg: rgba(163,113,247,.15);
     --badge-tan-fg: #a371f7;
 
-    /* 分类颜色映射 */
-    --c-zero:  #6b7280;      /* 灰色 */
-    --c-one:   #16a34a;      /* 一面：绿色 */
-    --c-two:   #facc15;      /* 二面：亮黄色 */
-    --c-three: #dc2626;      /* 三面：红色 */
-    --c-line-two:   #facc15; /* 进二面折线：亮黄色 */
-    --c-line-three: #dc2626; /* 进三面折线：红色 */
-    --c-line-combo: #ea580c; /* 合计折线：橙色 */
+    --c-zero:  #6b7280;
+    --c-one:   #16a34a;
+    --c-two:   #facc15;
+    --c-three: #dc2626;
+    --c-line-two:   #facc15;
+    --c-line-three: #dc2626;
+    --c-line-combo: #ea580c;
+
+    /* 弹指模块颜色统一为 绿黄红 */
+    --c-tan-low:    #16a34a; /* 低倒计时：绿色 */
+    --c-tan-normal: #facc15; /* 普通倒计时：黄色 */
+    --c-tan-high:   #dc2626; /* 高倒计时：红色 */
 
     --pct-miss-bg:   rgba(110,118,129,.15);
-    --pct-miss-fg:   var(--gray); /* 缺失：灰色 */
+    --pct-miss-fg:   var(--gray);
     
     --pct-zero-bg:   rgba(139,152,165,.15);
-    --pct-zero-fg:   var(--text-dim); /* 0值：灰色 */
+    --pct-zero-fg:   var(--text-dim);
 
     --pct-one-bg:    rgba(22,163,74,.15);
-    --pct-one-fg:    var(--c-one); /* 一面：绿色 */
+    --pct-one-fg:    var(--c-one);
 
-    --pct-two-bg:    rgba(250,204,21,.2); /* 二面/普通倒计时背景：黄色 */
-    --pct-two-fg:    var(--c-two); /* 二面/普通倒计时前景：黄色 */
+    --pct-two-bg:    rgba(250,204,21,.2);
+    --pct-two-fg:    var(--c-two);
 
     --pct-three-bg:  rgba(220,38,38,.15);
-    --pct-three-fg:  var(--c-three); /* 三面：红色 */
+    --pct-three-fg:  var(--c-three);
+
+    --pct-low-bg:    rgba(22,163,74,.15);
+    --pct-low-fg:    var(--c-tan-low);
+
+    --pct-normal-bg: rgba(250,204,21,.2);
+    --pct-normal-fg: var(--c-tan-normal);
+
+    --pct-high-bg:   rgba(220,38,38,.15);
+    --pct-high-fg:   var(--c-tan-high);
 
     --chart-axis: #8b98a5;
     --chart-grid: #2e3844;
@@ -76,29 +89,42 @@
     --badge-tan-bg: rgba(130,80,223,.1);
     --badge-tan-fg: #8250df;
 
-    /* 亮色模式分类颜色 */
-    --c-zero:  #6e7781;      /* 灰色 */
-    --c-one:   #1a7f37;      /* 一面：绿色 */
-    --c-two:   #eab308;      /* 二面：黄色 */
-    --c-three: #cf222e;      /* 三面：红色 */
-    --c-line-two:   #eab308; /* 进二面折线：黄色 */
-    --c-line-three: #cf222e; /* 进三面折线：红色 */
-    --c-line-combo: #bc4c00; /* 合计折线：橙色 */
+    --c-zero:  #6e7781;
+    --c-one:   #1a7f37;
+    --c-two:   #eab308;
+    --c-three: #cf222e;
+    --c-line-two:   #eab308;
+    --c-line-three: #cf222e;
+    --c-line-combo: #bc4c00;
+
+    /* 弹指模块颜色统一为 绿黄红 */
+    --c-tan-low:    #1a7f37; /* 低倒计时：绿色 */
+    --c-tan-normal: #eab308; /* 普通倒计时：黄色 */
+    --c-tan-high:   #cf222e; /* 高倒计时：红色 */
 
     --pct-miss-bg:   rgba(110,119,129,.12);
-    --pct-miss-fg:   var(--gray); /* 缺失：灰色 */
+    --pct-miss-fg:   var(--gray);
     
     --pct-zero-bg:   rgba(101,109,118,.12);
-    --pct-zero-fg:   var(--text-dim); /* 0值：灰色 */
+    --pct-zero-fg:   var(--text-dim);
 
     --pct-one-bg:    rgba(26,127,55,.1);
     --pct-one-fg:    var(--c-one);
 
     --pct-two-bg:    rgba(234,179,8,.2);
-    --pct-two-fg:    #b45309; /* 深黄色文字，在白色背景上更清晰 */
+    --pct-two-fg:    #b45309;
 
     --pct-three-bg:  rgba(207,34,46,.1);
     --pct-three-fg:  var(--c-three);
+
+    --pct-low-bg:    rgba(26,127,55,.1);
+    --pct-low-fg:    var(--c-tan-low);
+
+    --pct-normal-bg: rgba(234,179,8,.2);
+    --pct-normal-fg: #b45309;
+
+    --pct-high-bg:   rgba(207,34,46,.1);
+    --pct-high-fg:   var(--c-tan-high);
 
     --chart-axis: #656d76;
     --chart-grid: #d0d7de;
@@ -199,45 +225,16 @@
   .tab-panel { display: none; padding-top: 4px; }
   .tab-panel.active { display: block; }
 
-  /* ---- 双栏网格布局 ---- */
-  .file-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
-    margin-bottom: 20px;
-  }
-  @media (max-width: 780px) {
-    .file-grid { grid-template-columns: 1fr; }
-  }
-
-  /* ---- 分页控件 ---- */
-  .pagination-controls {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 15px;
-    margin: 20px 0 30px;
-    font-size: 14px;
-    color: var(--text-dim);
-  }
-  .page-btn {
-    background: var(--panel-2);
+  .full-width {
+    margin-top: 20px;
+    padding: 20px;
+    background: var(--panel);
     border: 1px solid var(--border);
-    color: var(--text);
-    padding: 6px 14px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-family: inherit;
-    transition: all .15s;
+    border-radius: 12px;
+    overflow-x: auto;
   }
-  .page-btn:hover:not(:disabled) {
-    background: var(--accent);
-    color: #fff;
-    border-color: var(--accent);
-  }
-  .page-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
+  .full-width table {
+    min-width: 100%;
   }
 
   .result-block {
@@ -301,9 +298,9 @@
   .p-one   { background: var(--pct-one-bg);   color: var(--pct-one-fg); }
   .p-two   { background: var(--pct-two-bg);   color: var(--pct-two-fg); }
   .p-three { background: var(--pct-three-bg); color: var(--pct-three-fg); }
-  .p-low   { background: var(--pct-one-bg);   color: var(--pct-one-fg); }
-  .p-normal{ background: var(--pct-two-bg);   color: var(--pct-two-fg); }
-  .p-high  { background: var(--pct-three-bg); color: var(--pct-three-fg); }
+  .p-low   { background: var(--pct-low-bg);   color: var(--pct-low-fg); }
+  .p-normal{ background: var(--pct-normal-bg); color: var(--pct-normal-fg); }
+  .p-high  { background: var(--pct-high-bg);  color: var(--pct-high-fg); }
 
   .row-total td { font-weight: 600; background: var(--panel); }
 
@@ -443,7 +440,7 @@
       <button id="clearMemoBtn" class="memo-btn" style="display:none">✖ 清除记忆</button>
     </div>
     <div class="memo-hint" id="memoHint">
-      选择后自动读取文件夹中的 *kill_record*.txt（铁血）和 *countdown*.txt（弹指），下次打开自动恢复。
+      选择后自动读取文件夹中的 kill_record*.txt（铁血）和 countdown*.txt（弹指），下次打开自动恢复。
     </div>
   </div>
 
@@ -660,160 +657,27 @@
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   }
 
-  function classifyRecords(records) {
-    let zero = 0, one = 0, two = 0, three = 0;
-    for (const r of records) {
-      const k = r.value;
-      if (k === 0) zero++;
-      else if (k >= 1 && k <= 13) one++;
-      else if (k >= 14 && k <= 30) two++;
-      else if (k > 30) three++;
-    }
-    return { zero, one, two, three, total: records.length };
-  }
-
-  function buildResultHTML(fileName, result) {
-    const records = result.records;
-    const total = records.length;
-    const isTan = result.moduleType === 'tan';
-    const isTie = result.moduleType === 'tie';
-
-    if (total === 0) {
-      return `<div class="file-info">文件：<strong>${escapeHtml(fileName)}</strong> · 未解析到记录</div>
-              <div class="empty">没有可解析的记录</div>`;
-    }
-
-    let buckets, detailPredicate, detailTitleText, detailValueLabel, legendHTML;
-
-    if (isTan) {
-      buckets = [
-        { key: 'missing', label: '缺失（占位）', cls: 'p-miss',  test: (r) => r.missing },
-        { key: 'low',     label: '低倒计时 (<18)',  cls: 'p-low',   test: (r) => !r.missing && r.value < 18 },
-        { key: 'normal',  label: '普通倒计时 (18~60)', cls: 'p-normal', test: (r) => !r.missing && r.value >= 18 && r.value <= 60 },
-        { key: 'high',    label: '高倒计时 (>60)',  cls: 'p-high',  test: (r) => !r.missing && r.value > 60 }
-      ];
-      detailPredicate = (r) => !r.missing && r.value > 60;
-      detailTitleText = '高倒计时对局详细记录（倒计时 > 60）';
-      detailValueLabel = '倒计时';
-      legendHTML = '分类规则：<code>缺失</code> 为只有轮回号无数据的占位记录 · ' +
-        '<code>低倒计时</code> 为 &lt;18 · <code>普通倒计时</code> 为 18~60 · ' +
-        '<code>高倒计时</code> 为 &gt;60';
-    } else if (isTie) {
-      buckets = [
-        { key: 'missing', label: '缺失（占位）', cls: 'p-miss',  test: (r) => r.missing },
-        { key: 'zero',    label: '0 值',          cls: 'p-zero',  test: (r) => !r.missing && r.value === 0 },
-        { key: 'one',     label: '一面 (1~13)',   cls: 'p-one',   test: (r) => !r.missing && r.value >= 1 && r.value <= 13 },
-        { key: 'two',     label: '二面 (14~30)',  cls: 'p-two',   test: (r) => !r.missing && r.value >= 14 && r.value <= 30 },
-        { key: 'three',   label: '三面 (>30)',    cls: 'p-three', test: (r) => !r.missing && r.value > 30 }
-      ];
-      detailPredicate = (r) => !r.missing && r.value > 30;
-      detailTitleText = '三面详细记录（击杀数 > 30）';
-      detailValueLabel = '击杀数';
-      legendHTML = '分类规则：<code>缺失</code> 为只有轮回号无数据的占位记录 · ' +
-        '<code>0 值</code> 为击杀数为 0 · <code>一面</code> 为 1~13 · ' +
-        '<code>二面</code> 为 14~30 · <code>三面</code> 为 &gt;30';
+  function classifyRecords(records, type) {
+    if (type === 'tie') {
+      let zero = 0, one = 0, two = 0, three = 0;
+      for (const r of records) {
+        const k = r.value;
+        if (k === 0) zero++;
+        else if (k >= 1 && k <= 13) one++;
+        else if (k >= 14 && k <= 30) two++;
+        else if (k > 30) three++;
+      }
+      return { zero, one, two, three, total: records.length };
     } else {
-      buckets = [
-        { key: 'missing', label: '缺失（占位）', cls: 'p-miss',  test: (r) => r.missing },
-        { key: 'zero',    label: '0 值',          cls: 'p-zero',  test: (r) => !r.missing && r.value === 0 },
-        { key: 'one',     label: '一面 (1~13)',   cls: 'p-one',   test: (r) => !r.missing && r.value >= 1 && r.value <= 13 },
-        { key: 'two',     label: '二面 (14~30)',  cls: 'p-two',   test: (r) => !r.missing && r.value >= 14 && r.value <= 30 },
-        { key: 'three',   label: '三面 (>30)',    cls: 'p-three', test: (r) => !r.missing && r.value > 30 }
-      ];
-      detailPredicate = (r) => !r.missing && r.value > 30;
-      detailTitleText = '三面详细记录（数值 > 30）';
-      detailValueLabel = '数值';
-      legendHTML = '分类规则：<code>缺失</code> · <code>0 值</code> · <code>一面</code> 1~13 · ' +
-        '<code>二面</code> 14~30 · <code>三面</code> &gt;30';
-    }
-
-    const counts = {};
-    buckets.forEach(b => counts[b.key] = 0);
-    const detailList = [];
-
-    for (const r of records) {
-      for (const b of buckets) {
-        if (b.test(r)) {
-          counts[b.key]++;
-          if (detailPredicate(r)) detailList.push(r);
-          break;
-        }
+      let low = 0, normal = 0, high = 0;
+      for (const r of records) {
+        const v = r.value;
+        if (v < 18) low++;
+        else if (v >= 18 && v <= 60) normal++;
+        else if (v > 60) high++;
       }
+      return { low, normal, high, total: records.length };
     }
-
-    let badge = '';
-    if (isTie) badge = '<span class="badge badge-tie">铁血模块 · 击杀数</span>';
-    else if (isTan) badge = '<span class="badge badge-tan">弹指模块 · 倒计时</span>';
-
-    let summaryHTML = '<table><thead><tr><th>分类</th><th class="num">记录数</th><th class="num">占比</th></tr></thead><tbody>';
-    for (const b of buckets) {
-      const c = counts[b.key];
-      if (c === 0) continue;
-      const pct = (c / total * 100).toFixed(2);
-      summaryHTML += `<tr>
-        <td>${b.label}</td>
-        <td class="num">${c}</td>
-        <td class="num"><span class="pct ${b.cls}">${pct}%</span></td>
-      </tr>`;
-    }
-    summaryHTML += `<tr class="row-total">
-      <td>总计</td><td class="num">${total}</td>
-      <td class="num"><span class="pct p-zero">100%</span></td>
-    </tr></tbody></table>`;
-
-    let detailHTML;
-    if (isTan) {
-      detailHTML = '<table><thead><tr><th class="num">轮回次数</th><th class="num">' +
-        detailValueLabel + '</th><th class="num">用时</th><th class="num">与上一的轮回差</th></tr></thead><tbody>';
-      if (detailList.length === 0) {
-        detailHTML += '<tr><td colspan="4" class="empty">暂无记录</td></tr>';
-      } else {
-        let prevRound = null;
-        for (const r of detailList) {
-          const diff = prevRound == null ? '—' : (r.round - prevRound);
-          detailHTML += `<tr>
-            <td class="num">${r.round}</td>
-            <td class="num">${r.value}</td>
-            <td class="num">${formatDuration(r.duration)}</td>
-            <td class="num">${diff}</td>
-          </tr>`;
-          prevRound = r.round;
-        }
-      }
-      detailHTML += '</tbody></table>';
-    } else {
-      detailHTML = '<table><thead><tr><th class="num">轮回次数</th><th class="num">' +
-        detailValueLabel + '</th><th class="num">用时</th><th class="num">开局期望</th><th class="num">与上一的轮回差</th></tr></thead><tbody>';
-      if (detailList.length === 0) {
-        detailHTML += '<tr><td colspan="5" class="empty">暂无记录</td></tr>';
-      } else {
-        let prevRound = null;
-        for (const r of detailList) {
-          const diff = prevRound == null ? '—' : (r.round - prevRound);
-          const expectationVal = (r.openingExpectation !== null && r.openingExpectation !== undefined)
-            ? r.openingExpectation.toFixed(2)
-            : '—';
-          detailHTML += `<tr>
-            <td class="num">${r.round}</td>
-            <td class="num">${r.value}</td>
-            <td class="num">${formatDuration(r.duration)}</td>
-            <td class="num">${expectationVal}</td>
-            <td class="num">${diff}</td>
-          </tr>`;
-          prevRound = r.round;
-        }
-      }
-      detailHTML += '</tbody></table>';
-    }
-
-    return `
-      <div class="file-info">文件：<strong>${escapeHtml(fileName)}</strong> · 有效记录 <strong>${total}</strong> 条 ${badge}</div>
-      <div class="section-title">总览</div>
-      ${summaryHTML}
-      <div class="legend">${legendHTML}</div>
-      <div class="section-title" style="margin-top:20px">${detailTitleText}</div>
-      ${detailHTML}
-    `;
   }
 
   let chartRecords = [];
@@ -1762,9 +1626,8 @@
     `;
   }
 
-  function buildSummaryTable(fileStats, moduleType) {
-    if (fileStats.length === 0) return '';
-    let html = `<table style="margin-top:12px;"><thead><tr>
+  function buildTieSummaryTable(fileStats) {
+    let html = `<table><thead><tr>
       <th>文件名</th>
       <th class="num">总记录数</th>
       <th class="num">未战斗 (0)</th>
@@ -1804,9 +1667,147 @@
     return html;
   }
 
-  let currentTiePage = 1;
-  let currentTanPage = 1;
-  const FILES_PER_PAGE = 4;
+  function buildTanSummaryTable(fileStats) {
+    let html = `<table><thead><tr>
+      <th>文件名</th>
+      <th class="num">总记录数</th>
+      <th class="num">低倒计时 (&lt;18)</th>
+      <th class="num">普通倒计时 (18~60)</th>
+      <th class="num">高倒计时 (&gt;60)</th>
+    </tr></thead><tbody>`;
+
+    let totalLow = 0, totalNormal = 0, totalHigh = 0, totalAll = 0;
+
+    for (const fs of fileStats) {
+      const s = fs.stat;
+      totalLow += s.low;
+      totalNormal += s.normal;
+      totalHigh += s.high;
+      totalAll += s.total;
+
+      html += `<tr>
+        <td class="file-name" title="${escapeHtml(fs.name)}">${escapeHtml(fs.name)}</td>
+        <td class="num">${s.total}</td>
+        <td class="num"><span class="pct p-low">${s.low}</span> (${(s.low/s.total*100||0).toFixed(2)}%)</td>
+        <td class="num"><span class="pct p-normal">${s.normal}</span> (${(s.normal/s.total*100||0).toFixed(2)}%)</td>
+        <td class="num"><span class="pct p-high">${s.high}</span> (${(s.high/s.total*100||0).toFixed(2)}%)</td>
+      </tr>`;
+    }
+
+    html += `<tr class="row-total">
+      <td>📌 总计</td>
+      <td class="num">${totalAll}</td>
+      <td class="num"><span class="pct p-low">${totalLow}</span> (${(totalLow/totalAll*100||0).toFixed(2)}%)</td>
+      <td class="num"><span class="pct p-normal">${totalNormal}</span> (${(totalNormal/totalAll*100||0).toFixed(2)}%)</td>
+      <td class="num"><span class="pct p-high">${totalHigh}</span> (${(totalHigh/totalAll*100||0).toFixed(2)}%)</td>
+    </tr></tbody></table>`;
+    return html;
+  }
+
+  function buildTieDetailTable(allRecords) {
+    const filtered = allRecords.filter(r => !r.missing && r.value > 30);
+
+    if (filtered.length === 0) {
+      return '<div class="empty">暂无三面记录（击杀数 > 30）</div>';
+    }
+
+    const grouped = {};
+    for (const r of filtered) {
+      const file = r.sourceFile || '未知';
+      if (!grouped[file]) grouped[file] = [];
+      grouped[file].push(r);
+    }
+    const diffMap = new Map();
+    for (const file in grouped) {
+      const records = grouped[file];
+      records.sort((a, b) => a.round - b.round);
+      let prev = null;
+      for (const r of records) {
+        const diff = prev === null ? '—' : (r.round - prev);
+        diffMap.set(`${file}|${r.round}`, diff);
+        prev = r.round;
+      }
+    }
+
+    filtered.sort((a, b) => a.round - b.round);
+
+    let html = `<table><thead><tr>
+      <th>来源文件</th>
+      <th class="num">轮回次数</th>
+      <th class="num">击杀数</th>
+      <th class="num">用时</th>
+      <th class="num">开局期望</th>
+      <th class="num">与上一的轮回差</th>
+    </tr></thead><tbody>`;
+
+    for (const r of filtered) {
+      const diff = diffMap.get(`${r.sourceFile}|${r.round}`) || '—';
+      const expectationVal = (r.openingExpectation !== null && r.openingExpectation !== undefined)
+        ? r.openingExpectation.toFixed(2)
+        : '—';
+      html += `<tr>
+        <td>${escapeHtml(r.sourceFile || '')}</td>
+        <td class="num">${r.round}</td>
+        <td class="num"><span class="pct p-three">${r.value}</span></td>
+        <td class="num">${formatDuration(r.duration)}</td>
+        <td class="num">${expectationVal}</td>
+        <td class="num">${diff}</td>
+      </tr>`;
+    }
+
+    html += '</tbody></table>';
+    return html;
+  }
+
+  function buildTanDetailTable(allRecords) {
+    const filtered = allRecords.filter(r => !r.missing && r.value > 60);
+
+    if (filtered.length === 0) {
+      return '<div class="empty">暂无高倒计时记录（倒计时 > 60）</div>';
+    }
+
+    const grouped = {};
+    for (const r of filtered) {
+      const file = r.sourceFile || '未知';
+      if (!grouped[file]) grouped[file] = [];
+      grouped[file].push(r);
+    }
+    const diffMap = new Map();
+    for (const file in grouped) {
+      const records = grouped[file];
+      records.sort((a, b) => a.round - b.round);
+      let prev = null;
+      for (const r of records) {
+        const diff = prev === null ? '—' : (r.round - prev);
+        diffMap.set(`${file}|${r.round}`, diff);
+        prev = r.round;
+      }
+    }
+
+    filtered.sort((a, b) => a.round - b.round);
+
+    let html = `<table><thead><tr>
+      <th>来源文件</th>
+      <th class="num">轮回次数</th>
+      <th class="num">倒计时</th>
+      <th class="num">用时</th>
+      <th class="num">与上一的轮回差</th>
+    </tr></thead><tbody>`;
+
+    for (const r of filtered) {
+      const diff = diffMap.get(`${r.sourceFile}|${r.round}`) || '—';
+      html += `<tr>
+        <td>${escapeHtml(r.sourceFile || '')}</td>
+        <td class="num">${r.round}</td>
+        <td class="num"><span class="pct p-high">${r.value}</span></td>
+        <td class="num">${formatDuration(r.duration)}</td>
+        <td class="num">${diff}</td>
+      </tr>`;
+    }
+
+    html += '</tbody></table>';
+    return html;
+  }
 
   function renderTiePanel(fileStats) {
     const panel = document.getElementById('panel-tie');
@@ -1819,15 +1820,11 @@
 
     let allRecords = [];
     for (const fs of fileStats) {
+      for (const r of fs.records) {
+        r.sourceFile = fs.name;
+      }
       allRecords = allRecords.concat(fs.records);
     }
-
-    const totalPages = Math.ceil(fileStats.length / FILES_PER_PAGE);
-    if (currentTiePage > totalPages) currentTiePage = totalPages;
-    if (currentTiePage < 1) currentTiePage = 1;
-
-    const startIdx = (currentTiePage - 1) * FILES_PER_PAGE;
-    const pageFiles = fileStats.slice(startIdx, startIdx + FILES_PER_PAGE);
 
     const summaryDiv = document.createElement('div');
     summaryDiv.className = 'result-block';
@@ -1835,43 +1832,13 @@
     summaryDiv.innerHTML = `<div class="result-block-header">
       <div class="result-block-title">铁血模块 · 全部文件汇总</div>
       <div class="result-block-status"><span class="status-dot ok"></span>共 ${fileStats.length} 个文件</div>
-    </div>` + buildSummaryTable(fileStats, 'tie');
+    </div>` + buildTieSummaryTable(fileStats);
     panel.appendChild(summaryDiv);
 
-    const gridDiv = document.createElement('div');
-    gridDiv.className = 'file-grid';
-    for (const fs of pageFiles) {
-      const block = document.createElement('div');
-      block.className = 'result-block';
-      block.innerHTML = `<div class="result-block-header">
-        <div class="result-block-title">${escapeHtml(fs.name)}</div>
-        <div class="result-block-status"><span class="status-dot ok"></span>已解析</div>
-      </div>` + buildResultHTML(fs.name, { records: fs.records, moduleType: 'tie' });
-      gridDiv.appendChild(block);
-    }
-    panel.appendChild(gridDiv);
-
-    if (totalPages > 1) {
-      const pagDiv = document.createElement('div');
-      pagDiv.className = 'pagination-controls';
-      pagDiv.innerHTML = `
-        <button class="page-btn" id="tie-prev-btn" ${currentTiePage === 1 ? 'disabled' : ''}>‹ 上一页</button>
-        <span>第 <strong>${currentTiePage}</strong> / ${totalPages} 页</span>
-        <button class="page-btn" id="tie-next-btn" ${currentTiePage === totalPages ? 'disabled' : ''}>下一页 ›</button>
-      `;
-      panel.appendChild(pagDiv);
-
-      document.getElementById('tie-prev-btn').addEventListener('click', () => {
-        currentTiePage--;
-        renderTiePanel(fileStats);
-        panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-      document.getElementById('tie-next-btn').addEventListener('click', () => {
-        currentTiePage++;
-        renderTiePanel(fileStats);
-        panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-    }
+    const detailDiv = document.createElement('div');
+    detailDiv.className = 'full-width';
+    detailDiv.innerHTML = `<div class="section-title" style="margin-top:0;">三面详细记录（击杀数 &gt; 30）</div>` + buildTieDetailTable(allRecords);
+    panel.appendChild(detailDiv);
 
     const validRecords = allRecords
       .filter(r => !r.missing && Number.isFinite(r.openingExpectation))
@@ -1908,7 +1875,7 @@
       updateLineSelectionSummary(selectedExpectation);
       drawExpectationChart();
       drawProbabilityLineChart();
-      
+
       const lineCountEl = document.getElementById('lineChartCount');
       if (lineCountEl) {
         const nonZero = chartRecords.filter(r => r.kills !== 0).length;
@@ -1926,47 +1893,27 @@
       return;
     }
 
-    const totalPages = Math.ceil(fileStats.length / FILES_PER_PAGE);
-    if (currentTanPage > totalPages) currentTanPage = totalPages;
-    if (currentTanPage < 1) currentTanPage = 1;
-
-    const startIdx = (currentTanPage - 1) * FILES_PER_PAGE;
-    const pageFiles = fileStats.slice(startIdx, startIdx + FILES_PER_PAGE);
-
-    const gridDiv = document.createElement('div');
-    gridDiv.className = 'file-grid';
-    for (const fs of pageFiles) {
-      const block = document.createElement('div');
-      block.className = 'result-block';
-      block.innerHTML = `<div class="result-block-header">
-        <div class="result-block-title">${escapeHtml(fs.name)}</div>
-        <div class="result-block-status"><span class="status-dot ok"></span>已解析</div>
-      </div>` + buildResultHTML(fs.name, { records: fs.records, moduleType: 'tan' });
-      gridDiv.appendChild(block);
+    let allRecords = [];
+    for (const fs of fileStats) {
+      for (const r of fs.records) {
+        r.sourceFile = fs.name;
+      }
+      allRecords = allRecords.concat(fs.records);
     }
-    panel.appendChild(gridDiv);
 
-    if (totalPages > 1) {
-      const pagDiv = document.createElement('div');
-      pagDiv.className = 'pagination-controls';
-      pagDiv.innerHTML = `
-        <button class="page-btn" id="tan-prev-btn" ${currentTanPage === 1 ? 'disabled' : ''}>‹ 上一页</button>
-        <span>第 <strong>${currentTanPage}</strong> / ${totalPages} 页</span>
-        <button class="page-btn" id="tan-next-btn" ${currentTanPage === totalPages ? 'disabled' : ''}>下一页 ›</button>
-      `;
-      panel.appendChild(pagDiv);
+    const summaryDiv = document.createElement('div');
+    summaryDiv.className = 'result-block';
+    summaryDiv.style.marginTop = '0';
+    summaryDiv.innerHTML = `<div class="result-block-header">
+      <div class="result-block-title">弹指模块 · 全部文件汇总</div>
+      <div class="result-block-status"><span class="status-dot ok"></span>共 ${fileStats.length} 个文件</div>
+    </div>` + buildTanSummaryTable(fileStats);
+    panel.appendChild(summaryDiv);
 
-      document.getElementById('tan-prev-btn').addEventListener('click', () => {
-        currentTanPage--;
-        renderTanPanel(fileStats);
-        panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-      document.getElementById('tan-next-btn').addEventListener('click', () => {
-        currentTanPage++;
-        renderTanPanel(fileStats);
-        panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-    }
+    const detailDiv = document.createElement('div');
+    detailDiv.className = 'full-width';
+    detailDiv.innerHTML = `<div class="section-title" style="margin-top:0;">高倒计时详细记录（倒计时 &gt; 60）</div>` + buildTanDetailTable(allRecords);
+    panel.appendChild(detailDiv);
   }
 
   async function loadFromCurrentHandle() {
@@ -1991,7 +1938,7 @@
           const text = await file.text();
           const result = parseAll(text, type);
           if (result.records.length === 0) continue;
-          const stat = classifyRecords(result.records);
+          const stat = classifyRecords(result.records, type);
           const fileData = { name, records: result.records, stat };
           if (type === 'tie') tieFiles.push(fileData);
           else tanFiles.push(fileData);
@@ -2008,8 +1955,6 @@
     tieFiles.sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN', { numeric: true }));
     tanFiles.sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN', { numeric: true }));
 
-    currentTiePage = 1;
-    currentTanPage = 1;
     renderTiePanel(tieFiles);
     renderTanPanel(tanFiles);
 
@@ -2037,7 +1982,7 @@
           if (!type) { resolve(null); return; }
           const result = parseAll(text, type);
           if (result.records.length === 0) { resolve(null); return; }
-          const stat = classifyRecords(result.records);
+          const stat = classifyRecords(result.records, type);
           resolve({ name: file.name, records: result.records, stat, type });
         };
         reader.onerror = () => resolve(null);
@@ -2056,8 +2001,6 @@
       tieFiles.sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN', { numeric: true }));
       tanFiles.sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN', { numeric: true }));
 
-      currentTiePage = 1;
-      currentTanPage = 1;
       renderTiePanel(tieFiles);
       renderTanPanel(tanFiles);
 
@@ -2163,8 +2106,6 @@
     lineZoom = { x: null, y: null };
     isScatterPinned = false;
     isLinePinned = false;
-    currentTiePage = 1;
-    currentTanPage = 1;
     setStatus('未选择文件夹', '');
     showButtons({ pick: true, restore: false, reload: false, clear: false });
   }
