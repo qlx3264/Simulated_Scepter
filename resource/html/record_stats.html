@@ -25,28 +25,28 @@
     --badge-tan-fg: #a371f7;
 
     /* 分类颜色映射 */
-    --c-zero:  #6b7280;
-    --c-one:   #16a34a;
-    --c-two:   #eab308;
-    --c-three: #dc2626;
-    --c-line-two:   #eab308;
-    --c-line-three: #dc2626;
-    --c-line-combo: #ea580c;
+    --c-zero:  #6b7280;      /* 灰色 */
+    --c-one:   #16a34a;      /* 一面：绿色 */
+    --c-two:   #facc15;      /* 二面：亮黄色 */
+    --c-three: #dc2626;      /* 三面：红色 */
+    --c-line-two:   #facc15; /* 进二面折线：亮黄色 */
+    --c-line-three: #dc2626; /* 进三面折线：红色 */
+    --c-line-combo: #ea580c; /* 合计折线：橙色 */
 
     --pct-miss-bg:   rgba(110,118,129,.15);
-    --pct-miss-fg:   var(--gray);
+    --pct-miss-fg:   var(--gray); /* 缺失：灰色 */
     
     --pct-zero-bg:   rgba(139,152,165,.15);
-    --pct-zero-fg:   var(--text-dim);
+    --pct-zero-fg:   var(--text-dim); /* 0值：灰色 */
 
     --pct-one-bg:    rgba(22,163,74,.15);
-    --pct-one-fg:    var(--c-one);
+    --pct-one-fg:    var(--c-one); /* 一面：绿色 */
 
-    --pct-two-bg:    rgba(234,179,8,.15);
-    --pct-two-fg:    var(--c-two);
+    --pct-two-bg:    rgba(250,204,21,.2); /* 二面/普通倒计时背景：黄色 */
+    --pct-two-fg:    var(--c-two); /* 二面/普通倒计时前景：黄色 */
 
     --pct-three-bg:  rgba(220,38,38,.15);
-    --pct-three-fg:  var(--c-three);
+    --pct-three-fg:  var(--c-three); /* 三面：红色 */
 
     --chart-axis: #8b98a5;
     --chart-grid: #2e3844;
@@ -76,25 +76,26 @@
     --badge-tan-bg: rgba(130,80,223,.1);
     --badge-tan-fg: #8250df;
 
-    --c-zero:  #6e7781;
-    --c-one:   #1a7f37;
-    --c-two:   #9a6700;
-    --c-three: #cf222e;
-    --c-line-two:   #9a6700;
-    --c-line-three: #cf222e;
-    --c-line-combo: #bc4c00;
+    /* 亮色模式分类颜色 */
+    --c-zero:  #6e7781;      /* 灰色 */
+    --c-one:   #1a7f37;      /* 一面：绿色 */
+    --c-two:   #eab308;      /* 二面：黄色 */
+    --c-three: #cf222e;      /* 三面：红色 */
+    --c-line-two:   #eab308; /* 进二面折线：黄色 */
+    --c-line-three: #cf222e; /* 进三面折线：红色 */
+    --c-line-combo: #bc4c00; /* 合计折线：橙色 */
 
     --pct-miss-bg:   rgba(110,119,129,.12);
-    --pct-miss-fg:   var(--gray);
+    --pct-miss-fg:   var(--gray); /* 缺失：灰色 */
     
     --pct-zero-bg:   rgba(101,109,118,.12);
-    --pct-zero-fg:   var(--text-dim);
+    --pct-zero-fg:   var(--text-dim); /* 0值：灰色 */
 
     --pct-one-bg:    rgba(26,127,55,.1);
     --pct-one-fg:    var(--c-one);
 
-    --pct-two-bg:    rgba(154,103,0,.12);
-    --pct-two-fg:    var(--c-two);
+    --pct-two-bg:    rgba(234,179,8,.2);
+    --pct-two-fg:    #b45309; /* 深黄色文字，在白色背景上更清晰 */
 
     --pct-three-bg:  rgba(207,34,46,.1);
     --pct-three-fg:  var(--c-three);
@@ -442,7 +443,7 @@
       <button id="clearMemoBtn" class="memo-btn" style="display:none">✖ 清除记忆</button>
     </div>
     <div class="memo-hint" id="memoHint">
-      选择后自动读取文件夹中的 kill_record*.txt（铁血）和 countdown*.txt（弹指），下次打开自动恢复。
+      选择后自动读取文件夹中的 *kill_record*.txt（铁血）和 *countdown*.txt（弹指），下次打开自动恢复。
     </div>
   </div>
 
@@ -815,9 +816,6 @@
     `;
   }
 
-  // ============================================================
-  // 图表状态与逻辑
-  // ============================================================
   let chartRecords = [];
   let selectedExpectation = 0;
   let chartHover = null;
@@ -1824,7 +1822,6 @@
       allRecords = allRecords.concat(fs.records);
     }
 
-    // 分页计算
     const totalPages = Math.ceil(fileStats.length / FILES_PER_PAGE);
     if (currentTiePage > totalPages) currentTiePage = totalPages;
     if (currentTiePage < 1) currentTiePage = 1;
@@ -1832,7 +1829,6 @@
     const startIdx = (currentTiePage - 1) * FILES_PER_PAGE;
     const pageFiles = fileStats.slice(startIdx, startIdx + FILES_PER_PAGE);
 
-    // 1. 汇总表
     const summaryDiv = document.createElement('div');
     summaryDiv.className = 'result-block';
     summaryDiv.style.marginTop = '0';
@@ -1842,7 +1838,6 @@
     </div>` + buildSummaryTable(fileStats, 'tie');
     panel.appendChild(summaryDiv);
 
-    // 2. 分页文件网格
     const gridDiv = document.createElement('div');
     gridDiv.className = 'file-grid';
     for (const fs of pageFiles) {
@@ -1856,7 +1851,6 @@
     }
     panel.appendChild(gridDiv);
 
-    // 3. 分页控件
     if (totalPages > 1) {
       const pagDiv = document.createElement('div');
       pagDiv.className = 'pagination-controls';
@@ -1879,7 +1873,6 @@
       });
     }
 
-    // 4. 图表区域
     const validRecords = allRecords
       .filter(r => !r.missing && Number.isFinite(r.openingExpectation))
       .map(r => ({
