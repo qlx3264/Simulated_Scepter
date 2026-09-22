@@ -848,6 +848,7 @@ class MainWindow(QMainWindowLog):
     def open_record_stats(self):
         os.startfile(PATHS["root"] + "\\resource\\html\\record_stats.html")
 
+
     def save_iron_config(self):
         self.save_ui_settings()
         QMessageBox.information(self, "提示", "配置已保存")
