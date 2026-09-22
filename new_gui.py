@@ -240,7 +240,7 @@ class MainWindow(QMainWindowLog):
         self.Iron_blood_save_btn.clicked.connect(self.save_iron_config)
         self.Iron_blood_manual_settings_btn.clicked.connect(lambda: self.advanced_settings_stack.setCurrentWidget(self.iron_blood_manual_page))
         self.Iron_blood_manual_back_btn.clicked.connect(lambda: self.advanced_settings_stack.setCurrentWidget(self.advanced_settings_main_page))
-        self.Iron_blood_record_stats_btn.clicked.connect(self.open_iron_blood_record_stats)
+        self.record_stats_btn.clicked.connect(self.open_record_stats)
         self.Any_fate_save_btn.clicked.connect(self.save_any_fate_config)
         self.Finger_snap_save_btn.clicked.connect(self.save_finger_snap_config)
         self.Aboutupdatelock.clicked.connect(self.show_unlock_dialog)
@@ -845,8 +845,8 @@ class MainWindow(QMainWindowLog):
             return
         QMessageBox.information(self, "提示", "货币战争配置已保存")
 
-    def open_iron_blood_record_stats(self):
-        os.startfile(PATHS["root"] + "\\resource\\html\\iron_blood-record_stats.html")
+    def open_record_stats(self):
+        os.startfile(PATHS["root"] + "\\resource\\html\\record_stats.html")
 
     def save_iron_config(self):
         self.save_ui_settings()
