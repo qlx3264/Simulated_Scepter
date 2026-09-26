@@ -1,7 +1,5 @@
 import os
 
-import cv2 as cv
-
 from route import PATHS
 from tool.GLOBAL import key_mouse_manager
 from tool.log import CUS_LOGGER
@@ -15,61 +13,28 @@ class SilverWolfManager:
     秘技图标的识别都基于主循环的同一张截图，不重复截图。
     """
 
-    # 四个角色位的比例坐标
+    # 四个角色位的比例坐标（check 镜像坐标，对应屏幕原始坐标
+    # (0.9385, 0.2963)、(0.9385, 0.3833)、(0.9385, 0.4694)、(0.9385, 0.5565)）
     _SILVER_WOLF_POS = {
-        1: (0.9385, 0.2963),
-        2: (0.9385, 0.3833),
-        3: (0.9385, 0.4694),
-        4: (0.9385, 0.5565),
+        1: (0.0615, 0.7037),
+        2: (0.0615, 0.6167),
+        3: (0.0615, 0.5306),
+        4: (0.0615, 0.4435),
     }
-    # 秘技图标在四个角色位上的比例坐标
+    # 秘技图标在四个角色位上的比例坐标（check 镜像坐标）
     _BEAN_POS = {
-        1: (0.8464, 0.2944),
-        2: (0.8464, 0.3787),
-        3: (0.8464, 0.4657),
-        4: (0.8464, 0.5519),
+        1: (0.1536, 0.7056),
+        2: (0.1536, 0.6213),
+        3: (0.1536, 0.5343),
+        4: (0.1536, 0.4481),
     }
+    # 角色位与秘技图标识别阈值；队伍列表为亮底块状 UI，
+    # 低于该阈值时 TM_CCORR_NORMED 会把非银狼头像判为命中
+    _CHECK_THRESHOLD = 0.98
 
     def __init__(self, parent):
         self.parent = parent
         self.silver_wolf_slot = None
-
-    def _check_character(self, template_name, x_ratio, y_ratio, threshold=0.7, fresh=False):
-        """在固定比例坐标附近进行局部模板匹配。
-
-        Args:
-            template_name: resource/imgs 下的模板文件名，不含扩展名。
-            x_ratio: 匹配中心横坐标相对屏幕宽度的比例。
-            y_ratio: 匹配中心纵坐标相对屏幕高度的比例。
-            threshold: 相似度阈值。
-            fresh: 是否重新截图；False 时复用 self.parent.screen。
-
-        Returns:
-            匹配相似度是否达到阈值；模板缺失或截图区域不足时返回 False。
-        """
-        if fresh:
-            img = self.parent.get_screen()
-        else:
-            img = self.parent.screen
-        h, w = img.shape[:2]
-        px, py = int(x_ratio * w), int(y_ratio * h)
-        template_path = os.path.join(PATHS["root"], "resource", "imgs", template_name + ".jpg")
-        tpl = cv.imread(template_path, cv.IMREAD_GRAYSCALE)
-        if tpl is None:
-            CUS_LOGGER.error(f"模板文件不存在: {template_path}")
-            return False
-        th, tw = tpl.shape[:2]
-        x0 = max(0, px - tw)
-        y0 = max(0, py - th)
-        x1 = min(w, px + tw)
-        y1 = min(h, py + th)
-        if x1 - x0 < tw or y1 - y0 < th:
-            return False
-        roi = img[y0:y1, x0:x1]
-        roi_gray = cv.cvtColor(roi, cv.COLOR_BGR2GRAY)
-        res = cv.matchTemplate(roi_gray, tpl, cv.TM_CCOEFF_NORMED)
-        _, max_val, _, _ = cv.minMaxLoc(res)
-        return max_val >= threshold
 
     def is_silver_wolf_at(self, slot):
         """判断指定角色位是否处于银狼。
@@ -81,7 +46,9 @@ class SilverWolfManager:
             该位置是否为银狼。
         """
         x_ratio, y_ratio = self._SILVER_WOLF_POS[slot]
-        return self._check_character("silverwolf", x_ratio, y_ratio, threshold=0.85)
+        return self.parent.check(
+            "silverwolf", x_ratio, y_ratio, threshold=self._CHECK_THRESHOLD
+        )
 
     def find_silver_wolf_slot(self):
         """在当前主循环截图中找出银狼所在角色位。
@@ -104,7 +71,9 @@ class SilverWolfManager:
             该位置是否显示秘技图标。
         """
         x_ratio, y_ratio = self._BEAN_POS[slot]
-        return self._check_character("bean", x_ratio, y_ratio, threshold=0.7)
+        return self.parent.check(
+            "bean", x_ratio, y_ratio, threshold=self._CHECK_THRESHOLD
+        )
 
     def should_skip_skill(self):
         """判断是否应跳过秘技、改用普通攻击以保留秘技点。
