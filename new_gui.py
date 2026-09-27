@@ -653,6 +653,25 @@ class MainWindow(QMainWindowLog):
         with EXTRA.FILE_LOCK:
             with open(settings_path, encoding="UTF-8") as file:
                 data = json.load(file)
+
+        # 兼容旧版银狼秘技存储格式
+        settings_changed = False
+        silver_wolf_switch = data.get("silver_wolf_switch")
+        if silver_wolf_switch is None:
+            silver_wolf_switch = 1
+            data["silver_wolf_switch"] = silver_wolf_switch
+            settings_changed = True
+        elif isinstance(silver_wolf_switch, str):
+            silver_wolf_switch = {"一号位":1,"二号位":2}.get(silver_wolf_switch, 1)
+            data["silver_wolf_switch"] = silver_wolf_switch
+            settings_changed = True
+
+        # 如果配置发生变化，则写回 settings.json
+        if settings_changed:
+            with EXTRA.FILE_LOCK:
+                with open(settings_path, mode="w", encoding="UTF-8") as file:
+                    json.dump(data, file, ensure_ascii=False, indent=4)
+
         self.recording_checkBox.setChecked(data.get("recording_state", False))
         self.early_stop_checkbox.setChecked(data.get("early_stop", False))
         self.Iron_blood_first_plane_input.setText(str(data.get("first_plane", 14)))
@@ -667,7 +686,9 @@ class MainWindow(QMainWindowLog):
         self.Iron_blood_interact_time_input.setText(str(data.get("max_interact_time", 40)))
         self.pig_switch_2_role.setChecked(data.get("pig_switch_2_role", False))
         self.silver_wolf_enable.setChecked(data.get("silver_wolf_enable", False))
-        self.silver_wolf_switch_combo.setCurrentIndex(data.get("silver_wolf_switch", False))
+        silver_wolf_switch_index = self.silver_wolf_switch_combo.findData(data["silver_wolf_switch"])
+        if silver_wolf_switch_index >= 0:
+            self.silver_wolf_switch_combo.setCurrentIndex(silver_wolf_switch_index)
         self.auto_attack_breakable.setChecked(data.get("auto_attack_breakable", False))
         self.debug_checkbox2.setChecked(data.get("debug", False))
         self.record_event_map_checkbox.setChecked(data.get("record_event_map", False))
