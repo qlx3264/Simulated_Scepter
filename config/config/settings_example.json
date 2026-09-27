@@ -14,6 +14,8 @@
     "max_run_time": 0,
     "max_interact_time": 40,
     "pig_switch_2_role": false,
+    "silver_wolf_enable": false,
+    "silver_wolf_switch": 1,
     "auto_attack_breakable": false,
     "hotkeys": {
         "stop": "f5",
