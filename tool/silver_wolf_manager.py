@@ -125,7 +125,7 @@ class SilverWolfManager:
         if not (in_trigger or in_pig):
             return False
         # 精英即使带扑满角标也按普通触发区域处理
-        pig_only = in_pig and "精英" not in self.parent.area
+        pig_only = in_pig and "战斗" in self.parent.area
 
         skill_num = match_skill_numbers_in_region(self.parent.screen)
         if skill_num is None:
