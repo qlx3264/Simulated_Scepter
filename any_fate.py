@@ -133,6 +133,7 @@ class AnyFateUniverse(SimulatedUniverse):
         self.native_special_map_root = None
         self.loaded_map_root = None
         self.current_role = 1  # 当前控制角色序号
+        self.start_nodes = None # 当前路径起始节点，try_analysis_map中更新
         self.silver_wolf_manager = SilverWolfManager(self)
         self.now_area=[]
         CUS_LOGGER.info("宇宙的中心有一团火种,它愈烧愈旺,直至燃尽整片星河。")
@@ -204,23 +205,21 @@ class AnyFateUniverse(SimulatedUniverse):
 
     def is_pig_node(self):
         """当前节点是否为祝福扑满。"""
-        start_node = getattr(self, 'start_nodes', None)
-        if start_node is None:
+        if self.start_nodes is None:
             return False
-        corner_marker = (start_node.get('orig') or {}).get('corner_marker')
+        corner_marker = (self.start_nodes.get('orig') or {}).get('corner_marker')
         return bool(corner_marker) and corner_marker.get('name') in ('pig1', 'pig2')
 
     def switch_to_configured_role(self):
         """按 silver_wolf_switch 配置切换到指定角色位。"""
-        switch_text = self.opt.get("silver_wolf_switch", "一号位")
-        target = {"一号位": 1, "二号位": 2, "三号位": 3, "四号位": 4}.get(switch_text, 1)
-        CUS_LOGGER.debug(f"按设置切至{switch_text}（键位 {target}）")
-        self.switch_current_role(target)
+        switch_target = self.opt.get("silver_wolf_switch", 1)
+        CUS_LOGGER.debug(f"按设置切至{switch_target}号位")
+        self.switch_current_role(switch_target)
         self.quan = 0
         self.bai_e = 0
 
     def use_e(self, face=False, fixed=False):
-        """使用秘技；银狼位于非一号位且银狼秘技开关勾选时，改用普通攻击以保留秘技点。"""
+        """使用秘技；银狼秘技勾选，一号位为黄泉/白厄且秘技点不足银狼释放时，改用普通攻击以保留秘技点。"""
         if not fixed and self.silver_wolf_manager.should_skip_skill():
             CUS_LOGGER.debug("银狼秘技：为保留秘技点，本次改为普通攻击")
             key_mouse_manager.click(0.5, 0.5)
