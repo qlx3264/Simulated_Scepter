@@ -659,6 +659,11 @@ class MainWindow(QMainWindowLog):
         self.Iron_blood_max_run_input.setText(str(int(data.get("max_run_time", 0))))
         self.Iron_blood_interact_time_input.setText(str(data.get("max_interact_time", 40)))
         self.pig_switch_2_role.setChecked(data.get("pig_switch_2_role", False))
+        self.silver_wolf_enable.setChecked(data.get("silver_wolf_enable", True))
+        silver_wolf_switch = data.get("silver_wolf_switch", "一号位")
+        switch_idx = self.silver_wolf_switch_combo.findText(silver_wolf_switch)
+        if switch_idx >= 0:
+            self.silver_wolf_switch_combo.setCurrentIndex(switch_idx)
         self.auto_attack_breakable.setChecked(data.get("auto_attack_breakable", False))
         self.debug_checkbox2.setChecked(data.get("debug", False))
         self.record_event_map_checkbox.setChecked(data.get("record_event_map", False))
@@ -859,6 +864,9 @@ class MainWindow(QMainWindowLog):
         self.Iron_blood_boss_before_pause_input.setEnabled(early_stop_enabled)
         recording_enabled = self.recording_checkBox2.isChecked()
         self.recording_time_input.setEnabled(recording_enabled)
+        self.silver_wolf_switch_combo.setEnabled(
+            self.pig_switch_2_role.isChecked() or self.silver_wolf_enable.isChecked()
+        )
         debug_enabled = self.debug_checkbox2.isChecked()
         debug_and_recording = debug_enabled and recording_enabled
         self.debug_group.setVisible(debug_enabled)
@@ -869,10 +877,13 @@ class MainWindow(QMainWindowLog):
         self.finger_snap_btn.setVisible(finger_snap_visible)
         self.Finger_snap_group.setVisible(finger_snap_visible)
 
+
     def connect_dependency_signals(self):
         self.debug_checkbox2.stateChanged.connect(lambda: self.update_dependent_controls_state())
         self.recording_checkBox2.stateChanged.connect(lambda: self.update_dependent_controls_state())
         self.early_stop_checkbox.stateChanged.connect(lambda: self.update_dependent_controls_state())
+        self.pig_switch_2_role.stateChanged.connect(lambda: self.update_dependent_controls_state())
+        self.silver_wolf_enable.stateChanged.connect(lambda: self.update_dependent_controls_state())
 
     def eventFilter(self, obj, event):
         """
