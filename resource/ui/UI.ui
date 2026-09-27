@@ -1407,16 +1407,6 @@ border:none</string>
                        <property name="toolTip">
                         <string>若银狼位于非一号位，战斗扑满信标区域无秘技点时也会切换至所选位置抓扑满</string>
                        </property>
-                       <item>
-                        <property name="text">
-                         <string>一号位</string>
-                        </property>
-                       </item>
-                       <item>
-                        <property name="text">
-                         <string>二号位</string>
-                        </property>
-                       </item>
                       </widget>
                      </item>
                     </layout>
