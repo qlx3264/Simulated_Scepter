@@ -14,6 +14,8 @@
     "max_run_time": 0,
     "max_interact_time": 40,
     "pig_switch_2_role": false,
+    "silver_wolf_enable": false,
+    "silver_wolf_switch": 1,
     "auto_attack_breakable": false,
     "hotkeys": {
         "stop": "f5",
@@ -24,6 +26,7 @@
     "debug": false,
     "record_event_map": false,
     "recording_keep_long_run": true,
+    "recording_keep_long_run_threshold": 1.2,
     "record_add_label": false,
     "finger_snap_model": {
         "control_rollouts": 10000,
