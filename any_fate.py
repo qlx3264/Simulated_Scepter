@@ -288,6 +288,7 @@ class AnyFateUniverse(SimulatedUniverse):
                                 cast = not bean and self.skill_num >= 1
                                 release = False
                             if cast:
+                                key_mouse_manager.sleep(0.6)
                                 key_mouse_manager.press('e')
                                 CUS_LOGGER.debug("已施放银狼秘技")
                                 key_mouse_manager.sleep(0.6)
