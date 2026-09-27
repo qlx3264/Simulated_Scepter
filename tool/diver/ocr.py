@@ -4,6 +4,7 @@ import shutil
 import numpy as np
 import yaml
 
+from route import PATHS
 from tool.log import CUS_LOGGER
 from tool.onnxocr.onnx_paddleocr import ONNXPaddleOcr
 from tool.public_ocr import box_contain, filter_non_white, merge, sort_text
@@ -51,8 +52,8 @@ class My_TS:
         for txt in text:
             for res in self.res:
                 if res['raw_text'] in txt or txt in res['raw_text']:
-                    print("识别到文本：",txt,"匹配文本：",self.text)
-                    ans.append({'text':text, **res})
+                    CUS_LOGGER.debug(f"识别到文本：{txt}, 匹配文本：{self.text}")
+                    ans.append({'text': text, **res})
         return sorted(ans, key=lambda x: x['score'], reverse=True)
 
     def find_text(self, img, text, find_all=False):
@@ -146,8 +147,8 @@ class text_keys:
                            '偏时引燃的炬火', '延迟衍射的烛光', '金属斑驳的华盖', '线圈编制的罗琦', '管道交错的桂冠']
         self.secondary = ['巡猎', '毁灭', '丰饶']
         try:
-            config_file = 'info.yml'
-            example_file = 'config/config/info_example.yml'
+            config_file = os.path.join(PATHS["config"], 'info.yml')
+            example_file = os.path.join(PATHS["config"], 'info_example.yml')
             if not os.path.exists(config_file):
                 if os.path.exists(example_file):
                     shutil.copy2(example_file, config_file)

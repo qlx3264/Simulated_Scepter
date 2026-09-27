@@ -625,6 +625,13 @@ class MainWindow(QMainWindowLog):
             )
             self.Currency_prior_exit_plane_combo.setCurrentIndex(prior_exit_plane_index)
 
+        SILVER_WOLF_SWITCH = (1, 2)
+        for silver_wolf_switch in SILVER_WOLF_SWITCH:
+            self.silver_wolf_switch_combo.addItem(
+                f"{silver_wolf_switch}号位",
+                silver_wolf_switch,
+            )
+
         # 连接配置保存按钮
         self.config_save_btn.clicked.connect(self.save_config)
         self.Currency_save_btn.clicked.connect(self.save_currency_config)
@@ -660,10 +667,7 @@ class MainWindow(QMainWindowLog):
         self.Iron_blood_interact_time_input.setText(str(data.get("max_interact_time", 40)))
         self.pig_switch_2_role.setChecked(data.get("pig_switch_2_role", False))
         self.silver_wolf_enable.setChecked(data.get("silver_wolf_enable", False))
-        self.silver_wolf_switch.setText(data.get("silver_wolf_switch", "一号位")) ////这里要改成按数字来显示
-        switch_idx = self.silver_wolf_switch_combo.findText(silver_wolf_switch)
-        if switch_idx >= 0:
-            self.silver_wolf_switch_combo.setCurrentIndex(switch_idx)
+        self.silver_wolf_switch_combo.setCurrentIndex(data.get("silver_wolf_switch", False))
         self.auto_attack_breakable.setChecked(data.get("auto_attack_breakable", False))
         self.debug_checkbox2.setChecked(data.get("debug", False))
         self.record_event_map_checkbox.setChecked(data.get("record_event_map", False))
@@ -1249,7 +1253,7 @@ class MainWindow(QMainWindowLog):
             "max_interact_time": int(self.Iron_blood_interact_time_input.text()),
             "pig_switch_2_role": self.pig_switch_2_role.isChecked(),
             "silver_wolf_enable": self.silver_wolf_enable.isChecked(),
-            "silver_wolf_switch": self.silver_wolf_switch. ////congcongzai 这里要改为按数字来显示
+            "silver_wolf_switch": self.silver_wolf_switch_combo.currentData(),
             "auto_attack_breakable": self.auto_attack_breakable.isChecked(),
         })
 

@@ -596,7 +596,7 @@ class SimulatedUniverse(UniverseUtils):
             if ft != self.fate or i == len(self.tk.secondary):
                 img_down = self.get_small_interaction_img(x=0.5042, y=0.3204, mask="mask", fresh=True)
                 if self.debug == 2:
-                    print(list(st), self.tk.secondary)
+                    CUS_LOGGER.debug(f"St: {list(st)}, Secondary: {self.tk.secondary}")
                 res_down = self.ts.split_and_find(list(st), img_down, mode="bless")
                 if res_down[1] == 2:
                     key_mouse_manager.click(*self.calc_point((0.5042, 0.3204), res_down[0]))
@@ -801,7 +801,7 @@ class SimulatedUniverse(UniverseUtils):
         备份文件从项目目录下的config/backup文件夹中读取。
         """
         try:
-            backup_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config", "backup")
+            backup_dir = os.path.join(os.path.dirname(PATHS["config"], "backup"))
 
             # 从磁盘读取 big_map 图像文件
             backup_file = os.path.join(backup_dir, "big_map_backup.png")
@@ -1246,7 +1246,10 @@ class SimulatedUniverse(UniverseUtils):
         if self.record and self.bveerelbcpgyqan :
             CUS_LOGGER.info("以「爱」的名义，她将逝去的一切尽数珍藏……直到世间的尽头……")
             try:
-                self.recorder.stop_recording()
+                if hasattr(self, "kill_count"):
+                    self.recorder.stop_recording(delete_video=self.kill_count == 0)
+                else:
+                    self.recorder.stop_recording()
             except Exception as e:
                 CUS_LOGGER.error(f"停止录制时发生错误: {e}")
         self.save_screen(not_now=True,save_path="/temp/stop/")
