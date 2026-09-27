@@ -39,5 +39,7 @@
         "stop": "f5",
         "test": "f6",
         "print": "f7"
-    }
+    },
+    "silver_wolf_enable": true,
+    "silver_wolf_switch": "一号位"
 }

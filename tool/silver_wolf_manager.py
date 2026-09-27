@@ -1,6 +1,3 @@
-import os
-
-from route import PATHS
 from tool.GLOBAL import key_mouse_manager
 from tool.log import CUS_LOGGER
 from tool.utils.ocr_num import match_skill_numbers_in_region
@@ -9,8 +6,8 @@ from tool.utils.ocr_num import match_skill_numbers_in_region
 class SilverWolfManager:
     """银狼秘技：在触发区域内切换到银狼并释放秘技。
 
-    银狼所在角色位在首次进入触发区域时判断并缓存，之后复用；秘技点与
-    秘技图标的识别都基于主循环的同一张截图，不重复截图。
+    银狼所在角色位在首次调用时判断并缓存，0 表示已判断未发现银狼；
+    秘技点与秘技图标的识别优先复用主循环截图。
     """
 
     # 四个角色位的比例坐标（check 镜像坐标，对应屏幕原始坐标）
@@ -36,28 +33,16 @@ class SilverWolfManager:
         self.parent = parent
         self.silver_wolf_slot = None
 
-    def is_silver_wolf_at(self, slot):
-        """判断指定角色位是否处于银狼。
-
-        Args:
-            slot: 角色位序号（1~4）。
-
-        Returns:
-            该位置是否为银狼。
-        """
-        x_ratio, y_ratio = self._SILVER_WOLF_POS[slot]
-        return self.parent.check(
-            "silverwolf", x_ratio, y_ratio, threshold=self._CHECK_THRESHOLD
-        )
-
     def find_silver_wolf_slot(self):
         """在当前主循环截图中找出银狼所在角色位。
 
         Returns:
             银狼所在角色位序号（1~4）；未找到返回 None。
         """
-        for slot in self._SILVER_WOLF_POS:
-            if self.is_silver_wolf_at(slot):
+        for slot, (x_ratio, y_ratio) in self._SILVER_WOLF_POS.items():
+            if self.parent.check(
+                "silverwolf", x_ratio, y_ratio, threshold=self._CHECK_THRESHOLD
+            ):
                 return slot
         return None
 
@@ -78,15 +63,17 @@ class SilverWolfManager:
     def should_skip_skill(self):
         """判断是否应跳过秘技、改用普通攻击以保留秘技点。
 
-        仅在二号位银狼秘技开启、且一号位为黄泉或白厄时生效：
+        仅在银狼秘技开启、队伍中已识别到银狼、且一号位为黄泉或白厄时生效：
         - 黄泉：剩余秘技点 ≤ 1 时跳过
         - 白厄：剩余秘技点 ≤ 2 时跳过
 
         Returns:
-            True 表示应跳过秘技直接平A；未开启银狼、非黄泉/白厄、
-            识别失败时返回 False，保持原行为。
+            True 表示应跳过秘技直接平A；未开启银狼、未识别到银狼、
+            非黄泉/白厄、识别失败时返回 False，保持原行为。
         """
         if not self.parent.opt.get("silver_wolf_enable", False):
+            return False
+        if not self.silver_wolf_slot:
             return False
         if self.parent.quan:
             threshold = 1
@@ -100,7 +87,7 @@ class SilverWolfManager:
         return skill_num <= threshold
 
     def activate(self):
-        """确保银狼位置缓存，并在触发区内切换到 2/3/4 号位银狼。
+        """判断银狼位置缓存，并在触发区内切换到 2/3/4 号位银狼。
 
         位置缓存只在首次调用时判断，0 表示已判断未发现银狼；一号位与
         未识别到银狼的情况由调用方处理。
@@ -147,7 +134,8 @@ class SilverWolfManager:
                 self.parent.switch_to_configured_role()
                 return True
             CUS_LOGGER.debug("银狼秘技：秘技点为 0，切回一号位")
-            self.parent.switch_current_role(1)
+            key_mouse_manager.press("1")
+            key_mouse_manager.wait()
             return True
 
         self.parent.switch_current_role(self.silver_wolf_slot)
