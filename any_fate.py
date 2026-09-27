@@ -152,7 +152,7 @@ class AnyFateUniverse(SimulatedUniverse):
         super().end_of_university()
         self.run_start_time = time.time()  # 开始下一局计时
         self.need_end=False
-        self.silver_wolf_manager.silver_wolf_slot = None
+        self.silver_wolf_manager.silver_wolf_slot = None  # 重置银狼位置缓存
         self.init_map()
         CUS_LOGGER.info(f'{factor}再度踏上轮回……')
 
