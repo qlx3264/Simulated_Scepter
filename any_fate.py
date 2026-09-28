@@ -197,7 +197,8 @@ class AnyFateUniverse(SimulatedUniverse):
         if self.current_role != num:
             key_mouse_manager.press(f"{num}")
             self.current_role = num
-            key_mouse_manager.wait()
+            CUS_LOGGER.debug(f"已切换至{num}号位角色")
+            key_mouse_manager.sleep(0.6)
             return True
         else:
             return False
@@ -248,7 +249,7 @@ class AnyFateUniverse(SimulatedUniverse):
                 self.area=merge_text(ocr_text) if len(ocr_text) else ""
                 CUS_LOGGER.debug(f"当前区域{self.area}")
                 # 当前节点为祝福扑满且非精英区域时，根据开关决定切人策略
-                pig = self.is_pig_node() and "精英" not in self.area
+                pig = self.is_pig_node() and "战斗" in self.area
                 if pig:
                     CUS_LOGGER.info("梦中那刺骨的愤怒与对自我的憎恨仍在震动着他的心。")
                 if self.opt.get("silver_wolf_enable", False):
@@ -263,8 +264,7 @@ class AnyFateUniverse(SimulatedUniverse):
                 else:
                     self.switch_current_role(num=1)
                 if "黑塔的办公" not in self.area:
-                    key_mouse_manager.clean()
-                    # 歪比巴卜：空打一拳
+                    # 空打一拳，5秒内不重复操作
                     if self.auto_attack_breakable and time.time() - self.attack_time >= 5:
                         key_mouse_manager.click(0.5, 0.5)
                         CUS_LOGGER.debug("尝试空打一拳")
