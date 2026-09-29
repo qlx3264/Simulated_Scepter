@@ -139,6 +139,9 @@
                     1585,
                     972
                 ]
+            },
+            {
+                "set_state": "start_currencywar"
             }
         ]
     },
@@ -164,9 +167,6 @@
             },
             {
                 "sleep": 1
-            },
-            {
-                "set_state": "switched"
             }
         ]
     },
@@ -181,8 +181,7 @@
                 973
             ],
             "interval": 1,
-            "redundancy": 30,
-            "condition": "switched"
+            "redundancy": 30
         },
         "actions": [
             {
@@ -197,39 +196,20 @@
         ]
     },
     {
-        "name": "选择难度后开始对局",
+        "name": "判断超频博弈难度",
         "trigger": {
-            "text": "开局时获得",
+            "text": "开始对局",
             "box": [
-                752,
-                1060,
-                378,
-                409
+                1643,
+                1742,
+                946,
+                973
             ],
             "interval": 1,
-            "redundancy": 30,
-            "condition": "difficulty_select"
+            "redundancy": 30
         },
         "actions": [
-            "complete_difficulty_selection"
-        ]
-    },
-    {
-        "name": "选择难度",
-        "trigger": {
-            "text": "敌人难度",
-            "box": [
-                499,
-                588,
-                987,
-                1014
-            ],
-            "interval": 5,
-            "redundancy": 30,
-            "condition": "difficulty_select"
-        },
-        "actions": [
-            "select_difficulty_start"
+            "handle_difficulty_selection"
         ]
     },
     {
@@ -317,6 +297,9 @@
                     1185,
                     670
                 ]
+            },
+            {
+                "set_state": "startbattle"
             }
         ]
     },
@@ -548,23 +531,12 @@
         },
         "actions": [
             {
-                "set_state": "none"
-            },
-            {
                 "position": [
                     978,
                     671
                 ]
             },
-            {
-                "sleep": 1
-            },
-            {
-                "press": "esc"
-            },
-            {
-                "set_state": "startbattle"
-            }
+            "front_area_no_character"
         ]
     },
     {
@@ -624,7 +596,7 @@
             ],
             "interval": 3,
             "redundancy": 60,
-            "condition": "startbattle"
+            "condition": "currency_main"
         },
         "actions": [
             {
@@ -647,7 +619,7 @@
             ],
             "interval": 3,
             "redundancy": 60,
-            "condition": "startbattle"
+            "condition": "currency_main"
         },
         "actions": [
             {
@@ -659,7 +631,27 @@
         ]
     },
     {
-        "name": "继续挑战",
+        "name": "战斗中",
+        "trigger": {
+            "text": "伤害",
+            "box": [
+                1793,
+                1833,
+                209,
+                231
+            ],
+            "interval": 3,
+            "redundancy": 30,
+            "condition": "currency_main"
+        },
+        "actions": [
+            {
+                "set_state": "startbattle"
+            }
+        ]
+    },
+    {
+        "name": "战斗结束后",
         "trigger": {
             "text": "继续挑战",
             "box": [
@@ -669,7 +661,8 @@
                 910
             ],
             "interval": 2,
-            "redundancy": 30
+            "redundancy": 30,
+            "condition": "startbattle"
         },
         "actions": [
             {
@@ -677,7 +670,8 @@
                     960,
                     894
                 ]
-            }
+            },
+            "handle_battle_finished"
         ]
     },
     {
@@ -688,24 +682,11 @@
                 "x": 0.9891,
                 "y": 0.1491
             },
-            "threshold": 0.9
+            "threshold": 0.9,
+            "condition": "startbattle"
         },
         "actions": [
             "auto_battle"
-        ]
-    },
-    {
-        "name": "大世界",
-        "trigger": {
-            "photo": "smartphone",
-            "pos": {
-                "x": 0.9833,
-                "y": 0.9380
-            },
-            "threshold": 0.96
-        },
-        "actions": [
-            "goto_currency"
         ]
     },
     {
@@ -719,7 +700,7 @@
                 66
             ],
             "redundancy": 30,
-            "condition": "init"
+            "condition": "goto_currency"
         },
         "actions": [
             {
@@ -729,8 +710,25 @@
                 ]
             },
             {
-                "set_state": "init2"
+                "set_state": "goto_currency"
             }
+        ]
+    },
+    {
+        "name": "大世界",
+        "trigger": {
+            "photo": "smartphone",
+            "pos": {
+                "x": 0.9833,
+                "y": 0.9380
+            },
+            "threshold": 0.96
+        },
+        "actions": [
+            {
+                "set_state": "goto_currency"
+            },
+            "goto_currency"
         ]
     },
     {
@@ -754,8 +752,19 @@
                 ]
             },
             {
-                "set_state": "currency_room"
+                "set_state": "start_currencywar"
             }
+        ]
+    },
+    {
+        "name": "开始退出",
+        "trigger": {
+            "condition": "exit",
+            "once": true,
+            "state_only": true
+        },
+        "actions": [
+            "exit"
         ]
     },
     {
@@ -769,7 +778,8 @@
                 756
             ],
             "interval": 2,
-            "redundancy": 30
+            "redundancy": 30,
+            "condition": "exit"
         },
         "actions": [
             {
@@ -791,7 +801,8 @@
                 912
             ],
             "interval": 2,
-            "redundancy": 30
+            "redundancy": 30,
+            "condition": "exit"
         },
         "actions": [
             {
@@ -813,7 +824,8 @@
                 913
             ],
             "interval": 2,
-            "redundancy": 30
+            "redundancy": 30,
+            "condition": "exit"
         },
         "actions": [
             {
@@ -835,7 +847,8 @@
                 913
             ],
             "interval": 2,
-            "redundancy": 30
+            "redundancy": 30,
+            "condition": "exit"
         },
         "actions": [
             {

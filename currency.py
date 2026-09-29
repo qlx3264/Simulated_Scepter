@@ -72,6 +72,10 @@ class SimulatedCurrency(CurrencyUtils):
         self.max_refresh = 1
         # 运行次数
         self.count = 0
+        # 是否需要退出
+        self.exit_requested = False
+        # 是否已开始退出
+        self.exit_started = False
 
         priority = load_currency_settings()["priority"]
 
@@ -161,14 +165,20 @@ class SimulatedCurrency(CurrencyUtils):
                 shot_saved = False
                 continue
             # 无人命中超过10秒时记录整屏文字并留一张截图；战斗中长时间无触发属正常，跳过
-            if time.time () - silent_time > 10:
-                silent_time = time.time ()
-                # 战斗判定复用 tool/simul/utils.py：模板是右下角的“行动中”文字（check 内坐标取反）
-                if self.check("auto_2", 0.0583, 0.0769):
+            if time.time() - silent_time > 10:
+                silent_time = time.time()
+
+                # startbattle 是一个允许长时间无 OCR 触发的等待状态
+                if self.state == "startbattle":
                     continue
+
+                # 其他状态保持原来的 10 秒异常诊断逻辑
                 screen_text = " ".join(
                     res["raw_text"]
-                    for res in self.ts.find_with_box([0, 1920, 0, 1080], redundancy=0)
+                    for res in self.ts.find_with_box(
+                        [0, 1920, 0, 1080],
+                        redundancy=0
+                    )
                 )
                 CUS_LOGGER.warning("连续10秒无任何触发，当前屏幕文字：%s", screen_text)
                 if not shot_saved:
@@ -201,30 +211,23 @@ class SimulatedCurrency(CurrencyUtils):
                 forward=1,
             )
             merged = merge_text (text_list)
-            CUS_LOGGER.info (f"OCR 识别结果: {merged}")
+            CUS_LOGGER.debug(f"OCR 识别结果: {merged}")
             return "开局时获得" in merged
         except Exception:
-            CUS_LOGGER.info ("正在选择难度1")
+            CUS_LOGGER.info("正在选择难度1")
             return False
 
-    def complete_difficulty_selection(self):
-        if self.state != "difficulty_select":
-            CUS_LOGGER.info(f"难度选择已结束，当前状态：{self.state}")
-            return True
-
-        key_mouse_manager.clean()
-        key_mouse_manager.click(1692, 965, force=True) # “开始对局”按钮坐标
-        key_mouse_manager.wait()
-        self.update_state("startbattle")
-        return True
-
     def select_difficulty_start (self):
+
         if self.state != "difficulty_select":
             CUS_LOGGER.info(f"停止选择难度，当前状态：{self.state}")
             return True
 
         key_mouse_manager.clean()
         for attempt in range(self.DIFFICULTY_MAX_STEPS + 1):
+            if self._stop:
+                CUS_LOGGER.info("检测到停止标志，停止选择难度")
+                return True
             if self.state != "difficulty_select":
                 CUS_LOGGER.info(f"停止选择难度，当前状态：{self.state}")
                 return True
@@ -246,6 +249,37 @@ class SimulatedCurrency(CurrencyUtils):
 
         CUS_LOGGER.warning("达到向下选择上限，仍未识别到难度1；停止点击并等待下一轮识别")
         return False
+
+    def handle_difficulty_selection(self):
+        if self.state not in (None, "difficulty_select"):
+            return 0
+
+        self.update_state("difficulty_select")
+        self.get_screen()
+
+        if self.is_one():
+            CUS_LOGGER.info("已处于目标难度，直接开始对局")
+            return self.complete_difficulty_selection()
+
+        CUS_LOGGER.info("未处于目标难度，开始选择难度")
+        return self.select_difficulty_start()
+
+    def complete_difficulty_selection(self):
+        if self.state != "difficulty_select":
+            CUS_LOGGER.info(f"难度选择已结束，当前状态：{self.state}")
+            return True
+
+        key_mouse_manager.clean()
+        key_mouse_manager.click(1692, 965, force=True) # “开始对局”按钮坐标
+        key_mouse_manager.wait()
+        self.exit_plane = self.set_exit_plane
+        self.prior_environment_found = False
+        self.exit_requested = False
+        self.exit_started = False
+        self.run_history.start_run()
+        CUS_LOGGER.info("货币战争对局计时开始")
+        self.update_state("currency_main")
+        return True
 
     def auto_battle(self):
         # 需要打开自动战斗
@@ -535,7 +569,6 @@ class SimulatedCurrency(CurrencyUtils):
         key_mouse_manager.click (centers[selected_idx][0], centers[selected_idx][1])
         time.sleep (0.1)
 
-        self.update_state ("escshop")
         self.click_text (text = "确认", box = [948, 1005, 968, 999], click = True)
         time.sleep (5)
         CUS_LOGGER.info ("投资策略选择完成")
@@ -557,27 +590,27 @@ class SimulatedCurrency(CurrencyUtils):
         )
 
         if self.investment_tracker.should_exit(self.exit_plane):
-            CUS_LOGGER.info(f"达到退出位面（{self.exit_plane}面），按两次 ESC 退出当前对局，然后重开")
-            self.update_state ("escshop")
-            key_mouse_manager.press('esc') # 关闭商店
-            time.sleep(1)
-            self.ts.forward (self.get_screen ())
+            CUS_LOGGER.info(f"达到退出位面（{self.exit_plane}面），尝试重开")
+            self.exit_requested = True
+            self.update_state("exit")
 
-            if self.exit_plane == 1:
-                battle_box = [724, 760, 77, 104]
-            elif self.exit_plane in (2, 3):
-                battle_box = [569, 608, 80, 104]
-            else:
-                battle_box = [724, 760, 77, 104] # 默认使用第一个（保险）
+        return 1
 
-            if self.click_text (text = "战斗", box = battle_box, click = False, allow_fail = True):
-                CUS_LOGGER.info ("进入主界面，按 ESC 重开")
-                key_mouse_manager.press('esc')
-                time.sleep(1)
-            else:
-                self.update_state ("startbattle")
-
-        self.update_state ("startbattle")
+    def drag_characters(self):
+        '''用于拖拽角色'''
+        time.sleep(1)
+        key_mouse_manager.drag(
+            0.7703, 0.1569, 0.6107, 0.6306
+        )
+        time.sleep(1.5)
+        key_mouse_manager.drag(
+            0.7047, 0.1560, 0.5354, 0.6310
+        )
+        time.sleep(1.5)
+        key_mouse_manager.drag(
+            0.6396, 0.1551, 0.4617, 0.6310
+        )
+        time.sleep(1.5)
         return 1
 
     def handle_1_1_reward(self):
@@ -585,37 +618,110 @@ class SimulatedCurrency(CurrencyUtils):
 
         if self.prior_environment_found or not self.exit_if_no_prior:
             CUS_LOGGER.info("进入1-1，准备拖动")
-            time.sleep(5.5)
-            key_mouse_manager.drag(
-                0.7703, 0.1569, 0.6107, 0.6306
-            )
-            time.sleep(1.5)
-            key_mouse_manager.drag(
-                0.7047, 0.1560, 0.5354, 0.6310
-            )
-            time.sleep(1.5)
-            key_mouse_manager.drag(
-                0.6396, 0.1551, 0.4617, 0.6310
-            )
-            time.sleep(1)
+            time.sleep(4.5)
+            self.drag_characters()
+            key_mouse_manager.click(1818, 750) # 点击出战
+            key_mouse_manager.wait()
             self.update_state("startbattle")
             return 1
 
         CUS_LOGGER.info("未刷出必选投资环境，准备提前退出")
+        self.exit_requested = True
+        self.update_state("exit")
+        return 1
+
+    def is_battle_started(self):
+        '''用于检测是否处于战斗状态，返回bool值'''
+        if self.click_text(
+            text="伤害",
+            box=[1793, 1833, 209, 231],
+            click=False,
+            allow_fail=True,
+        ):
+            CUS_LOGGER.debug("检测到已进入战斗")
+            return True
+
+        return False
+
+    def front_area_no_character(self):
+        '''处理前台无角色的情况。'''
+        self.drag_characters()
+
+        key_mouse_manager.click(1818, 750) # 点击出战
+        key_mouse_manager.wait()
+        time.sleep(3.5)
+
+        # 判断是否进入战斗
+        max_attempts = 10
+        for attempt in range(max_attempts):
+            if self._stop:
+                CUS_LOGGER.info("检测到停止标志，提前退出检测终止")
+                return False
+
+            CUS_LOGGER.debug(f"正在检测是否位于战斗中，次数 {attempt + 1}/{max_attempts}")
+            if self.is_battle_started():
+                return 1
+            time.sleep(0.5)
+
+        CUS_LOGGER.warning("超出最大检测次数，未能检测到进入战斗，尝试退出")
+        self.exit_requested = True
+        self.update_state("exit")
+        return 1
+
+    def exit(self):
+        """执行当前货币战争对局的统一退出流程。"""
+
+        if self.exit_started:
+            return 1
+
+        CUS_LOGGER.info("执行货币战争退出流程")
+
+        # 先检查是否已经进入“放弃并结算”页面
+        self.ts.forward(self.get_screen())
+        if self.click_text(
+            text="放弃并结算",
+            box=[707, 831, 728, 756],
+            click=False,
+            allow_fail=True,
+        ):
+            CUS_LOGGER.debug("检测到退出页面")
+            self.exit_started = True
+            return 1
+
+        # 虽然正常情况下exit的时候不会在战斗状态，但是万一呢
+        if self.is_battle_started():
+            CUS_LOGGER.debug("当前处于战斗中，按 ESC 并点击撤退")
+            key_mouse_manager.press("esc")
+            key_mouse_manager.wait()
+            time.sleep(1.5)
+            key_mouse_manager.click(1223, 985) # 点击撤退
+            key_mouse_manager.wait()
+            self.ts.forward(self.get_screen())
+
+            if self.click_text(
+                text="放弃并结算",
+                box=[707, 831, 728, 756],
+                click=False,
+                allow_fail=True,
+            ):
+                CUS_LOGGER.debug("检测到退出页面")
+                self.exit_started = True
+                return 1
+            else:
+                CUS_LOGGER.debug("未检测到退出页面，将重试")
+                return 0
 
         max_attempts = 15
         timeout = 6
-
         deadline = time.monotonic() + timeout
 
         for attempt in range(max_attempts):
             if time.monotonic() >= deadline:
-                CUS_LOGGER.warning("提前退出检测超时或超次数，返回主循环")
-                return 1
+                break
 
             if self._stop:
                 CUS_LOGGER.info("检测到停止标志，提前退出检测终止")
-                return 1
+                return 0
 
             self.ts.forward(self.get_screen())
 
@@ -625,8 +731,9 @@ class SimulatedCurrency(CurrencyUtils):
                 click=False,
                 allow_fail=True,
             ):
-                CUS_LOGGER.debug("检测到退出页面，停止按 ESC")
-                break
+                CUS_LOGGER.debug("检测到退出页面")
+                self.exit_started = True
+                return 1
 
             CUS_LOGGER.debug(
                 f"未检测到退出页面，第 {attempt + 1}/{max_attempts} 次按 ESC"
@@ -636,6 +743,14 @@ class SimulatedCurrency(CurrencyUtils):
             key_mouse_manager.wait()
             time.sleep(0.1)
 
+        CUS_LOGGER.warning("未能确认进入“放弃并结算”页面，本次退出尝试失败，将在下一轮重试")
+        return 0
+
+    def handle_battle_finished(self):
+        if self.exit_requested:
+            self.update_state("exit")
+        else:
+            self.update_state("currency_main")
         return 1
 
     def run_static(self, json_path=None, json_file=None, action_list=None) -> tuple[str, int]:
@@ -682,6 +797,8 @@ class SimulatedCurrency(CurrencyUtils):
                             find_image_by_name(trigger["photo"]),
                             threshold=trigger.get("threshold", 0.9), flag=False, click=False,
                         )
+                elif trigger.get("state_only"):
+                    matched = condition is None or condition == self.state
                 else:
                     continue
                 if not matched:
@@ -697,7 +814,7 @@ class SimulatedCurrency(CurrencyUtils):
                     self.latched_events.add(name)
                 CUS_LOGGER.debug(
                     "%s触发并执行指令%s，条件：%s",
-                    factor, name, trigger.get("text") or trigger["photo"],
+                    factor, name, trigger.get("text") or trigger.get("photo") or "state_only",
                 )
                 interval = trigger.get("interval")
                 if interval and self.action_history and self.action_history[-1] == name:
@@ -712,6 +829,10 @@ class SimulatedCurrency(CurrencyUtils):
                 result = None
                 for step in action["actions"]:
                     result = self.do_action(step)
+
+                if name == "开始退出" and result == 0:
+                    self.latched_events.discard(name)
+
                 self._on_static_action_completed(name)
                 self.action_history.append(name)
                 self.action_history = self.action_history[-10:]
@@ -723,13 +844,6 @@ class SimulatedCurrency(CurrencyUtils):
         return "", 0
 
     def _on_static_action_completed(self, action_name: str) -> None:
-        if action_name == RUN_START_ACTION:
-            self.exit_plane = self.set_exit_plane
-            self.prior_environment_found = False
-            self.run_history.start_run()
-            CUS_LOGGER.info("货币战争对局计时开始")
-            return
-
         if action_name != RUN_END_ACTION:
             return
 
@@ -832,6 +946,7 @@ class SimulatedCurrency(CurrencyUtils):
                 self.stop()
             # 重新抛出异常，以便上层能够捕获
             raise
+
     def stop(self, *_, **__):
         """
         停止任务运行
