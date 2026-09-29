@@ -251,6 +251,14 @@ class SimulatedCurrency(CurrencyUtils):
         return False
 
     def handle_difficulty_selection(self):
+        # 如果已经进入本局，但“开始对局”按钮由于加载延迟仍然存在，
+        # 再次点击按钮，但不要重复初始化本局状态和计时。
+        if self.state == "currency_main":
+            CUS_LOGGER.debug("本局已开始，但“开始对局”按钮仍存在，尝试重新点击")
+            key_mouse_manager.click(1692, 965)
+            key_mouse_manager.wait()
+            return 1
+
         if self.state not in (None, "difficulty_select"):
             return 0
 
