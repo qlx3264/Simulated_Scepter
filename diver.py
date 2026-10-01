@@ -102,15 +102,15 @@ class DivergentUniverse(UniverseUtils):
         self.update_count()
         CUS_LOGGER.info(f"开始运行:初始计数：{self.count}")
         # set_debug(debug > 0)
-        settings_path = PATHS["root"] + "\\config\\config\\settings.json"
-        example_path = PATHS["root"] + "\\config\\config\\settings_example.json"
+        settings_path = os.path.join(PATHS["config"], "settings.json")
+        example_path = os.path.join(PATHS["example"], "settings_example.json")
         if not os.path.exists(settings_path) and os.path.exists(example_path):
             shutil.copy2(example_path, settings_path)
         with EXTRA.FILE_LOCK:
             with open(settings_path, encoding="UTF-8") as file:
                 data = json.load(file)
         self.record = data.get("recording_state", True)
-        self.recorder = WindowRecorder('logs/video/', fps=30, window_title="崩坏：星穹铁道",
+        self.recorder = WindowRecorder(output_path=PATHS["video"], fps=30, window_title="崩坏：星穹铁道",
                                        window_class_name="UnityWndClass", see_time=True, offsets=[10, 50, 10, 10], simul_instance=self)
 
     def route(self):

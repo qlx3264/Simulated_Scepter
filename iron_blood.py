@@ -5,6 +5,7 @@ import time
 
 import yaml
 
+from route import PATHS
 from any_fate import AnyFateUniverse
 from simul import SimulatedUniverse
 from tool.GLOBAL import factor, key_mouse_manager
@@ -40,12 +41,8 @@ class IronBloodUniverse(AnyFateUniverse):
         self.tk = text_keys(self.my_fate)
         self.first_plane_weight = 0 # 保存开局期望
         # 铁血战士使用毁灭专属事件优先级
-        config_file = "config/config/event_info2.yml"
-        example_file = "config/config/info_example.yml"
-        if not os.path.exists(config_file):
-            if os.path.exists(example_file):
-                shutil.copy2(example_file, config_file)
-        with open(config_file, encoding="utf-8", errors="ignore") as f:
+        event_iron_blood = os.path.join(PATHS["event"], "event_iron_blood.yml")
+        with open(event_iron_blood, encoding="utf-8", errors="ignore") as f:
             self.event_prior = yaml.safe_load(f)["event"]
 
     def restart_recording(self):
@@ -80,11 +77,11 @@ class IronBloodUniverse(AnyFateUniverse):
     def end_of_university(self):
         SimulatedUniverse.end_of_university(self)
         self.elapsed_time = int(time.time() - self.run_start_time)
-        record_file = "config/backup/kill_record.txt"
+        record_file = os.path.join(PATHS["backup"], "kill_record.txt")
         try:
             if self.plane_floor==3:
                 self.kill_count+=1
-            os.makedirs("config/backup", exist_ok=True)
+            os.makedirs(PATHS["backup"], exist_ok=True)
             start_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.run_start_time))
             total_min = self.elapsed_time // 60
             total_sec = self.elapsed_time % 60
@@ -115,7 +112,7 @@ class IronBloodUniverse(AnyFateUniverse):
         """
         更新或读取计数器值（铁血战士使用 count.txt 的第一行）
         """
-        file_name = "config/backup/count.txt"
+        file_name = os.path.join(PATHS["backup"], "count.txt")
         if read:
             new_cnt = 0
             if os.path.exists(file_name):
@@ -127,7 +124,7 @@ class IronBloodUniverse(AnyFateUniverse):
                         except Exception:
                             pass
             else:
-                os.makedirs("config/backup", exist_ok=True)
+                os.makedirs(PATHS["backup"], exist_ok=True)
                 with open(file_name, "w", encoding="utf-8") as file:
                     file.write("0\n0\n")
             self.count = new_cnt

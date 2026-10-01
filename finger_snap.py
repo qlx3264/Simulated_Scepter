@@ -4,6 +4,7 @@ import time
 
 import yaml
 
+from route import PATHS
 from any_fate import AnyFateUniverse
 from tool.countdown_config import (
     EARLY_STOP_FIELDS, MC_SETTING_FIELDS, load_finger_snap_settings,
@@ -67,12 +68,9 @@ class FingerSnap(AnyFateUniverse):
         self._pending_cheat_effect = None
         self._target_decided = False
         CUS_LOGGER.info("令她感伤的是，永恒的生命没能让她积累无穷的智慧，反倒是那些曾被她视作珍瑰的事物，开始变得模糊，一去不返。。。")
-        config_file = "config/config/event_info3.yml"
-        example_file = "config/config/info_example.yml"
-        if not os.path.exists(config_file) and os.path.exists(example_file):
-            shutil.copy2(example_file, config_file)
+        event_finger_snap = os.path.join(PATHS["event"], "event_finger_snap.yml")
 
-        with open(config_file, encoding="utf-8", errors="ignore") as f:
+        with open(event_finger_snap, encoding="utf-8", errors="ignore") as f:
             self.event_prior = yaml.safe_load(f)["event"]
     def restart_recording(self):
         if self.record and self.cut_video and self.YKItDYvq3FpnOYx:
@@ -98,7 +96,7 @@ class FingerSnap(AnyFateUniverse):
         """
         更新或读取弹指模块的计数器值（使用 count.txt 的第二行）
         """
-        file_name = "config/backup/count.txt"
+        file_name = os.path.join(PATHS["backup"], "count.txt")
         if read:
             new_cnt = 0
             if os.path.exists(file_name):
@@ -110,7 +108,7 @@ class FingerSnap(AnyFateUniverse):
                         except Exception:
                             pass
             else:
-                os.makedirs("config/backup", exist_ok=True)
+                os.makedirs(PATHS["backup"], exist_ok=True)
                 with open(file_name, "w", encoding="utf-8") as file:
                     file.write("0\n0\n")
             self.count = new_cnt
@@ -148,9 +146,9 @@ class FingerSnap(AnyFateUniverse):
         self.update_floor(1)
         self.update_state("end")
         elapsed = int(time.time() - self.run_start_time)
-        record_file = "config/backup/countdown.txt"
+        record_file = os.path.join(PATHS["backup"], "countdown.txt")
         try:
-            os.makedirs("config/backup", exist_ok=True)
+            os.makedirs(PATHS["backup"], exist_ok=True)
             start_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.run_start_time))
             total_min = elapsed // 60
             total_sec = elapsed % 60
@@ -294,7 +292,7 @@ class FingerSnap(AnyFateUniverse):
             CUS_LOGGER.warning("多么绝妙的巧合。你我都心知肚明。")
             return
         self.try_analysis_map(1)
-        self.save_screen(save_path=f"/temp/map{self.plane_floor}/")
+        self.save_screen(save_path=os.path.join(PATHS["temp"], f"map{self.plane_floor}"))
         for _ in range(5):
             self.click_text(text="进入位面", box=[907, 1009, 857, 891])
             self.node_count = 0
@@ -314,8 +312,8 @@ class FingerSnap(AnyFateUniverse):
             matches = match_multiple_targets(image, mode)
             CUS_LOGGER.debug(f"当前模式{mode},找到 {len(matches)} 个匹配")
             if not matches:
-                self.save_screen(not_now=True, save_path="/temp/bigmaperror/")
-                self.save_screen(save_path="/temp/bigmaperror/")
+                self.save_screen(not_now=True, save_path=os.path.join(PATHS["temp"], "bigmaperror"))
+                self.save_screen(save_path=os.path.join(PATHS["temp"], "bigmaperror"))
                 raise NoMatchError
         # 检测角标（pig/reinforce/alienation等），关联到最近节点
         corner_results = detect_corner_markers(image, matches)
