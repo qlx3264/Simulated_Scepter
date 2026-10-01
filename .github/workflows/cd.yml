@@ -207,6 +207,12 @@ jobs:
                     [DateTimeOffset]::Parse($_.mergedAt)
                   }
 
+                Write-Host "Changed PR count: $($changedPrs.Count)"
+
+                foreach ($pr in $changedPrs) {
+                    Write-Host "$($pr.number): $($pr.title)"
+                }
+
                 if ($changedPrs.Count -gt 0) {
                   $notesLines = @(
                     "## What's Changed"
