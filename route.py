@@ -32,7 +32,7 @@ def build_paths(root):
         "html": os.path.join(root, "resource", "html"),
         "image": os.path.join(root, "resource", "imgs"),
         "logo": os.path.join(root, "resource", "logo"),
-        "model": os.path.join(root, "resource", "model"),
+        "model": os.path.join(root, "resource", "models"),
         "theme": os.path.join(root, "resource", "theme"),
         "ui": os.path.join(root, "resource", "ui"),
         # 临时文件
