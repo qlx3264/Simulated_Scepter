@@ -11,6 +11,7 @@ test.*
 config/backup/
 cache/
 save/
+video/
 temp/
 resources/imgs/bigmap.jpg
 resources/imgs/bwmap.jpg
