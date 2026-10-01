@@ -2,6 +2,7 @@ import ctypes
 import datetime
 import os
 import time
+import threading
 
 # 导入必要的 Windows API 函数
 from ctypes import windll
@@ -55,6 +56,8 @@ class WindowRecorder:
         self.map_alpha = map_alpha
         # SimulatedUniverse实例引用
         self.simul_instance = simul_instance
+        # 初始化一个专门的停止信号
+        self.stop_event = threading.Event()
 
     def capture_window_background(self, hwnd):
         """使用 PrintWindow API 后台截图指定窗口"""
@@ -153,6 +156,7 @@ class WindowRecorder:
         if self.recording:
             CUS_LOGGER.info("Already recording")
             return
+        self.stop_event.clear()
         timestamp=datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         self.output_file = self.output_path + f"第{count}次轮回-{timestamp}.mp4"
         # 查找目标窗口
@@ -255,7 +259,24 @@ class WindowRecorder:
 
         if not self.out.isOpened():
             CUS_LOGGER.error("无法初始化视频写入器")
+            self.out.release()
+            self.out = None
             raise RuntimeError("无法初始化视频写入器")
+
+        # 如果初始化过程中已经收到停止请求，则不要启动录制线程
+        if self.stop_event.is_set():
+            CUS_LOGGER.debug("录制初始化期间收到停止请求，取消本次录制")
+
+            self.out.release()
+            self.out = None
+
+            if os.path.exists(self.output_file):
+                try:
+                    os.remove(self.output_file)
+                except Exception as e:
+                    CUS_LOGGER.warning(f"删除取消录制的视频文件失败：{e}")
+
+            return
 
         # 启动录制线程
         self.recording = True
@@ -265,7 +286,7 @@ class WindowRecorder:
     def _record_window(self):
         """实际的窗口录制线程"""
         try:
-            while self.recording:
+            while self.recording and not self.stop_event.is_set():
                 try:
                     # 应用偏移值来收缩录制范围 [left, top, right, bottom]
                     # 使用ImageGrab直接捕获窗口区域
@@ -466,6 +487,7 @@ class WindowRecorder:
             if self.out:
                 self.out.release()
                 self.out = None
+            self.recording = False
             CUS_LOGGER.info("视频写入器已释放")
 
     def stop_recording(self, delete_video=False, battle_count=None):
@@ -475,8 +497,13 @@ class WindowRecorder:
             delete_video (bool): 是否删除录制的视频文件，默认为 False
             battle_count (int, optional): 战斗次数；保留录制且不为 None 时，用于更新视频文件名
         """
+        # 无论录制线程是否已经启动，都记录停止请求
+        self.stop_event.set()
+
         if not self.recording:
+            CUS_LOGGER.debug("录制尚未正式启动，已记录停止请求")
             return
+
         self.recording = False
 
         # 等待录制线程完全退出，避免 FFmpeg DLL 资源竞争
@@ -486,6 +513,7 @@ class WindowRecorder:
                 self.recording_thread.join(timeout=3.0)
                 if self.recording_thread.is_alive():
                     CUS_LOGGER.warning("录制线程未在规定时间内结束")
+                    return
                 else:
                     CUS_LOGGER.debug("录制线程已正常结束")
             except Exception as e:
