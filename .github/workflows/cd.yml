@@ -1,7 +1,7 @@
 name: 自动打包并发布release
 
 on:
-  pull_request:
+  pull_request_target:
     types:
       - closed
     branches:
@@ -194,7 +194,7 @@ jobs:
                   --repo $env:REPOSITORY `
                   --state merged `
                   --limit 1000 `
-                  --json number,title,mergedAt
+                  --json number,title,author,mergedAt,url
 
                 $mergedPrs = $mergedPrsJson | ConvertFrom-Json
 
@@ -214,7 +214,8 @@ jobs:
                   )
 
                   foreach ($pr in $changedPrs) {
-                    $notesLines += "- $($pr.title) (#$($pr.number))"
+                    $author = $pr.author.login
+                    $notesLines += "- $($pr.title) (#$($pr.number)) @$author"
                   }
 
                   $releaseNotes = $notesLines -join "`n"
@@ -413,6 +414,11 @@ jobs:
               $asset `
               --title $tag `
               --repo $env:REPOSITORY
+
+            if ($LASTEXITCODE -ne 0) {
+              throw "GitHub Release creation failed."
+            }
+
           }
           else {
             Write-Host "Creating release with merged PR titles."
@@ -430,6 +436,10 @@ jobs:
               --title $tag `
               --notes-file $notesFile `
               --repo $env:REPOSITORY
+            if ($LASTEXITCODE -ne 0) {
+              throw "GitHub Release creation failed."
+            }
+
           }
 
           Write-Host "Release $tag created successfully."
