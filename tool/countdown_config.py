@@ -1,5 +1,6 @@
 """弹指生产模型的独立配置读写。"""
 
+import os
 import json
 import shutil
 from dataclasses import asdict, fields
@@ -27,8 +28,8 @@ EARLY_STOP_FIELDS = {
     DECISION_WIN_RATE_DP: "win_rate_dp_early_stop",
     DECISION_MC: "mc_dp_early_stop",
 }
-SETTINGS_PATH = Path(PATHS["root"]) / "config" / "config" / "settings.json"
-EXAMPLE_PATH = SETTINGS_PATH.with_name("settings_example.json")
+settings_path = os.path.join(PATHS["config"], "settings.json")
+example_path = os.path.join(PATHS["example"], "settings_example.json")
 
 
 def normalize_finger_snap_settings(values=None):
@@ -73,18 +74,18 @@ def normalize_finger_snap_settings(values=None):
     }
 
 
-def load_finger_snap_settings(path=SETTINGS_PATH):
+def load_finger_snap_settings(path=settings_path):
     """只读取弹指配置；旧配置文件缺少该字段时使用默认值。"""
     path = Path(path)
-    if not path.exists() and path == SETTINGS_PATH and EXAMPLE_PATH.exists():
-        shutil.copy2(EXAMPLE_PATH, path)
+    if not path.exists() and path == settings_path and example_path.exists():
+        shutil.copy2(example_path, path)
     if not path.exists():
         return normalize_finger_snap_settings()
     with EXTRA.FILE_LOCK, path.open(encoding="utf-8") as file:
         return normalize_finger_snap_settings(json.load(file).get(CONFIG_KEY, {}))
 
 
-def save_finger_snap_settings(values, path=SETTINGS_PATH):
+def save_finger_snap_settings(values, path=settings_path):
     """仅更新独立弹指配置，保留同一文件中的其它业务设置。"""
     path, normalized = Path(path), normalize_finger_snap_settings(values)
     with EXTRA.FILE_LOCK:

@@ -48,8 +48,8 @@ class AnyFateUniverse(SimulatedUniverse):
     """任意命途寰宇蝗灾：各命途通用的寻路、骰子、事件等公共流程。"""
 
     def __init__(self):
-        settings_path = PATHS["root"] + "\\config\\config\\settings.json"
-        example_path = PATHS["root"] + "\\config\\config\\settings_example.json"
+        settings_path = os.path.join(PATHS["config"], "settings.json")
+        example_path = os.path.join(PATHS["example"], "settings_example.json")
         if not os.path.exists(settings_path) and os.path.exists(example_path):
             shutil.copy2(example_path, settings_path)
         with EXTRA.FILE_LOCK:
@@ -99,13 +99,8 @@ class AnyFateUniverse(SimulatedUniverse):
         self.default_json_path = "actions/insect.json"
         self.default_json = load_actions(self.default_json_path)
 
-        config_file = "config/config/event_info.yml"
-        example_file = "config/config/info_example.yml"
-        if not os.path.exists(config_file):
-            if os.path.exists(example_file):
-                shutil.copy2(example_file, config_file)
-
-        with open(config_file, encoding="utf-8", errors="ignore") as f:
+        event_any_fate = os.path.join(PATHS["event"], "event_any_fate.yml")
+        with open(event_any_fate, encoding="utf-8", errors="ignore") as f:
             self.event_prior = yaml.safe_load(f)["event"]
         self.action_history = []
         self.steps=None
@@ -118,7 +113,7 @@ class AnyFateUniverse(SimulatedUniverse):
         self.attack_time = 0 # 上次空打一拳时间
         self.need_end=False
         self.record = self.opt.get("recording_iron_blood", True)
-        self.recorder = WindowRecorder('logs/video/', fps=30, window_title="崩坏：星穹铁道",window_class_name="UnityWndClass",see_time=self.opt.get("record_add_label", True), offsets=[10, 50, 10, 10], overlay_map=self.opt.get("record_add_label", True) and self._show_map, simul_instance=self)
+        self.recorder = WindowRecorder(output_path=PATHS["video"], fps=30, window_title="崩坏：星穹铁道",window_class_name="UnityWndClass",see_time=self.opt.get("record_add_label", True), offsets=[10, 50, 10, 10], overlay_map=self.opt.get("record_add_label", True) and self._show_map, simul_instance=self)
         self.auto_attack_breakable=self.opt.get("auto_attack_breakable", False)
         self.del_record_time=self.opt.get("del_record_time", 31)
         self.max_interact_time=self.opt.get("max_interact_time", 40)
@@ -161,7 +156,7 @@ class AnyFateUniverse(SimulatedUniverse):
         """
         更新或读取计数器值（任意命途使用 count.txt 的第三行）
         """
-        file_name = "config/backup/count.txt"
+        file_name = os.path.join(PATHS["backup"], "count.txt")
         if read:
             new_cnt = 0
             if os.path.exists(file_name):
@@ -173,7 +168,7 @@ class AnyFateUniverse(SimulatedUniverse):
                         except Exception:
                             pass
             else:
-                os.makedirs("config/backup", exist_ok=True)
+                os.makedirs(PATHS["backup"], exist_ok=True)
                 with open(file_name, "w", encoding="utf-8") as file:
                     file.write("0\n0\n0\n")
             self.count = new_cnt
@@ -578,7 +573,7 @@ class AnyFateUniverse(SimulatedUniverse):
         find = True
         record=False
         #参考线太少毫无定位价值，则直接采用无地图寻路
-        if self.get_blank_state(save_debug_dir=os.path.join(PATHS["root"], "temp", "blank_state"))>250:
+        if self.get_blank_state(save_debug_dir=os.path.join(PATHS["temp"], "blank_state"))>250:
             tm=time.time()
             max_map,max_sim=-1,-1
             while time.time()-tm<2:
@@ -720,8 +715,8 @@ class AnyFateUniverse(SimulatedUniverse):
             matches = match_multiple_targets(image, mode)
             CUS_LOGGER.debug(f"当前模式{mode},找到 {len(matches)} 个匹配")
             if len(matches) == 0:
-                self.save_screen(not_now=True, save_path="/temp/bigmaperror/")
-                self.save_screen(save_path="/temp/bigmaperror/")
+                self.save_screen(not_now=True, save_path=os.path.join(PATHS["temp"], "bigmaperror"))
+                self.save_screen(save_path=os.path.join(PATHS["temp"], "bigmaperror"))
                 raise NoMatchError
         # 检测角标（pig/reinforce/alienation等），关联到最近节点
         corner_results = detect_corner_markers(image, matches)
@@ -1097,8 +1092,8 @@ class AnyFateUniverse(SimulatedUniverse):
                 self.chaoyan_seen = True#本轮进过「超验之镜」（事件/奖励共用，不可重复），后续奖励遇战权重降为0.2
             if self.area!="" and self.area!="休整" and len(event_name)!=0:
                 try:
-                    db_file = "config/backup/node_log.db"
-                    os.makedirs("config/backup", exist_ok=True)
+                    db_file = os.path.join(PATHS["backup"], "node_log.db")
+                    os.makedirs(PATHS["backup"], exist_ok=True)
                     conn = sqlite3.connect(db_file)
                     cursor = conn.cursor()
                     cursor.execute('''CREATE TABLE IF NOT EXISTS node_log (
@@ -1121,12 +1116,12 @@ class AnyFateUniverse(SimulatedUniverse):
     def emergency(self):
         event_name = self.ts.find_with_box(box=[897, 1023, 500, 540], forward=True, re_screen=False)
         if len(event_name)==0:
-            self.save_screen(not_now=True,save_path="/temp/event/")
+            self.save_screen(not_now=True, save_path=os.path.join(PATHS["temp"], "event"))
             # self.stop()
             CUS_LOGGER.warning("未识别到突发事件文本，可能是战斗变虫群的突发事件，已截图保存")
         try:
-            db_file = "config/backup/emergency.db"
-            os.makedirs("config/backup", exist_ok=True)
+            db_file = os.path.join(PATHS["backup"], "emergency.db")
+            os.makedirs(PATHS["backup"], exist_ok=True)
             conn = sqlite3.connect(db_file)
             cursor = conn.cursor()
             cursor.execute('''CREATE TABLE IF NOT EXISTS node_log (
@@ -1162,9 +1157,8 @@ class AnyFateUniverse(SimulatedUniverse):
         返回:
             int: 该地图的累计访问次数
         """
-        db_file = "config/backup/map_visits.db"
-        os.makedirs("config/backup", exist_ok=True)
-
+        db_file = os.path.join(PATHS["backup"], "map_visits.db")
+        os.makedirs(PATHS["backup"], exist_ok=True)
         conn = sqlite3.connect(db_file)
         cursor = conn.cursor()
 
