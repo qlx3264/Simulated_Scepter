@@ -460,6 +460,9 @@ jobs:
       - name: Sync dependencies
         run: uv sync
 
+      # 打包前先把版本号写进工作区的源码：EXTRA.py 会被 PyInstaller 打进 exe，
+      # 版本号是运行时读取的，所以必须先改再打包，exe 里才会是新版本号。
+      # 这一步只改打包环境里的文件、不提交（提交在 release 任务发布成功后进行）。
       - name: Write version into source
         shell: powershell
         env:
@@ -687,9 +690,8 @@ jobs:
 
           $version = $env:VERSION
 
-          # 固定复用同一个分支：每次都用「最新 master + 新版本号」重写它，
-          # 评审者永远只看同一个位置，分支也不会一个版本积一个
-          $branch = "version"
+          # 每次版本号变更都开一个新分支 + 新 PR（分支名带版本号，互不干扰）
+          $branch = "version-change-v$version"
 
           # 默认不创建 PR：内容没变化时直接结束
           "pr=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
@@ -770,19 +772,11 @@ jobs:
             throw "Failed to create branch $branch."
           }
 
-          # 固定分支名的关键一步：先把远端同名分支删掉（可能还留着上次的提交），
-          # 否则当上一次的 PR 已经合并、而这个分支没被自动删除时，
-          # 新提交的父提交已经是 master 的祖先，GitHub 会认为「master 与 version 没有差异」，
-          # gh pr create 会直接报 No commits between master and version。
-          # 删除时若该分支上还有打开的 PR，GitHub 会自动把它关掉，不会残留陈旧 PR。
-          # 凭据由 actions/checkout 写入本地 git config
-          git push --porcelain origin --delete $branch
-
-          # 分支不存在时上面这条会失败，属于正常情况
+          # 分支名带版本号，正常情况下每次都是新分支；凭据由 actions/checkout 写入本地 git config
           git -c advice.detachedHead=false push --porcelain --set-upstream origin $branch
 
           if ($LASTEXITCODE -ne 0) {
-            # 删除没成功（例如权限不足）时，退化为强制覆盖同名分支
+            # 该分支已存在（例如上一次运行中断后重跑）时，强制覆盖成「最新 master + 本次版本号」
             Write-Host "Regular push failed; force-updating $branch instead."
 
             git -c advice.detachedHead=false push --porcelain --force --set-upstream origin $branch
@@ -793,10 +787,11 @@ jobs:
           }
 
           "pr=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "branch=$branch" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
           Write-Host "Version $version pushed to $branch; opening a pull request."
 
-      # 固定走 PR：分支保护下 master 不接受直接推送，也避免推送失败产生通知
+      # 分支保护下 master 不接受直接推送，因此版本号一律以 PR 形式提交
       - name: Open version bump pull request
         if: steps.version.outputs.pr == 'true'
         shell: powershell
@@ -805,16 +800,22 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
           REPOSITORY: ${{ github.repository }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          BRANCH: version
+          BRANCH: ${{ steps.version.outputs.branch }}
+          # 说明文字放在 env 里：PowerShell 脚本正文必须保持 ASCII
+          # （runner 把 run 块写成无 BOM 的 UTF-8 临时脚本，中文 Windows 上
+          #   PowerShell 5.1 会按 GBK 读取，正文里的非 ASCII 字符串会导致解析失败）
+          PR_BODY: |
+            打包并发布 Release 后自动回写的版本号。
+            master 开启了分支保护，因此以 PR 形式提交。
         run: |
           $ErrorActionPreference = "Stop"
 
           $version = $env:VERSION
           $title = "chore: bump version to v$version [skip ci]"
-          $prBody = "打包并发布 Release 后自动回写的版本号：v$version`n`nmaster 开启了分支保护，因此以 PR 形式提交。"
+          $prBody = $env:PR_BODY
 
-          # 该分支上可能已经有开着的 PR（上次的版本号还没合并）：
-          # 分支刚被 force 覆盖成新版本，所以直接更新它的标题即可，不重复开
+          # 同一个分支上可能已经有开着的 PR（例如上一次运行中断后重跑）：
+          # 分支刚刚被更新过，所以直接更新它的标题与正文，不重复开
           $existing = gh pr list `
             --repo $env:REPOSITORY `
             --head $env:BRANCH `
