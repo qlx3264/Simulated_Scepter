@@ -24,8 +24,7 @@ permissions:
 
 jobs:
   prepare:
-    # pull_request 只有真正 merge 后才执行
-    # workflow_dispatch 始终执行
+    # push（PR 合并后触发）与 workflow_dispatch 都执行
     if: >
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'push'
@@ -58,8 +57,7 @@ jobs:
             $refs = git ls-remote --tags "https://github.com/$($env:REPOSITORY).git" "refs/tags/$Tag"
 
             if ($LASTEXITCODE -ne 0) {
-              # 查不动就当「不存在」：兜底失败不应该让整个打包流程停下来，
-              # 顶多退回「只信 gh release list」的原有行为
+              # 查不动就当「不存在」：兜底失败不应该让整个打包流程停下来
               Write-Warning "Could not list remote tags; skipping the duplicate-tag check."
 
               return $false
@@ -103,8 +101,6 @@ jobs:
           }
 
           # 解析 Release Notes 中已经列出的 PR 编号
-          # 这样即使上一次打包的 Release 是在后一个 PR merge 之后才发布的，
-          # 也不会重复统计，同时也不会漏掉「上一次没来得及记进去」的 PR
           function Get-NotePullRequestNumbers {
             param([string]$Notes)
 
@@ -114,6 +110,7 @@ jobs:
               return $numbers
             }
 
+            # 本 workflow 写入的隐藏标记，优先使用
             $markerMatch = [regex]::Match($Notes, 'cd-notes-prs:\s*([0-9,\s]+)')
 
             if ($markerMatch.Success) {
@@ -125,11 +122,7 @@ jobs:
               )
             }
 
-            # 兼容手工编辑过、没有标记的 Notes
-            # 支持两种条目写法：
-            #   - 标题 ([#123](url)) @user   （本 workflow 的格式）
-            #   - 标题 (#123) @user          （旧格式）
-            # GitHub 自动生成的 "by @user in ..." 这类条目不会被误当成 PR 编号
+            # 没有标记时（手工编辑过、或 GitHub 自动生成的 Notes）按条目结尾的 (#123) 解析
             foreach ($line in ($Notes -split "`r?`n")) {
               $lineMatch = [regex]::Match($line, '\(\[#(\d+)\]\([^)]*\)\)\s*$')
 
@@ -145,8 +138,7 @@ jobs:
             return $numbers
           }
 
-          # 收集「上次发布之后 merge 进来的 PR」，并渲染成 Release Notes
-          # 短时间连续 merge 时，最后一次打包会一次性列出所有漏掉的 PR
+          # 收集「已记录过的 PR」之后新 merge 进来的 PR，并渲染成 Release Notes
           function Get-ReleaseNotesFromMergedPullRequests {
             param(
               [int[]]$AlreadyNoted = @(),
@@ -154,14 +146,11 @@ jobs:
               [string]$VersionLabel
             )
 
-            Write-Host "Collecting merged pull requests after $SinceDate..."
-            Write-Host "Pull requests already listed in earlier notes: $($AlreadyNoted -join ', ')"
-
             $mergedPrsJson = gh pr list `
               --repo $env:REPOSITORY `
               --state merged `
               --limit 1000 `
-              --json number,title,author,mergedAt,url,mergeCommit
+              --json number,title,author,mergedAt,url
 
             if ([string]::IsNullOrWhiteSpace($mergedPrsJson)) {
               return ""
@@ -185,35 +174,24 @@ jobs:
                 }
             )
 
-            Write-Host "Changed PR count for $VersionLabel`: $($changedPrs.Count)"
-
-            foreach ($pr in $changedPrs) {
-              Write-Host "  #$($pr.number) [$($pr.mergedAt)] $($pr.title) (@$($pr.author.login))"
-            }
-
             if ($changedPrs.Count -eq 0) {
               return ""
             }
 
-            # Notes 直接逐条列出 PR（标题 / 链接 / 作者），不加任何小节标题
+            # Notes 直接逐条列出 PR（标题 / 链接 / 作者）
             $notesLines = @()
 
             foreach ($pr in $changedPrs) {
               # 作者写成普通的 Markdown 链接（指向作者主页）：
-              # 不用「@名字」，否则 GitHub 会把它当成 mention（高亮/通知作者）
-              $authorLogin = ""
-              $authorUrl = ""
-
+              # 不用「@名字」，否则 GitHub 会把它当成 mention
               if ($null -ne $pr.author -and -not [string]::IsNullOrWhiteSpace($pr.author.login)) {
                 $authorLogin = $pr.author.login
                 $authorUrl = "https://github.com/$authorLogin"
-              }
 
-              if ([string]::IsNullOrWhiteSpace($authorUrl)) {
-                $notesLines += "- $($pr.title) ([#$($pr.number)]($($pr.url)))"
+                $notesLines += "- $($pr.title) ([#$($pr.number)]($($pr.url))) [$authorLogin]($authorUrl)"
               }
               else {
-                $notesLines += "- $($pr.title) ([#$($pr.number)]($($pr.url))) [$authorLogin]($authorUrl)"
+                $notesLines += "- $($pr.title) ([#$($pr.number)]($($pr.url)))"
               }
             }
 
@@ -227,23 +205,17 @@ jobs:
             return ($notesLines -join "`n")
           }
 
-          Write-Host "Checking latest release..."
-
           $publishedReleases = Get-PublishedReleases
 
           # 获取当前最新正式 Release
           $latestRelease = $publishedReleases | Select-Object -First 1
 
           if ($null -eq $latestRelease) {
-            Write-Host "No release with a v<major>.<minor>.<patch> tag was found."
-            Write-Host "The next version will be derived from scratch."
-
             if ($env:EVENT_NAME -eq "workflow_dispatch") {
               $version = $env:INPUT_VERSION
             }
             else {
-              # 理论上仓库已有 Release
-              # 如果没有 Release，则自动发布从 1.0.0 开始
+              # 没有 Release 时自动发布从 1.0.0 开始
               $version = "1.0.0"
             }
 
@@ -251,7 +223,7 @@ jobs:
               throw "Invalid version '$version'. Expected format: number.number.number (e.g. 1.3.0)."
             }
 
-            # 兜底：列表里看不到正式 Release，不代表远端没有同名 tag
+            # 兜底：列表里看不到正式 Release 不代表远端没有同名 tag
             # （例如刚发布完 Release 又立刻触发一次，可能读到陈旧的列表快照）
             $guard = 0
 
@@ -264,8 +236,6 @@ jobs:
               $nextPatch = [int]$autoParts[2] + 1
               $version = "$($autoParts[0]).$($autoParts[1]).$nextPatch"
               $guard = $guard + 1
-
-              Write-Host "Tag already taken; trying v$version instead."
             }
 
             if ($guard -ge 100) {
@@ -332,14 +302,11 @@ jobs:
               $patch = $previousPatch + 1
               $version = "$previousMajor.$previousMinor.$patch"
 
-              # 兜底：如果算出来的 tag 在远端已经存在，就继续进位。
-              # gh release list 有时会返回陈旧的列表快照（例如刚发布完 Release 又立刻触发一次），
-              # 只信它的话可能算出一个已经存在的版本，进而在发布阶段误删已有的 Release。
+              # 兜底：算出来的 tag 若在远端已存在就继续进位，
+              # 避免因陈旧的 release 列表算出已存在的版本，进而误删已有 Release
               $guard = 0
 
               while ((Test-TagExists "v$version") -and $guard -lt 100) {
-                Write-Host "Tag v$version already exists on the remote; bumping patch."
-
                 $patch = $patch + 1
                 $version = "$previousMajor.$previousMinor.$patch"
                 $guard = $guard + 1
@@ -354,7 +321,7 @@ jobs:
             $major = [int]$parts[0]
             $minor = [int]$parts[1]
 
-            # major 或 minor 任意一个发生变化都视为需要重新生成 Release Notes 的版本升级
+            # major 或 minor 任意一个发生变化都视为需要汇总 Notes 的版本升级
             if (
               $major -ne $previousMajor -or
               $minor -ne $previousMinor
@@ -366,10 +333,8 @@ jobs:
             }
 
             # Notes 的起点固定为「上一轮该版本线的 .0 版本」
-            # 例如当前是 1.4.x，起点就是 v1.3.0，因此 1.4.0 会汇总 1.3.0 至今的所有 PR。
-            # 同一版本线内的 patch 更新（1.3.3 -> 1.3.4）起点同样是 v1.3.0，
-            # 但那条线上所有已发布 Notes 记录过的 PR 都会被排除，
-            # 所以实际只会列出这次新增的 PR。
+            # 例如当前是 1.4.x，起点就是 v1.3.0，因此 1.4.0 会汇总 1.3.0 至今的所有 PR；
+            # 同一版本线内的 patch 更新起点同样是 v1.3.0，但已发布 Notes 记录过的 PR 会被排除
             $baselineTag = "v$previousMajor.$previousMinor.0"
             $baselineLabel = $baselineTag
 
@@ -378,8 +343,7 @@ jobs:
               Select-Object -First 1
 
             if ($null -eq $baselineRelease) {
-              # 该版本线的 .0 版本不存在（例如历史上的第一个 Release 不是 .0）
-              # 退回到该版本线里最早的 Release
+              # 该版本线的 .0 版本不存在时，退回到该版本线里最早的 Release
               $baselineRelease = $publishedReleases |
                 Where-Object {
                   $_.tagName -match "^v$previousMajor\.$previousMinor\.\d+$"
@@ -391,12 +355,10 @@ jobs:
 
               if ($null -ne $baselineRelease) {
                 $baselineTag = $baselineRelease.tagName
-                Write-Host "Release $baselineLabel was not found; using the earliest release of this line instead: $baselineTag"
               }
             }
 
-            # 只要「该版本线里任意一次已发布的 Notes」写过某个 PR，就不再重复列出
-            # 这样 1.4.0 汇总 1.3.0 至今的 PR 时，不会把 1.3.2 / 1.3.9 时代已经写过的 PR 再抄一遍
+            # 只要该版本线里任意一次已发布的 Notes 写过某个 PR，就不再重复列出
             $alreadyNoted = @()
 
             $lineReleases = @(
@@ -415,9 +377,6 @@ jobs:
             if ($null -eq $baselineRelease) {
               $baselineTag = "(none)"
               $baselineDate = [DateTimeOffset]::MinValue
-
-              Write-Host "Could not find a previous release for baseline $baselineLabel."
-              Write-Host "Falling back to every merged pull request."
             }
             else {
               $baselineTag = $baselineRelease.tagName
@@ -427,30 +386,11 @@ jobs:
               }
               else {
                 # 往前多取 5 分钟作为安全窗口：
-                # Release 的 publishedAt 是「打包完成并发布」的时刻，
-                # 如果某个 PR 刚好在上一次打包期间 merge，它的 mergedAt 会早于 publishedAt，
-                # 但那次 Notes 是在更早的 prepare 阶段生成的，所以它并没有被记录进去。
-                # 安全窗口把这些 PR 捞回来，已记录过的 PR 由 alreadyNoted 去重。
+                # publishedAt 是「打包完成并发布」的时刻，若某个 PR 刚好在上一次打包期间 merge，
+                # 它的 mergedAt 会早于 publishedAt，但那次 Notes 是在更早的 prepare 阶段生成的，
+                # 所以它没有被记录进去；安全窗口把它捞回来，已记录过的由 alreadyNoted 去重
                 $baselineDate = [DateTimeOffset]::Parse($baselineRelease.publishedAt).AddMinutes(-5)
               }
-
-              Write-Host "Baseline release: $baselineTag (published $($baselineRelease.publishedAt))"
-              Write-Host "Notes window starts at: $baselineDate"
-            }
-
-            Write-Host "PRs already covered by the v$previousMajor.$previousMinor.x notes: $($alreadyNoted -join ', ')"
-
-            if ($majorMinorChanged -eq "true") {
-              Write-Host "Major/minor version update detected."
-              Write-Host "Previous release: $previousVersion"
-              Write-Host "New release: $version"
-              Write-Host "Aggregating every PR merged since the baseline release $baselineTag."
-            }
-            else {
-              Write-Host "Patch-only update."
-              Write-Host "Previous release: $previousVersion"
-              Write-Host "New release: $version"
-              Write-Host "Listing every PR merged since the baseline release $baselineTag."
             }
 
             $releaseNotes = Get-ReleaseNotesFromMergedPullRequests `
@@ -458,10 +398,6 @@ jobs:
               -SinceDate $baselineDate `
               -VersionLabel $version
           }
-
-          Write-Host "Release version: $version"
-          Write-Host "Previous version: $previousVersion"
-          Write-Host "Major/minor changed: $majorMinorChanged"
 
           # 写入 GitHub Actions outputs
           # 注意：Windows PowerShell 5.1 的 >> / Add-Content 默认写 UTF-16LE，
@@ -481,10 +417,6 @@ jobs:
     needs: prepare
 
     runs-on: windows-latest
-
-    permissions:
-      contents: write
-      pull-requests: read
 
     steps:
       - name: Checkout
@@ -558,9 +490,8 @@ jobs:
       pull-requests: read
 
     steps:
-      # 官方推荐写法：actions/checkout 会把 GITHUB_TOKEN 写进本地 git config
-      # （persist-credentials 默认就是 true），因此后面的 git commit / git push
-      # 自带认证，不需要 gh repo clone，也不需要手配 remote 或 token
+      # actions/checkout 会把 GITHUB_TOKEN 写进本地 git config（persist-credentials 默认 true），
+      # 后面 Sync version 步骤里的 git commit / git push 因此自带认证
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -592,16 +523,10 @@ jobs:
           $tag = "v$version"
           $asset = "release/SimSce-v$version.zip"
 
-          Write-Host "Preparing release $tag"
-
           # 直接删除旧 Release + tag，创建一个完全新的 Release
           # 删除动作放在 build 完成以后，避免新的 workflow 在 build 阶段读取不到当前 Release
 
           if ($majorMinorChanged -eq "true") {
-            Write-Host "Major/minor update detected."
-            Write-Host "Previous release: v$previousVersion"
-            Write-Host "New release: $tag"
-
             $previousTag = "v$previousVersion"
 
             $previousReleaseExists = $true
@@ -616,17 +541,10 @@ jobs:
             }
 
             if ($previousReleaseExists) {
-              Write-Host "Deleting previous release $previousTag..."
-
               gh release delete $previousTag `
                 --repo $env:REPOSITORY `
                 --cleanup-tag `
                 --yes
-
-              Write-Host "Previous release and tag removed."
-            }
-            else {
-              Write-Host "Previous release $previousTag does not exist."
             }
           }
 
@@ -645,9 +563,6 @@ jobs:
           }
 
           if ($targetReleaseExists) {
-            Write-Host "Release $tag already exists."
-            Write-Host "Removing it before creating the new release."
-
             gh release delete $tag `
               --repo $env:REPOSITORY `
               --cleanup-tag `
@@ -657,8 +572,6 @@ jobs:
           # 创建全新的 Release
 
           if ([string]::IsNullOrWhiteSpace($releaseNotes)) {
-            Write-Host "Creating release without generated PR notes."
-
             gh release create $tag `
               $asset `
               --title $tag `
@@ -669,13 +582,10 @@ jobs:
             }
           }
           else {
-            Write-Host "Creating release with merged PR titles."
-
             # 将多行 Release Notes 写入临时文件，避免 PowerShell 多行字符串通过命令行传递时出现转义问题
             $notesFile = Join-Path $env:RUNNER_TEMP "release-notes.md"
 
-            # 必须是「不带 BOM 的 UTF-8」：
-            # Set-Content -Encoding UTF8 会写入 BOM，BOM 会出现在 Release 正文开头（一个看不见的字符）
+            # 必须是「不带 BOM 的 UTF-8」：BOM 会出现在 Release 正文开头（一个看不见的字符）
             $notesText = ($releaseNotes -replace "`r`n", "`n").TrimEnd("`n") + "`n"
 
             [System.IO.File]::WriteAllText($notesFile, $notesText, (New-Object System.Text.UTF8Encoding($false)))
@@ -691,11 +601,7 @@ jobs:
             }
           }
 
-          Write-Host "Release $tag created successfully."
-
-      # Release 已经发布成功后，再把版本号写回源码，避免推了一个没发布成功的版本号。
-      # 这里是官方文档 "Push a commit using the built-in token" 的写法：
-      # checkout 已把凭据写进本地 git config，因此 git push 自带认证。
+      # Release 发布成功后再回写版本号，避免推一个没发布成功的版本号
       - name: Sync version into source files
         shell: powershell
         env:
@@ -704,8 +610,6 @@ jobs:
           $ErrorActionPreference = "Stop"
 
           $version = $env:VERSION
-
-          Write-Host "Syncing program version to $version ..."
 
           # 两处版本号：pyproject.toml 的 [project] version、tool/EXTRA.py 的 VERSION
           # 只替换版本号本身，不动引号/空格等原有写法
@@ -742,26 +646,24 @@ jobs:
             $updated = [regex]::Replace($text, $target.Pattern, { param($m) $m.Groups[1].Value + $version + $m.Groups[2].Value })
 
             if ($updated -eq $text) {
-              Write-Host "$file already at $version"
               continue
             }
 
             # 原文件有 BOM 就保留 BOM，没有就不加：只在版本号上做最小改动
             [System.IO.File]::WriteAllText($file, $updated, (New-Object System.Text.UTF8Encoding($hasBom)))
 
-            Write-Host "$file -> $version (BOM: $hasBom)"
             $changed += $file
           }
 
           if ($changed.Count -eq 0) {
-            Write-Host "Version files already up to date. Nothing to commit."
             exit 0
           }
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # 只暂存这两个文件，不用 git add --all（避免把构建产物等意外带进来）
+          # 只暂存这两个文件，避免把构建产物等意外带进来
+          # 路径必须用正斜杠，git 在 Windows 上不接受反斜杠
           foreach ($file in $changed) {
             git add -- (($file -replace '\\', '/'))
 
@@ -777,11 +679,9 @@ jobs:
             throw "Failed to commit the version bump."
           }
 
-          # 官方写法：不指定 remote，凭据由 actions/checkout 写入本地 git config
+          # 不指定 remote，凭据由 actions/checkout 写入本地 git config
           git push
 
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to push the version bump commit."
           }
-
-          Write-Host "Version $version committed and pushed to master."
