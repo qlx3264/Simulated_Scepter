@@ -513,11 +513,25 @@ jobs:
           $repoDir = "src"
 
           Write-Host "Syncing program version to $version ..."
+          Write-Host "Cloning $($env:REPOSITORY) into $repoDir ..."
 
           gh repo clone $env:REPOSITORY $repoDir -- --depth 1
 
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to clone $($env:REPOSITORY)."
+          }
+
+          $clonePath = (Resolve-Path -LiteralPath $repoDir).Path
+
+          Write-Host "Clone directory: $clonePath"
+
+          Push-Location -LiteralPath $clonePath
+          try {
+            Write-Host "Clone remote: $(@(& git remote --verbose) -join ' | ')"
+            Write-Host "Clone branch: $(@(& git rev-parse --abbrev-ref HEAD) -join '')"
+          }
+          finally {
+            Pop-Location
           }
 
           # 两处版本号：pyproject.toml 的 [project] version、tool/EXTRA.py 的 VERSION
@@ -572,22 +586,17 @@ jobs:
             exit 0
           }
 
-          # 进入克隆出来的仓库执行 git 命令：
-          # 不要用 `git -C <仓库路径>` 再配一个带 src/ 前缀的相对路径 ——
-          # -C 已经把工作目录切过去了，路径会再叠加一次 src/，必然 pathspec 不匹配
+          # 进入克隆出来的仓库执行 git 命令
+          # 1) 不要用 `git -C <仓库路径>`：它已经把工作目录切过去了，
+          #    再传一个带 src/ 前缀的路径会变成 src/src/...，必然 pathspec 不匹配
+          # 2) 不要手算相对路径（字符串裁剪在 runner 上可能因路径规范化而失配）
+          #    改为在克隆目录里让 git 自己发现改动，再校验暂存内容只有这两个文件
           $repoPath = (Resolve-Path -LiteralPath $repoDir).Path
-          $repoRoot = (Resolve-Path -LiteralPath '.').Path
 
-          # 相对仓库根目录的路径，交给 git 时必须用正斜杠
-          $gitPaths = @(
-            $changed | ForEach-Object {
-              (($_.Substring($repoRoot.Length).TrimStart('\', '/')) -replace '\\', '/')
-            }
+          $expectedStaged = @(
+            'pyproject.toml'
+            'tool/EXTRA.py'
           )
-
-          if ($gitPaths.Count -ne $changed.Count) {
-            throw "Failed to compute repository-relative paths for the version files."
-          }
 
           Push-Location -LiteralPath $repoPath
 
@@ -595,25 +604,41 @@ jobs:
             & git config user.name "github-actions[bot]"
             & git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-            foreach ($gitPath in $gitPaths) {
-              Write-Host "staging $gitPath"
+            Write-Host "Staging version files inside the clone ..."
 
-              & git add -- $gitPath
+            & git add --all
 
-              if ($LASTEXITCODE -ne 0) {
-                throw "Failed to stage $gitPath."
-              }
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to stage the version files."
             }
 
-            & git diff --cached --quiet
+            # 克隆是干净的工作副本，唯一的改动应该就是刚才写入的版本号。
+            # 这里校验一下：暂存区里必须恰好是预期的那几个文件，多一个都不提交。
+            $staged = @(
+              & git diff --cached --name-only |
+                ForEach-Object { $_.Trim() } |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+            )
 
-            if ($LASTEXITCODE -eq 0) {
+            if ($staged.Count -eq 0) {
               Write-Host "No staged changes. Nothing to commit."
               exit 0
             }
 
+            Write-Host "Staged files: $($staged -join ', ')"
+
+            $unexpected = @($staged | Where-Object { $expectedStaged -notcontains $_ })
+
+            if ($unexpected.Count -gt 0) {
+              throw "Unexpected files staged for commit: $($unexpected -join ', ')."
+            }
+
+            if ($staged.Count -ne $expectedStaged.Count) {
+              throw "Expected $($expectedStaged.Count) staged files but found $($staged.Count)."
+            }
+
             # [skip ci]：避免这次版本号提交再次触发本 workflow
-            & git commit -m "chore: bump version to v$version [skip ci]"
+            & git commit --message "chore: bump version to v$version [skip ci]"
 
             if ($LASTEXITCODE -ne 0) {
               throw "Failed to commit the version bump."
