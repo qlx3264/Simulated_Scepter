@@ -50,6 +50,31 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
+          # 该 tag 在远端是否已经存在
+          # 用 git 协议直查，不经过 REST API，因此不会读到陈旧的列表快照
+          function Test-TagExists {
+            param([string]$Tag)
+
+            $refs = git ls-remote --tags "https://github.com/$($env:REPOSITORY).git" "refs/tags/$Tag"
+
+            if ($LASTEXITCODE -ne 0) {
+              # 查不动就当「不存在」：兜底失败不应该让整个打包流程停下来，
+              # 顶多退回「只信 gh release list」的原有行为
+              Write-Warning "Could not list remote tags; skipping the duplicate-tag check."
+
+              return $false
+            }
+
+            foreach ($ref in @($refs)) {
+              # 完全匹配 refs/tags/v1.0.0，避免把 refs/tags/v1.0.0-rc1 误判为已存在
+              if ($ref.Trim() -match "\srefs/tags/$([regex]::Escape($Tag))$") {
+                return $true
+              }
+            }
+
+            return $false
+          }
+
           # 只把「正式 Release」（非 draft、非 prerelease）作为比较基准
           function Get-PublishedReleases {
             $json = gh release list `
@@ -210,7 +235,8 @@ jobs:
           $latestRelease = $publishedReleases | Select-Object -First 1
 
           if ($null -eq $latestRelease) {
-            Write-Host "No existing release was found."
+            Write-Host "No release with a v<major>.<minor>.<patch> tag was found."
+            Write-Host "The next version will be derived from scratch."
 
             if ($env:EVENT_NAME -eq "workflow_dispatch") {
               $version = $env:INPUT_VERSION
@@ -223,6 +249,27 @@ jobs:
 
             if ($version -notmatch '^\d+\.\d+\.\d+$') {
               throw "Invalid version '$version'. Expected format: number.number.number (e.g. 1.3.0)."
+            }
+
+            # 兜底：列表里看不到正式 Release，不代表远端没有同名 tag
+            # （例如刚发布完 Release 又立刻触发一次，可能读到陈旧的列表快照）
+            $guard = 0
+
+            while ((Test-TagExists "v$version") -and $guard -lt 100) {
+              if ($env:EVENT_NAME -eq "workflow_dispatch") {
+                throw "Release v$version already exists. Pick a higher version."
+              }
+
+              $autoParts = $version.Split('.')
+              $nextPatch = [int]$autoParts[2] + 1
+              $version = "$($autoParts[0]).$($autoParts[1]).$nextPatch"
+              $guard = $guard + 1
+
+              Write-Host "Tag already taken; trying v$version instead."
+            }
+
+            if ($guard -ge 100) {
+              throw "Could not find a free version after 100 attempts (last tried v$version)."
             }
 
             $previousVersion = ""
@@ -274,11 +321,33 @@ jobs:
               if (-not $isGreater) {
                 throw "Invalid version '$version'. Must be greater than the current release '$previousVersion'."
               }
+
+              # 同一个 tag 不能重复发布：发布阶段会先删掉已有 Release，那会抹掉它原来的 note
+              if (Test-TagExists "v$version") {
+                throw "Release v$version already exists. Pick a higher version."
+              }
             }
             else {
               # master push 自动触发时，当前 Release 的 patch + 1
               $patch = $previousPatch + 1
               $version = "$previousMajor.$previousMinor.$patch"
+
+              # 兜底：如果算出来的 tag 在远端已经存在，就继续进位。
+              # gh release list 有时会返回陈旧的列表快照（例如刚发布完 Release 又立刻触发一次），
+              # 只信它的话可能算出一个已经存在的版本，进而在发布阶段误删已有的 Release。
+              $guard = 0
+
+              while ((Test-TagExists "v$version") -and $guard -lt 100) {
+                Write-Host "Tag v$version already exists on the remote; bumping patch."
+
+                $patch = $patch + 1
+                $version = "$previousMajor.$previousMinor.$patch"
+                $guard = $guard + 1
+              }
+
+              if ($guard -ge 100) {
+                throw "Could not find a free version after 100 attempts (last tried v$version)."
+              }
             }
 
             $parts = $version.Split('.')
@@ -505,11 +574,19 @@ jobs:
 
           $gitArgs = @("-C", (Resolve-Path -LiteralPath $repoDir).Path)
 
+          # git 在 Windows 上也不接受反斜杠路径，git add 必须用斜杠
+          # （PowerShell 会把命令里的 / 自动转成 \，所以这里显式再换回来）
+          function ConvertTo-GitPath {
+            param([string]$Path)
+
+            return ($Path -replace '\\', '/')
+          }
+
           & git @gitArgs config user.name "github-actions[bot]"
           & git @gitArgs config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           foreach ($file in $changed) {
-            & git @gitArgs add -- $file
+            & git @gitArgs add -- (ConvertTo-GitPath $file)
 
             if ($LASTEXITCODE -ne 0) {
               throw "Failed to stage $file."
