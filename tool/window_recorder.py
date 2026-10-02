@@ -157,7 +157,7 @@ class WindowRecorder:
             return
         self.stop_event.clear()
         timestamp=datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.output_file = self.output_path + f"第{count}次轮回-{timestamp}.mp4"
+        self.output_file = os.path.join(self.output_path, f"第{count}次轮回-{timestamp}.mp4")
         # 查找目标窗口
         if self.hwnd and not is_usable_game_window(self.hwnd):
             self.hwnd = None
