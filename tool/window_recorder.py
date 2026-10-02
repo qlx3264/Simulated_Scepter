@@ -224,8 +224,6 @@ class WindowRecorder:
             CUS_LOGGER.error(f"获取窗口位置失败: {e}")
             raise
 
-        # 确保输出目录存在
-        import os
         output_dir = os.path.dirname(self.output_file)
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir)
