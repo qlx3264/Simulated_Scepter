@@ -558,7 +558,8 @@ jobs:
 
     permissions:
       contents: write
-      pull-requests: read
+      # 分支保护时需要通过 PR 提交版本号，所以还需要 pull-requests: write
+      pull-requests: write
 
     steps:
       # actions/checkout 会把 GITHUB_TOKEN 写进本地 git config（persist-credentials 默认 true），
@@ -674,13 +675,24 @@ jobs:
 
       # Release 发布成功后再回写版本号，避免推一个没发布成功的版本号
       - name: Sync version into source files
+        id: version
         shell: powershell
         env:
+          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.prepare.outputs.version }}
+          REPOSITORY: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           $ErrorActionPreference = "Stop"
 
           $version = $env:VERSION
+
+          # 固定复用同一个分支：每次都用「最新 master + 新版本号」重写它，
+          # 评审者永远只看同一个位置，分支也不会一个版本积一个
+          $branch = "version"
+
+          # 默认不创建 PR：内容没变化时直接结束
+          "pr=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
           # 两处版本号：pyproject.toml 的 [project] version、tool/EXTRA.py 的 VERSION
           # 只替换版本号本身，不动引号/空格等原有写法
@@ -727,6 +739,7 @@ jobs:
           }
 
           if ($changed.Count -eq 0) {
+            Write-Host "Version files already up to date. Nothing to commit."
             exit 0
           }
 
@@ -743,16 +756,101 @@ jobs:
             }
           }
 
-          # [skip ci]：避免这次版本号提交再次触发本 workflow
+          # [skip ci]：提交信息与 PR 标题都带上，避免任何事件再触发一次 CI
           git commit --message "chore: bump version to v$version [skip ci]"
 
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to commit the version bump."
           }
 
-          # 不指定 remote，凭据由 actions/checkout 写入本地 git config
-          git push
+          # master 开启了分支保护，所以固定走「推分支 + 开 PR」，不去尝试直推
+          git switch --create $branch
 
           if ($LASTEXITCODE -ne 0) {
-            throw "Failed to push the version bump commit."
+            throw "Failed to create branch $branch."
           }
+
+          # 固定分支名的关键一步：先把远端同名分支删掉（可能还留着上次的提交），
+          # 否则当上一次的 PR 已经合并、而这个分支没被自动删除时，
+          # 新提交的父提交已经是 master 的祖先，GitHub 会认为「master 与 version 没有差异」，
+          # gh pr create 会直接报 No commits between master and version。
+          # 删除时若该分支上还有打开的 PR，GitHub 会自动把它关掉，不会残留陈旧 PR。
+          # 凭据由 actions/checkout 写入本地 git config
+          git push --porcelain origin --delete $branch
+
+          # 分支不存在时上面这条会失败，属于正常情况
+          git -c advice.detachedHead=false push --porcelain --set-upstream origin $branch
+
+          if ($LASTEXITCODE -ne 0) {
+            # 删除没成功（例如权限不足）时，退化为强制覆盖同名分支
+            Write-Host "Regular push failed; force-updating $branch instead."
+
+            git -c advice.detachedHead=false push --porcelain --force --set-upstream origin $branch
+
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to push branch $branch."
+            }
+          }
+
+          "pr=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+          Write-Host "Version $version pushed to $branch; opening a pull request."
+
+      # 固定走 PR：分支保护下 master 不接受直接推送，也避免推送失败产生通知
+      - name: Open version bump pull request
+        if: steps.version.outputs.pr == 'true'
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          REPOSITORY: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          BRANCH: version
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $version = $env:VERSION
+          $title = "chore: bump version to v$version [skip ci]"
+          $prBody = "打包并发布 Release 后自动回写的版本号：v$version`n`nmaster 开启了分支保护，因此以 PR 形式提交。"
+
+          # 该分支上可能已经有开着的 PR（上次的版本号还没合并）：
+          # 分支刚被 force 覆盖成新版本，所以直接更新它的标题即可，不重复开
+          $existing = gh pr list `
+            --repo $env:REPOSITORY `
+            --head $env:BRANCH `
+            --state open `
+            --json number `
+            --jq 'length'
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to list pull requests."
+          }
+
+          if ([int]$existing -gt 0) {
+            Write-Host "A pull request for $($env:BRANCH) is already open; updating its title."
+
+            gh pr edit $env:BRANCH `
+              --repo $env:REPOSITORY `
+              --title $title `
+              --body $prBody
+
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to update the version bump pull request."
+            }
+
+            exit 0
+          }
+
+          # 标题里的 [skip ci] 用于跳过 PR 触发的 CI（提交信息里的那个只对 push 事件生效）
+          gh pr create `
+            --repo $env:REPOSITORY `
+            --base $env:DEFAULT_BRANCH `
+            --head $env:BRANCH `
+            --title $title `
+            --body $prBody
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to create the version bump pull request."
+          }
+
+          Write-Host "Pull request created for $($env:BRANCH)."
