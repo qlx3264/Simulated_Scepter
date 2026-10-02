@@ -40,6 +40,7 @@ class LogEmitter(QObject):
     find_path_state_signal = pyqtSignal(str)  # (路径状态文本)
     kill_num_signal = pyqtSignal(str)  # (路径状态文本)
     fps_update_signal = pyqtSignal(float)  # (FPS值)
+    cleanup_finished_signal = pyqtSignal(object)  # (本次清理结果列表)
 
 
 log_emitter = LogEmitter()

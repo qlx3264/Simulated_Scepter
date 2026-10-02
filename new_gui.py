@@ -14,6 +14,25 @@ from tool.countdown_config import (
     DECISION_MODES, MC_SETTING_FIELDS, load_finger_snap_settings,
     save_finger_snap_settings,
 )
+from tool.cleanup import (
+    CATEGORIES,
+    CATEGORY_BUTTONS,
+    MODES,
+    MODE_NAMES,
+    TRIGGERS,
+    TRIGGER_NAMES,
+    UNITS,
+    UNIT_NAMES,
+    CleanupConfig,
+    CleanupItem,
+    cleanup_manual,
+    finish_manual_cleanup,
+    last_cleanup_text,
+    load_cleanup_config,
+    run_cleanup,
+    validate_config,
+    write_config,
+)
 from tool.currency.settings import (
     EXIT_PLANES,
     load_currency_settings,
@@ -32,6 +51,7 @@ from PyQt5.QtCore import Qt, QSize, pyqtSignal, pyqtSlot, QEvent, QTimer
 from PyQt5.QtWidgets import (
     QApplication,
     QAbstractItemView,
+    QComboBox,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -40,8 +60,10 @@ from PyQt5.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QTextBrowser,
     QVBoxLayout,
+    QWidget,
 )
 
 from align_angle import main as align_angle_main
@@ -56,6 +78,9 @@ from tool.diver.config import config as config_diver
 from tool.simul.config import config as config_simul
 
 HOTKEY_DEBOUNCE_SECONDS = 1.0
+# 程序启动时触发的清理延迟执行的毫秒数，让主界面先完成显示。
+CLEANUP_STARTUP_DELAY_MS = 1500
+
 
 class CurrencyPriorityListWidget(QListWidget):
     def __init__(self):
@@ -213,6 +238,185 @@ class Priority0ListWidget(QListWidget):
             item = self.item(0)
             assert item is not None
             item.setSizeHint(QSize(width, 32))
+
+class CleanupSettingsSection(QWidget):
+    """自动清理设置区，负责显示三个清理对象的配置并收集用户改动。
+
+    界面控件由 UI.ui 的进阶设置页承载，本类只负责读写这些控件的值：清理
+    按钮发出清理请求，实际清理与参数校验由主窗口完成。
+    """
+
+    cleanup_requested = pyqtSignal(str)  # 清理对象
+
+    WIDGET_TYPES = {
+        "mode_combo": QComboBox,
+        "trigger_combo": QComboBox,
+        "value_input": QLineEdit,
+        "unit_combo": QComboBox,
+        "cleanup_btn": QPushButton,
+        "last_label": QLabel,
+    }
+
+    def __init__(self, page):
+        super().__init__(page)
+
+        self.setVisible(False)
+        for field in self.WIDGET_TYPES:
+            setattr(self, field, {})
+
+        for category in CATEGORIES:
+            self._load_widgets(page, category)
+
+            mode_combo = self.mode_combo[category]
+            for mode in MODES:
+                mode_combo.addItem(MODE_NAMES[mode], mode)
+            for trigger in TRIGGERS:
+                self.trigger_combo[category].addItem(TRIGGER_NAMES[trigger], trigger)
+            for unit in UNITS:
+                self.unit_combo[category].addItem(UNIT_NAMES[unit], unit)
+            self.cleanup_btn[category].setText(CATEGORY_BUTTONS[category])
+
+            mode_combo.currentIndexChanged.connect(
+                lambda _index, name=category: self._refresh_mode(name)
+            )
+            self.cleanup_btn[category].clicked.connect(
+                lambda _checked=False, name=category: self.cleanup_requested.emit(name)
+            )
+
+        self._fix_column_layout()
+        self.refresh_display()
+
+    def _load_widgets(self, page, category) -> None:
+        """取出某个清理对象在 UI.ui 中的全部控件。
+
+        Args:
+            page: 承载自动清理设置区的页面。
+            category: 清理对象，取 CATEGORIES 之一。
+
+        Raises:
+            RuntimeError: UI.ui 与代码版本不一致，缺少必需控件。
+        """
+        missing = []
+        for field, widget_type in self.WIDGET_TYPES.items():
+            widget = page.findChild(widget_type, f"Cleanup_{category}_{field}")
+            if widget is None:
+                missing.append(f"Cleanup_{category}_{field}")
+                continue
+            getattr(self, field)[category] = widget
+
+        if missing:
+            raise RuntimeError(
+                "界面文件 resource/ui/UI.ui 与当前代码版本不一致，缺少控件："
+                + "、".join(missing)
+                + "。请使用与代码相同版本的 UI.ui。"
+            )
+
+    def _fix_column_layout(self) -> None:
+        """统一操作/参数列各控件的高度与宽度。
+
+        清理模式与触发时机选择框、数值输入框、单位选择框、清理按钮会按模式
+        互换显示，这里统一它们的高度与宽度，切换模式时行高与列宽不再变化。
+        """
+        # 清理模式列容纳“永不清理”等模式名，操作/参数列容纳触发时机、数值与单位。
+        mode_width = 120
+        action_width = 150
+
+        for category in CATEGORIES:
+            button = self.cleanup_btn[category]
+            trigger_combo = self.trigger_combo[category]
+
+            # 按钮与触发时机选择框在同一位置交替显示，统一高度以稳定行高，使其美观。
+            row_height = button.sizeHint().height()
+            trigger_combo.setMinimumHeight(row_height)
+            trigger_combo.setSizePolicy(
+                QSizePolicy.Preferred, QSizePolicy.Fixed)
+
+            self.mode_combo[category].setFixedWidth(mode_width)
+            self.value_input[category].setFixedWidth(60)
+            self.unit_combo[category].setFixedWidth(action_width - 60)
+
+    def refresh_display(self, config=None) -> None:
+        """按自动清理配置刷新控件内容与可用状态。
+
+        Args:
+            config: 需要显示的配置；默认为重新读取配置文件。
+        """
+        if config is None:
+            config = load_cleanup_config()
+        for category in CATEGORIES:
+            item = config.item(category)
+            mode_combo = self.mode_combo[category]
+            trigger_combo = self.trigger_combo[category]
+            unit_combo = self.unit_combo[category]
+            mode_combo.setCurrentIndex(mode_combo.findData(item.mode))
+            trigger_combo.setCurrentIndex(trigger_combo.findData(item.trigger))
+            self.value_input[category].setText(str(item.value))
+            unit_combo.setCurrentIndex(unit_combo.findData(item.unit))
+            self.set_last_cleanup(category, item.last_cleanup)
+            self._refresh_mode(category)
+
+    def _refresh_mode(self, category: str) -> None:
+        """按当前清理模式切换操作/参数列的显示与可用状态。"""
+        mode = self.mode_combo[category].currentData()
+        if mode is None:
+            return
+        # 永不清理：按钮不可用；手动清理：按钮可用；周期/自动清理：改由触发时机选择。
+        self.cleanup_btn[category].setEnabled(mode != "never")
+        self.cleanup_btn[category].setVisible(mode in ("never", "manual"))
+        self.trigger_combo[category].setVisible(mode in ("periodic", "automatic"))
+        self.value_input[category].setEnabled(mode != "never")
+        self.unit_combo[category].setEnabled(mode != "never")
+
+    def collect_config(self) -> CleanupConfig:
+        """读取控件中的配置。
+
+        数值无法解析为整数时按 -1 处理，交给参数校验给出提示。
+
+        Returns:
+            当前界面上的自动清理配置。
+        """
+        items = {}
+        for category in CATEGORIES:
+            text = self.value_input[category].text().strip()
+            try:
+                value = int(text)
+            except ValueError:
+                value = -1
+            items[category] = CleanupItem(
+                mode=self.mode_combo[category].currentData(),
+                trigger=self.trigger_combo[category].currentData(),
+                value=value,
+                unit=self.unit_combo[category].currentData(),
+                last_cleanup=self.last_label[category].property("last_cleanup") or "",
+            )
+        return CleanupConfig(items=items)
+
+    def cleanup_value(self, category: str) -> tuple[int, str]:
+        """读取某个清理对象当前的数值与时间单位。
+
+        数值非法时按 0 处理，手动清理因此退化为清理全部符合规则的文件。
+
+        Args:
+            category: 清理对象，取 CATEGORIES 之一。
+
+        Returns:
+            (数值, 时间单位)。
+        """
+        text = self.value_input[category].text().strip()
+        try:
+            value = int(text)
+        except ValueError:
+            value = 0
+        if value < 0:
+            value = 0
+        return value, self.unit_combo[category].currentData()
+
+    def set_last_cleanup(self, category: str, cleaned_at: str) -> None:
+        """更新某个清理对象的上次清理时间文本。"""
+        label = self.last_label[category]
+        label.setProperty("last_cleanup", cleaned_at)
+        label.setText(last_cleanup_text(cleaned_at))
+
 
 class CurrencyPriorityDialog(QDialog):
     def __init__(self, parent=None):
@@ -448,9 +652,13 @@ class MainWindow(QMainWindowLog):
         log_emitter.find_path_state_signal.connect(self.set_find_path_state)
         log_emitter.kill_num_signal.connect(self.set_kill_num)
         log_emitter.fps_update_signal.connect(self.set_FPS)
+        log_emitter.cleanup_finished_signal.connect(self.refresh_cleanup_state)
 
         # 检查是否首次启动并显示用户协议
         self.check_first_launch()
+
+        # 程序启动后先让界面完成显示，再按配置执行程序启动时触发的清理
+        QTimer.singleShot(CLEANUP_STARTUP_DELAY_MS, lambda: self.cleanup_at("program_start"))
 
     def start_task(self, task_func):
         """
@@ -467,6 +675,9 @@ class MainWindow(QMainWindowLog):
         self.task_thread.start()
         # 更新任务状态标签为"运行中"
         self.Label_RunningState.setText("任务序列线程状态: 运行中")
+
+        # 任务开始后再执行任务启动时触发的清理，避免清理耗时拖后任务启动
+        self.cleanup_at("task_start")
 
         # 启动异步线程状态监控
         if not self._task_monitor_timer.isActive():
@@ -491,6 +702,9 @@ class MainWindow(QMainWindowLog):
 
         self.Label_RunningState.setText("任务序列线程状态: 未运行")
         self._task_monitor_timer.stop()
+
+        # 任务结束触发时机：此时任务线程已经退出，任务占用的文件已释放
+        self.cleanup_at("task_end")
 
     def is_task_running(self):
         """
@@ -560,7 +774,6 @@ class MainWindow(QMainWindowLog):
         self.test_btn.clicked.connect(self.test)
         self.print_btn.clicked.connect(self.test_2)
         self.stop_btn.clicked.connect(self.stop_task)
-        self.clear_logs_btn.clicked.connect(self.clear_logs)
 
         # 初始化模拟宇宙配置界面
         self.Simul_bonus_checkbox.setChecked(bool(config_simul.bonus))
@@ -721,6 +934,11 @@ class MainWindow(QMainWindowLog):
             str(finger_snap.get("first_plane_threshold", 0.0)))
         self.Finger_snap_record_keep_count_input.setText(
             str(finger_snap.get("record_keep_count", 31)))
+
+        # 初始化自动清理设置区（构造时已按配置刷新显示）
+        self.cleanup_section = CleanupSettingsSection(self.advanced_settings_main_page)
+        self.cleanup_section.cleanup_requested.connect(self.cleanup_category)
+        self.Cleanup_save_btn.clicked.connect(self.save_cleanup_config)
 
         # 初始化快捷键配置输入框
         hotkey_config = data.get("hotkeys", {})
@@ -990,43 +1208,6 @@ class MainWindow(QMainWindowLog):
         """
         keyboard.unhook_all()
         super().closeEvent(event)
-
-    def clear_logs(self):
-        """
-        清除logs目录下的所有文件，跳过被占用的文件
-        """
-        try:
-            logs_dir = "logs"
-            if not os.path.exists(logs_dir):
-                QMessageBox.warning(self, "警告", "日志目录不存在")
-                return
-
-            failed_files = []
-            success_count = 0
-
-            # 删除logs目录下的所有文件和子目录
-            for filename in os.listdir(logs_dir):
-                file_path = os.path.join(logs_dir, filename)
-                try:
-                    if os.path.isfile(file_path) or os.path.islink(file_path):
-                        os.unlink(file_path)
-                    elif os.path.isdir(file_path):
-                        shutil.rmtree(file_path)
-                    success_count += 1
-                except Exception:
-                    failed_files.append(filename)
-
-            if failed_files:
-                QMessageBox.warning(
-                    self,
-                    "完成（部分失败）",
-                    f"成功删除 {success_count} 个文件/目录\n以下文件/目录删除失败:\n" + "\n".join(failed_files)
-                )
-            else:
-                QMessageBox.information(self, "成功", f"成功删除 {success_count} 个文件/目录")
-
-        except Exception as e:
-            QMessageBox.critical(self, "错误", f"清除日志失败: {str(e)}")
 
     def test(self):
         def task():
@@ -1358,6 +1539,71 @@ class MainWindow(QMainWindowLog):
             return
         QMessageBox.information(
             self, "提示", "弹指一挥配置已独立保存；下次启动弹指任务时生效。")
+
+    def save_cleanup_config(self):
+        """校验并保存自动清理设置，参数非法时拒绝写入配置文件。"""
+        config = self.cleanup_section.collect_config()
+
+        errors = validate_config(config)
+        if errors:
+            QMessageBox.warning(
+                self,
+                "参数错误",
+                "以下参数不合法，自动清理设置未保存：\n" + "\n".join(errors),
+            )
+            return
+
+        try:
+            write_config(config)
+        except OSError as error:
+            QMessageBox.critical(self, "错误", f"自动清理设置保存失败：{error}")
+            return
+
+        QMessageBox.information(self, "提示", "自动清理设置已保存")
+
+    def cleanup_category(self, category):
+        """响应用户点击清理按钮，按当前数值与时间单位清理一类文件。
+
+        Args:
+            category: 清理对象，取 CATEGORIES 之一。
+        """
+        value, unit = self.cleanup_section.cleanup_value(category)
+        config = self.cleanup_section.collect_config()
+        # 手动清理以界面上的数值与时间单位为期限，不受是否已保存影响。
+        config.items[category] = CleanupItem(
+            mode=config.item(category).mode,
+            trigger=config.item(category).trigger,
+            value=value,
+            unit=unit,
+            last_cleanup=config.item(category).last_cleanup,
+        )
+
+        result = cleanup_manual(config, category)
+        cleaned_at = finish_manual_cleanup(result)
+        self.cleanup_section.set_last_cleanup(category, cleaned_at)
+
+        QMessageBox.information(self, "清理结果", result.summary)
+
+    def cleanup_at(self, trigger):
+        """在某个触发时机执行周期清理与自动清理。
+
+        清理可能涉及大量文件的删除，放在后台线程执行，避免任务启动时阻塞
+        主界面；结果由 cleanup_finished_signal 回到主线程刷新显示。上一次
+        清理尚未结束时，run_cleanup 会跳过本次触发。
+
+        Args:
+            trigger: 触发时机，取 TRIGGERS 之一。
+        """
+        ThreadWithException(
+            target=run_cleanup,
+            kwargs={"trigger": trigger},
+            name=f"自动清理-{trigger}",
+            is_print=False,
+        ).start()
+
+    def refresh_cleanup_state(self, _results):
+        """按清理后的配置文件刷新上次清理时间显示。"""
+        self.cleanup_section.refresh_display()
 
     def set_FPS(self,TimePerFrame):
         Fps = 1.0 / float(TimePerFrame)

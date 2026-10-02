@@ -800,32 +800,6 @@ border:none</string>
                  </item>
                 </layout>
                </item>
-               <item>
-                <widget class="QPushButton" name="clear_logs_btn">
-                 <property name="text">
-                  <string>清除日志</string>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <layout class="QHBoxLayout" name="Lay_CurrentPlan_1">
-                 <property name="sizeConstraint">
-                  <enum>QLayout::SetDefaultConstraint</enum>
-                 </property>
-                 <property name="leftMargin">
-                  <number>5</number>
-                 </property>
-                 <property name="topMargin">
-                  <number>0</number>
-                 </property>
-                 <property name="rightMargin">
-                  <number>5</number>
-                 </property>
-                 <property name="bottomMargin">
-                  <number>0</number>
-                 </property>
-                </layout>
-               </item>
               </layout>
              </item>
             </layout>
@@ -1414,7 +1388,7 @@ border:none</string>
                    <item>
                     <widget class="QCheckBox" name="silver_wolf_enable">
                      <property name="text">
-                      <string>银狼秘技(暂不支持三号与四号位)</string>
+                      <string>银狼秘技（暂不支持三号与四号位）</string>
                      </property>
                      <property name="toolTip">
                       <string>位于一号位时，切换至银狼并启用秘技,若开启遇猪切人会切换至所选位置(一号位银狼不建议开启自定义遇猪切人)
@@ -1556,6 +1530,221 @@ border:none</string>
                    </item>
                    <item>
                     <widget class="Line" name="line_hotkey">
+                     <property name="orientation">
+                      <enum>Qt::Horizontal</enum>
+                     </property>
+                    </widget>
+                   </item>
+                   <item>
+                    <layout class="QVBoxLayout" name="verticalLayout_cleanup">
+                     <property name="spacing">
+                      <number>5</number>
+                     </property>
+                     <property name="leftMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="topMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="rightMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="bottomMargin">
+                      <number>0</number>
+                     </property>
+                     <item>
+                      <widget class="QLabel" name="Cleanup_label">
+                       <property name="text">
+                        <string>清理文件设置</string>
+                       </property>
+                       <property name="toolTip">
+                        <string>管理程序产生的视频文件、日志文件与临时文件。
+只会检查命名中带有时间戳的文件，其他命名的文件不会被清理。
+可为每一类文件独立选择清理模式：
+永不清理——不执行清理，数值与时间单位仍然显示但不可修改；
+手动清理——点击清理按钮时清理距离现在超过所设时长的文件；
+周期清理——按触发时机检查距离上次清理是否达到所设周期，若达到则清理所有相关文件；
+自动清理——按触发时机清理超过所设保存期限的文件。
+数值填写大于等于 0 的整数；
+手动清理和自动清理填写 0 时清理该类别下所有当前可以删除的文件；
+周期清理填写 0 时每次达到触发时机都会执行清理。</string>
+                       </property>
+                       <property name="alignment">
+                        <set>Qt::AlignCenter</set>
+                       </property>
+                      </widget>
+                   </item>
+                   <item>
+                    <layout class="QGridLayout" name="gridLayout_cleanup">
+                     <item row="0" column="0">
+                      <widget class="QLabel" name="Cleanup_video_label">
+                       <property name="text">
+                        <string>视频文件</string>
+                       </property>
+                      </widget>
+                     </item>
+                     <item row="0" column="1">
+                      <widget class="QComboBox" name="Cleanup_video_mode_combo">
+                       <property name="fixedWidth">
+                        <number>120</number>
+                       </property>
+                      </widget>
+                     </item>
+                     <item row="0" column="2">
+                      <layout class="QHBoxLayout" name="horizontalLayout_cleanup_video">
+                       <item>
+                        <widget class="QPushButton" name="Cleanup_video_cleanup_btn">
+                         <property name="text">
+                          <string>清理视频文件</string>
+                         </property>
+                        </widget>
+                       </item>
+                       <item>
+                        <widget class="QComboBox" name="Cleanup_video_trigger_combo"/>
+                       </item>
+                       <item>
+                        <widget class="QLineEdit" name="Cleanup_video_value_input">
+                         <property name="fixedWidth">
+                          <number>60</number>
+                         </property>
+                        </widget>
+                       </item>
+                       <item>
+                        <widget class="QComboBox" name="Cleanup_video_unit_combo">
+                         <property name="fixedWidth">
+                          <number>90</number>
+                         </property>
+                        </widget>
+                       </item>
+                      </layout>
+                     </item>
+                     <item row="0" column="3">
+                      <widget class="QLabel" name="Cleanup_video_last_label">
+                       <property name="text">
+                        <string>上次清理：从未清理</string>
+                       </property>
+                       <property name="minimumWidth">
+                        <number>260</number>
+                       </property>
+                      </widget>
+                     </item>
+                     <item row="1" column="0">
+                      <widget class="QLabel" name="Cleanup_log_label">
+                       <property name="text">
+                        <string>日志文件</string>
+                       </property>
+                      </widget>
+                     </item>
+                     <item row="1" column="1">
+                      <widget class="QComboBox" name="Cleanup_log_mode_combo">
+                       <property name="fixedWidth">
+                        <number>120</number>
+                       </property>
+                      </widget>
+                     </item>
+                     <item row="1" column="2">
+                      <layout class="QHBoxLayout" name="horizontalLayout_cleanup_log">
+                       <item>
+                        <widget class="QPushButton" name="Cleanup_log_cleanup_btn">
+                         <property name="text">
+                          <string>清理日志文件</string>
+                         </property>
+                        </widget>
+                       </item>
+                       <item>
+                        <widget class="QComboBox" name="Cleanup_log_trigger_combo"/>
+                       </item>
+                       <item>
+                        <widget class="QLineEdit" name="Cleanup_log_value_input">
+                         <property name="fixedWidth">
+                          <number>60</number>
+                         </property>
+                        </widget>
+                       </item>
+                       <item>
+                        <widget class="QComboBox" name="Cleanup_log_unit_combo">
+                         <property name="fixedWidth">
+                          <number>90</number>
+                         </property>
+                        </widget>
+                       </item>
+                      </layout>
+                     </item>
+                     <item row="1" column="3">
+                      <widget class="QLabel" name="Cleanup_log_last_label">
+                       <property name="text">
+                        <string>上次清理：从未清理</string>
+                       </property>
+                       <property name="minimumWidth">
+                        <number>260</number>
+                       </property>
+                      </widget>
+                     </item>
+                     <item row="2" column="0">
+                      <widget class="QLabel" name="Cleanup_temp_label">
+                       <property name="text">
+                        <string>临时文件</string>
+                       </property>
+                      </widget>
+                     </item>
+                     <item row="2" column="1">
+                      <widget class="QComboBox" name="Cleanup_temp_mode_combo">
+                       <property name="fixedWidth">
+                        <number>120</number>
+                       </property>
+                      </widget>
+                     </item>
+                     <item row="2" column="2">
+                      <layout class="QHBoxLayout" name="horizontalLayout_cleanup_temp">
+                       <item>
+                        <widget class="QPushButton" name="Cleanup_temp_cleanup_btn">
+                         <property name="text">
+                          <string>清理临时文件</string>
+                         </property>
+                        </widget>
+                       </item>
+                       <item>
+                        <widget class="QComboBox" name="Cleanup_temp_trigger_combo"/>
+                       </item>
+                       <item>
+                        <widget class="QLineEdit" name="Cleanup_temp_value_input">
+                         <property name="fixedWidth">
+                          <number>60</number>
+                         </property>
+                        </widget>
+                       </item>
+                       <item>
+                        <widget class="QComboBox" name="Cleanup_temp_unit_combo">
+                         <property name="fixedWidth">
+                          <number>90</number>
+                         </property>
+                        </widget>
+                       </item>
+                      </layout>
+                     </item>
+                     <item row="2" column="3">
+                      <widget class="QLabel" name="Cleanup_temp_last_label">
+                       <property name="text">
+                        <string>上次清理：从未清理</string>
+                       </property>
+                       <property name="minimumWidth">
+                        <number>260</number>
+                       </property>
+                      </widget>
+                     </item>
+                    </layout>
+                   </item>
+                   <item>
+                    <widget class="QPushButton" name="Cleanup_save_btn">
+                     <property name="text">
+                      <string>保存清理文件设置</string>
+                     </property>
+                    </widget>
+                   </item>
+                    </layout>
+                   </item>
+                   <item>
+                    <widget class="Line" name="line_cleanup">
                      <property name="orientation">
                       <enum>Qt::Horizontal</enum>
                      </property>
