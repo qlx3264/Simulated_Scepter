@@ -441,6 +441,49 @@ jobs:
       - name: Sync dependencies
         run: uv sync
 
+      - name: Write version into source
+        shell: powershell
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $version = $env:VERSION
+
+          $targets = @(
+            @{
+              Path    = "pyproject.toml"
+              Pattern = '(?m)^(\s*version\s*=\s*")[^"]*(")'
+            },
+            @{
+              Path    = "tool\EXTRA.py"
+              Pattern = '(?m)^(\s*VERSION\s*=\s*")[^"]*(")'
+            }
+          )
+
+          foreach ($target in $targets) {
+            $file = $target.Path
+
+            if (-not (Test-Path -LiteralPath $file)) {
+              throw "Version file not found: $file"
+            }
+
+            $bytes = [System.IO.File]::ReadAllBytes($file)
+            $hasBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+
+            $text = [System.IO.File]::ReadAllText($file)
+            $matches = @([regex]::Matches($text, $target.Pattern))
+
+            if ($matches.Count -ne 1) {
+              throw "Expected exactly one version definition in $file but found $($matches.Count)."
+            }
+
+            $updated = [regex]::Replace($text, $target.Pattern, { param($m) $m.Groups[1].Value + $version + $m.Groups[2].Value })
+
+            # 原文件有 BOM 就保留 BOM，没有就不加
+            [System.IO.File]::WriteAllText($file, $updated, (New-Object System.Text.UTF8Encoding($hasBom)))
+          }
+
       - name: Build with PyInstaller
         run: |
           uv run pyinstaller SimSce.spec
