@@ -174,7 +174,22 @@ jobs:
             $notesLines = @()
 
             foreach ($pr in $changedPrs) {
-              $notesLines += "- $($pr.title) ([#$($pr.number)]($($pr.url))) @$($pr.author.login)"
+              # 作者写成普通的 Markdown 链接（指向作者主页）：
+              # 不用「@名字」，否则 GitHub 会把它当成 mention（高亮/通知作者）
+              $authorLogin = ""
+              $authorUrl = ""
+
+              if ($null -ne $pr.author -and -not [string]::IsNullOrWhiteSpace($pr.author.login)) {
+                $authorLogin = $pr.author.login
+                $authorUrl = "https://github.com/$authorLogin"
+              }
+
+              if ([string]::IsNullOrWhiteSpace($authorUrl)) {
+                $notesLines += "- $($pr.title) ([#$($pr.number)]($($pr.url)))"
+              }
+              else {
+                $notesLines += "- $($pr.title) ([#$($pr.number)]($($pr.url))) [$authorLogin]($authorUrl)"
+              }
             }
 
             # 隐藏的 HTML 注释：记录本次 Notes 覆盖了哪些 PR
@@ -398,6 +413,10 @@ jobs:
 
     runs-on: windows-latest
 
+    permissions:
+      contents: write
+      pull-requests: read
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -411,6 +430,126 @@ jobs:
 
       - name: Sync dependencies
         run: uv sync
+
+      - name: Sync version into source files
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $version = $env:VERSION
+          $repoDir = "src"
+
+          Write-Host "Syncing program version to $version ..."
+
+          gh repo clone $env:REPOSITORY $repoDir -- --depth 1
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to clone $($env:REPOSITORY)."
+          }
+
+          # 两处版本号：pyproject.toml 的 [project] version、tool/EXTRA.py 的 VERSION
+          # 只替换版本号本身，不动引号/空格等原有写法
+          $targets = @(
+            @{
+              Path    = Join-Path $repoDir "pyproject.toml"
+              Pattern = '(?m)^(\s*version\s*=\s*")[^"]*(")'
+            },
+            @{
+              Path    = Join-Path $repoDir "tool\EXTRA.py"
+              Pattern = '(?m)^(\s*VERSION\s*=\s*")[^"]*(")'
+            }
+          )
+
+          $changed = @()
+
+          foreach ($target in $targets) {
+            $file = $target.Path
+
+            if (-not (Test-Path -LiteralPath $file)) {
+              throw "Version file not found: $file"
+            }
+
+            $bytes = [System.IO.File]::ReadAllBytes($file)
+            $hasBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+
+            $text = [System.IO.File]::ReadAllText($file)
+            $matches = @([regex]::Matches($text, $target.Pattern))
+
+            if ($matches.Count -ne 1) {
+              throw "Expected exactly one version definition in $file but found $($matches.Count)."
+            }
+
+            $updated = [regex]::Replace($text, $target.Pattern, { param($m) $m.Groups[1].Value + $version + $m.Groups[2].Value })
+
+            if ($updated -eq $text) {
+              Write-Host "$file already at $version"
+              continue
+            }
+
+            # 原文件有 BOM 就保留 BOM，没有就不加：
+            # 只在版本号上做最小改动，避免引入看不见的字符差异
+            [System.IO.File]::WriteAllText($file, $updated, (New-Object System.Text.UTF8Encoding($hasBom)))
+
+            Write-Host "$file -> $version (BOM: $hasBom)"
+            $changed += $file
+          }
+
+          if ($changed.Count -eq 0) {
+            Write-Host "Version files already up to date. Nothing to commit."
+            exit 0
+          }
+
+          $gitArgs = @("-C", (Resolve-Path -LiteralPath $repoDir).Path)
+
+          & git @gitArgs config user.name "github-actions[bot]"
+          & git @gitArgs config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          foreach ($file in $changed) {
+            & git @gitArgs add -- $file
+
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to stage $file."
+            }
+          }
+
+          & git @gitArgs diff --cached --quiet
+
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "No staged changes. Nothing to commit."
+            exit 0
+          }
+
+          # [skip ci]：避免这次版本号提交再次触发本 workflow
+          & git @gitArgs commit -m "chore: bump version to v$version [skip ci]"
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to commit the version bump."
+          }
+
+          $pushed = $false
+
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            & git @gitArgs push origin HEAD:master
+
+            if ($LASTEXITCODE -eq 0) {
+              $pushed = $true
+              break
+            }
+
+            Write-Host "Push attempt $attempt failed; rebasing on origin/master and retrying..."
+
+            & git @gitArgs pull --rebase origin master
+          }
+
+          if (-not $pushed) {
+            throw "Failed to push the version bump commit."
+          }
+
+          Write-Host "Version $version committed and pushed to master."
 
       - name: Build with PyInstaller
         run: |
@@ -578,10 +717,11 @@ jobs:
             # 将多行 Release Notes 写入临时文件，避免 PowerShell 多行字符串通过命令行传递时出现转义问题
             $notesFile = Join-Path $env:RUNNER_TEMP "release-notes.md"
 
-            Set-Content `
-              -Path $notesFile `
-              -Value $releaseNotes `
-              -Encoding UTF8
+            # 必须是「不带 BOM 的 UTF-8」：
+            # Set-Content -Encoding UTF8 会写入 BOM，BOM 会出现在 Release 正文开头（一个看不见的字符）
+            $notesText = ($releaseNotes -replace "`r`n", "`n").TrimEnd("`n") + "`n"
+
+            [System.IO.File]::WriteAllText($notesFile, $notesText, (New-Object System.Text.UTF8Encoding($false)))
 
             gh release create $tag `
               $asset `
