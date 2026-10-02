@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿name: 自动打包并发布release
+name: 自动打包并发布release
 
 on:
   push:
