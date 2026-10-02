@@ -74,11 +74,14 @@ jobs:
           }
 
           # 只把「正式 Release」（非 draft、非 prerelease）作为比较基准
+          # 注意：gh release list 的 --json 不支持 body 字段（只有
+          # createdAt/isDraft/isImmutable/isLatest/isPrerelease/name/publishedAt/tagName），
+          # 传了会静默拿不到内容；正文需要时一律用 gh release view --json body 单独取
           function Get-PublishedReleases {
             $json = gh release list `
               --repo $env:REPOSITORY `
               --limit 100 `
-              --json tagName,isDraft,isPrerelease,publishedAt,body
+              --json tagName,isDraft,isPrerelease,publishedAt
 
             if ([string]::IsNullOrWhiteSpace($json)) {
               return @()
@@ -359,6 +362,7 @@ jobs:
             }
 
             # 只要该版本线里任意一次已发布的 Notes 写过某个 PR，就不再重复列出
+            # gh release list 不支持 --json body（拿不到正文），所以逐个 gh release view 取回来
             $alreadyNoted = @()
 
             $lineReleases = @(
@@ -369,7 +373,12 @@ jobs:
             )
 
             foreach ($lineRelease in $lineReleases) {
-              $alreadyNoted += @(Get-NotePullRequestNumbers -Notes $lineRelease.body)
+              $lineReleaseJson = gh release view `
+                $lineRelease.tagName `
+                --repo $env:REPOSITORY `
+                --json body
+
+              $alreadyNoted += @(Get-NotePullRequestNumbers -Notes (($lineReleaseJson | ConvertFrom-Json).body))
             }
 
             $alreadyNoted = @($alreadyNoted | Sort-Object -Unique)
