@@ -500,190 +500,6 @@ jobs:
       - name: Sync dependencies
         run: uv sync
 
-      - name: Sync version into source files
-        shell: powershell
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.prepare.outputs.version }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          $version = $env:VERSION
-          $repoDir = "src"
-
-          Write-Host "Syncing program version to $version ..."
-          Write-Host "Cloning $($env:REPOSITORY) into $repoDir ..."
-
-          gh repo clone $env:REPOSITORY $repoDir -- --depth 1
-
-          if ($LASTEXITCODE -ne 0) {
-            throw "Failed to clone $($env:REPOSITORY)."
-          }
-
-          $clonePath = (Resolve-Path -LiteralPath $repoDir).Path
-
-          Write-Host "Clone directory: $clonePath"
-
-          Push-Location -LiteralPath $clonePath
-          try {
-            Write-Host "Clone remote: $(@(& git remote --verbose) -join ' | ')"
-            Write-Host "Clone branch: $(@(& git rev-parse --abbrev-ref HEAD) -join '')"
-          }
-          finally {
-            Pop-Location
-          }
-
-          # 两处版本号：pyproject.toml 的 [project] version、tool/EXTRA.py 的 VERSION
-          # 只替换版本号本身，不动引号/空格等原有写法
-          $targets = @(
-            @{
-              Path    = Join-Path $repoDir "pyproject.toml"
-              Pattern = '(?m)^(\s*version\s*=\s*")[^"]*(")'
-            },
-            @{
-              Path    = Join-Path $repoDir "tool\EXTRA.py"
-              Pattern = '(?m)^(\s*VERSION\s*=\s*")[^"]*(")'
-            }
-          )
-
-          $changed = @()
-
-          foreach ($target in $targets) {
-            $file = $target.Path
-
-            if (-not (Test-Path -LiteralPath $file)) {
-              throw "Version file not found: $file"
-            }
-
-            $bytes = [System.IO.File]::ReadAllBytes($file)
-            $hasBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
-
-            $text = [System.IO.File]::ReadAllText($file)
-            $matches = @([regex]::Matches($text, $target.Pattern))
-
-            if ($matches.Count -ne 1) {
-              throw "Expected exactly one version definition in $file but found $($matches.Count)."
-            }
-
-            $updated = [regex]::Replace($text, $target.Pattern, { param($m) $m.Groups[1].Value + $version + $m.Groups[2].Value })
-
-            if ($updated -eq $text) {
-              Write-Host "$file already at $version"
-              continue
-            }
-
-            # 原文件有 BOM 就保留 BOM，没有就不加：
-            # 只在版本号上做最小改动，避免引入看不见的字符差异
-            [System.IO.File]::WriteAllText($file, $updated, (New-Object System.Text.UTF8Encoding($hasBom)))
-
-            Write-Host "$file -> $version (BOM: $hasBom)"
-            $changed += $file
-          }
-
-          if ($changed.Count -eq 0) {
-            Write-Host "Version files already up to date. Nothing to commit."
-            exit 0
-          }
-
-          # 进入克隆出来的仓库执行 git 命令
-          # 1) 不要用 `git -C <仓库路径>`：它已经把工作目录切过去了，
-          #    再传一个带 src/ 前缀的路径会变成 src/src/...，必然 pathspec 不匹配
-          # 2) 不要手算相对路径（字符串裁剪在 runner 上可能因路径规范化而失配）
-          #    改为在克隆目录里让 git 自己发现改动，再校验暂存内容只有这两个文件
-          $repoPath = (Resolve-Path -LiteralPath $repoDir).Path
-
-          $expectedStaged = @(
-            'pyproject.toml'
-            'tool/EXTRA.py'
-          )
-
-          Push-Location -LiteralPath $repoPath
-
-          try {
-            & git config user.name "github-actions[bot]"
-            & git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-            Write-Host "Staging version files inside the clone ..."
-
-            & git add --all
-
-            if ($LASTEXITCODE -ne 0) {
-              throw "Failed to stage the version files."
-            }
-
-            # 克隆是干净的工作副本，唯一的改动应该就是刚才写入的版本号。
-            # 这里校验一下：暂存区里必须恰好是预期的那几个文件，多一个都不提交。
-            $staged = @(
-              & git diff --cached --name-only |
-                ForEach-Object { $_.Trim() } |
-                Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-            )
-
-            if ($staged.Count -eq 0) {
-              Write-Host "No staged changes. Nothing to commit."
-              exit 0
-            }
-
-            Write-Host "Staged files: $($staged -join ', ')"
-
-            $unexpected = @($staged | Where-Object { $expectedStaged -notcontains $_ })
-
-            if ($unexpected.Count -gt 0) {
-              throw "Unexpected files staged for commit: $($unexpected -join ', ')."
-            }
-
-            if ($staged.Count -ne $expectedStaged.Count) {
-              throw "Expected $($expectedStaged.Count) staged files but found $($staged.Count)."
-            }
-
-            # [skip ci]：避免这次版本号提交再次触发本 workflow
-            & git commit --message "chore: bump version to v$version [skip ci]"
-
-            if ($LASTEXITCODE -ne 0) {
-              throw "Failed to commit the version bump."
-            }
-
-            # gh repo clone 会把远端命名为 upstream（不是 origin），本地分支也可能不叫 master
-            $remote = "upstream"
-            $remoteNames = @(& git remote)
-
-            if ($remoteNames -notcontains $remote) {
-              if ($remoteNames -contains "origin") {
-                $remote = "origin"
-              }
-              else {
-                throw "Could not find a git remote to push to (found: $($remoteNames -join ', '))."
-              }
-            }
-
-            Write-Host "Pushing to remote '$remote' ..."
-
-            $pushed = $false
-
-            for ($attempt = 1; $attempt -le 3; $attempt++) {
-              & git push $remote "HEAD:master"
-
-              if ($LASTEXITCODE -eq 0) {
-                $pushed = $true
-                break
-              }
-
-              Write-Host "Push attempt $attempt failed; rebasing on $remote/master and retrying..."
-
-              & git pull --rebase $remote master
-            }
-
-            if (-not $pushed) {
-              throw "Failed to push the version bump commit."
-            }
-
-            Write-Host "Version $version committed and pushed to master."
-          }
-          finally {
-            Pop-Location
-          }
-
       - name: Build with PyInstaller
         run: |
           uv run pyinstaller SimSce.spec
@@ -742,6 +558,14 @@ jobs:
       pull-requests: read
 
     steps:
+      # 官方推荐写法：actions/checkout 会把 GITHUB_TOKEN 写进本地 git config
+      # （persist-credentials 默认就是 true），因此后面的 git commit / git push
+      # 自带认证，不需要 gh repo clone，也不需要手配 remote 或 token
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: master
+
       - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
@@ -868,3 +692,96 @@ jobs:
           }
 
           Write-Host "Release $tag created successfully."
+
+      # Release 已经发布成功后，再把版本号写回源码，避免推了一个没发布成功的版本号。
+      # 这里是官方文档 "Push a commit using the built-in token" 的写法：
+      # checkout 已把凭据写进本地 git config，因此 git push 自带认证。
+      - name: Sync version into source files
+        shell: powershell
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $version = $env:VERSION
+
+          Write-Host "Syncing program version to $version ..."
+
+          # 两处版本号：pyproject.toml 的 [project] version、tool/EXTRA.py 的 VERSION
+          # 只替换版本号本身，不动引号/空格等原有写法
+          $targets = @(
+            @{
+              Path    = "pyproject.toml"
+              Pattern = '(?m)^(\s*version\s*=\s*")[^"]*(")'
+            },
+            @{
+              Path    = "tool\EXTRA.py"
+              Pattern = '(?m)^(\s*VERSION\s*=\s*")[^"]*(")'
+            }
+          )
+
+          $changed = @()
+
+          foreach ($target in $targets) {
+            $file = $target.Path
+
+            if (-not (Test-Path -LiteralPath $file)) {
+              throw "Version file not found: $file"
+            }
+
+            $bytes = [System.IO.File]::ReadAllBytes($file)
+            $hasBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+
+            $text = [System.IO.File]::ReadAllText($file)
+            $matches = @([regex]::Matches($text, $target.Pattern))
+
+            if ($matches.Count -ne 1) {
+              throw "Expected exactly one version definition in $file but found $($matches.Count)."
+            }
+
+            $updated = [regex]::Replace($text, $target.Pattern, { param($m) $m.Groups[1].Value + $version + $m.Groups[2].Value })
+
+            if ($updated -eq $text) {
+              Write-Host "$file already at $version"
+              continue
+            }
+
+            # 原文件有 BOM 就保留 BOM，没有就不加：只在版本号上做最小改动
+            [System.IO.File]::WriteAllText($file, $updated, (New-Object System.Text.UTF8Encoding($hasBom)))
+
+            Write-Host "$file -> $version (BOM: $hasBom)"
+            $changed += $file
+          }
+
+          if ($changed.Count -eq 0) {
+            Write-Host "Version files already up to date. Nothing to commit."
+            exit 0
+          }
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # 只暂存这两个文件，不用 git add --all（避免把构建产物等意外带进来）
+          foreach ($file in $changed) {
+            git add -- (($file -replace '\\', '/'))
+
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to stage $file."
+            }
+          }
+
+          # [skip ci]：避免这次版本号提交再次触发本 workflow
+          git commit --message "chore: bump version to v$version [skip ci]"
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to commit the version bump."
+          }
+
+          # 官方写法：不指定 remote，凭据由 actions/checkout 写入本地 git config
+          git push
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to push the version bump commit."
+          }
+
+          Write-Host "Version $version committed and pushed to master."
