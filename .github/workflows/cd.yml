@@ -1,4 +1,4 @@
-name: 自动打包并发布release
+﻿﻿﻿﻿﻿﻿﻿name: 自动打包并发布release
 
 on:
   push:
@@ -572,61 +572,92 @@ jobs:
             exit 0
           }
 
-          $gitArgs = @("-C", (Resolve-Path -LiteralPath $repoDir).Path)
+          # 进入克隆出来的仓库执行 git 命令：
+          # 不要用 `git -C <仓库路径>` 再配一个带 src/ 前缀的相对路径 ——
+          # -C 已经把工作目录切过去了，路径会再叠加一次 src/，必然 pathspec 不匹配
+          $repoPath = (Resolve-Path -LiteralPath $repoDir).Path
+          $repoRoot = (Resolve-Path -LiteralPath '.').Path
 
-          # git 在 Windows 上也不接受反斜杠路径，git add 必须用斜杠
-          # （PowerShell 会把命令里的 / 自动转成 \，所以这里显式再换回来）
-          function ConvertTo-GitPath {
-            param([string]$Path)
-
-            return ($Path -replace '\\', '/')
-          }
-
-          & git @gitArgs config user.name "github-actions[bot]"
-          & git @gitArgs config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          foreach ($file in $changed) {
-            & git @gitArgs add -- (ConvertTo-GitPath $file)
-
-            if ($LASTEXITCODE -ne 0) {
-              throw "Failed to stage $file."
+          # 相对仓库根目录的路径，交给 git 时必须用正斜杠
+          $gitPaths = @(
+            $changed | ForEach-Object {
+              (($_.Substring($repoRoot.Length).TrimStart('\', '/')) -replace '\\', '/')
             }
+          )
+
+          if ($gitPaths.Count -ne $changed.Count) {
+            throw "Failed to compute repository-relative paths for the version files."
           }
 
-          & git @gitArgs diff --cached --quiet
+          Push-Location -LiteralPath $repoPath
 
-          if ($LASTEXITCODE -eq 0) {
-            Write-Host "No staged changes. Nothing to commit."
-            exit 0
-          }
+          try {
+            & git config user.name "github-actions[bot]"
+            & git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # [skip ci]：避免这次版本号提交再次触发本 workflow
-          & git @gitArgs commit -m "chore: bump version to v$version [skip ci]"
+            foreach ($gitPath in $gitPaths) {
+              Write-Host "staging $gitPath"
 
-          if ($LASTEXITCODE -ne 0) {
-            throw "Failed to commit the version bump."
-          }
+              & git add -- $gitPath
 
-          $pushed = $false
+              if ($LASTEXITCODE -ne 0) {
+                throw "Failed to stage $gitPath."
+              }
+            }
 
-          for ($attempt = 1; $attempt -le 3; $attempt++) {
-            & git @gitArgs push origin HEAD:master
+            & git diff --cached --quiet
 
             if ($LASTEXITCODE -eq 0) {
-              $pushed = $true
-              break
+              Write-Host "No staged changes. Nothing to commit."
+              exit 0
             }
 
-            Write-Host "Push attempt $attempt failed; rebasing on origin/master and retrying..."
+            # [skip ci]：避免这次版本号提交再次触发本 workflow
+            & git commit -m "chore: bump version to v$version [skip ci]"
 
-            & git @gitArgs pull --rebase origin master
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to commit the version bump."
+            }
+
+            # gh repo clone 会把远端命名为 upstream（不是 origin），本地分支也可能不叫 master
+            $remote = "upstream"
+            $remoteNames = @(& git remote)
+
+            if ($remoteNames -notcontains $remote) {
+              if ($remoteNames -contains "origin") {
+                $remote = "origin"
+              }
+              else {
+                throw "Could not find a git remote to push to (found: $($remoteNames -join ', '))."
+              }
+            }
+
+            Write-Host "Pushing to remote '$remote' ..."
+
+            $pushed = $false
+
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+              & git push $remote "HEAD:master"
+
+              if ($LASTEXITCODE -eq 0) {
+                $pushed = $true
+                break
+              }
+
+              Write-Host "Push attempt $attempt failed; rebasing on $remote/master and retrying..."
+
+              & git pull --rebase $remote master
+            }
+
+            if (-not $pushed) {
+              throw "Failed to push the version bump commit."
+            }
+
+            Write-Host "Version $version committed and pushed to master."
           }
-
-          if (-not $pushed) {
-            throw "Failed to push the version bump commit."
+          finally {
+            Pop-Location
           }
-
-          Write-Host "Version $version committed and pushed to master."
 
       - name: Build with PyInstaller
         run: |
