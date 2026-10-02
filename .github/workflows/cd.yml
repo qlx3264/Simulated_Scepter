@@ -1,9 +1,7 @@
 name: 自动打包并发布release
 
 on:
-  pull_request_target:
-    types:
-      - closed
+  push:
     branches:
       - master
 
@@ -30,7 +28,7 @@ jobs:
     # workflow_dispatch 始终执行
     if: >
       github.event_name == 'workflow_dispatch' ||
-      github.event.pull_request.merged == true
+      github.event_name == 'push'
 
     runs-on: windows-latest
 
@@ -52,23 +50,149 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
+          # 只把「正式 Release」（非 draft、非 prerelease）作为比较基准
+          function Get-PublishedReleases {
+            $json = gh release list `
+              --repo $env:REPOSITORY `
+              --limit 100 `
+              --json tagName,isDraft,isPrerelease,publishedAt,body
+
+            if ([string]::IsNullOrWhiteSpace($json)) {
+              return @()
+            }
+
+            $parsed = $json | ConvertFrom-Json
+
+            if ($null -eq $parsed) {
+              return @()
+            }
+
+            return @(
+              $parsed |
+                Where-Object {
+                  $_.isDraft -eq $false -and
+                  $_.isPrerelease -eq $false -and
+                  $_.tagName -match '^v\d+\.\d+\.\d+$'
+                }
+            )
+          }
+
+          # 解析 Release Notes 中已经列出的 PR 编号
+          # 这样即使上一次打包的 Release 是在后一个 PR merge 之后才发布的，
+          # 也不会重复统计，同时也不会漏掉「上一次没来得及记进去」的 PR
+          function Get-NotePullRequestNumbers {
+            param([string]$Notes)
+
+            $numbers = @()
+
+            if ([string]::IsNullOrWhiteSpace($Notes)) {
+              return $numbers
+            }
+
+            $markerMatch = [regex]::Match($Notes, 'cd-notes-prs:\s*([0-9,\s]+)')
+
+            if ($markerMatch.Success) {
+              return @(
+                $markerMatch.Groups[1].Value -split ',' |
+                  ForEach-Object { $_.Trim() } |
+                  Where-Object { $_ -match '^\d+$' } |
+                  ForEach-Object { [int]$_ }
+              )
+            }
+
+            # 兼容手工编辑过、没有标记的 Notes
+            # 支持两种条目写法：
+            #   - 标题 ([#123](url)) @user   （本 workflow 的格式）
+            #   - 标题 (#123) @user          （旧格式）
+            # GitHub 自动生成的 "by @user in ..." 这类条目不会被误当成 PR 编号
+            foreach ($line in ($Notes -split "`r?`n")) {
+              $lineMatch = [regex]::Match($line, '\(\[#(\d+)\]\([^)]*\)\)\s*$')
+
+              if (-not $lineMatch.Success) {
+                $lineMatch = [regex]::Match($line, '\(#(\d+)\)\s*$')
+              }
+
+              if ($lineMatch.Success) {
+                $numbers += [int]$lineMatch.Groups[1].Value
+              }
+            }
+
+            return $numbers
+          }
+
+          # 收集「上次发布之后 merge 进来的 PR」，并渲染成 Release Notes
+          # 短时间连续 merge 时，最后一次打包会一次性列出所有漏掉的 PR
+          function Get-ReleaseNotesFromMergedPullRequests {
+            param(
+              [int[]]$AlreadyNoted = @(),
+              [DateTimeOffset]$SinceDate,
+              [string]$VersionLabel
+            )
+
+            Write-Host "Collecting merged pull requests after $SinceDate..."
+            Write-Host "Pull requests already listed in earlier notes: $($AlreadyNoted -join ', ')"
+
+            $mergedPrsJson = gh pr list `
+              --repo $env:REPOSITORY `
+              --state merged `
+              --limit 1000 `
+              --json number,title,author,mergedAt,url,mergeCommit
+
+            if ([string]::IsNullOrWhiteSpace($mergedPrsJson)) {
+              return ""
+            }
+
+            # 注意：ConvertFrom-Json 的结果不要再套一层 @()
+            # 否则整个数组会被当成一个元素，Where-Object 里的 $_ 会变成数组本身
+            $mergedPrs = ConvertFrom-Json -InputObject $mergedPrsJson
+
+            $changedPrs = @(
+              $mergedPrs |
+                Where-Object {
+                  $null -ne $_ -and
+                  $_.GetType().Name -eq 'PSCustomObject' -and
+                  $_.mergedAt -ne $null -and
+                  $alreadyNoted -notcontains $_.number -and
+                  ([DateTimeOffset]::Parse($_.mergedAt) -gt $SinceDate)
+                } |
+                Sort-Object {
+                  [DateTimeOffset]::Parse($_.mergedAt)
+                }
+            )
+
+            Write-Host "Changed PR count for $VersionLabel`: $($changedPrs.Count)"
+
+            foreach ($pr in $changedPrs) {
+              Write-Host "  #$($pr.number) [$($pr.mergedAt)] $($pr.title) (@$($pr.author.login))"
+            }
+
+            if ($changedPrs.Count -eq 0) {
+              return ""
+            }
+
+            # Notes 直接逐条列出 PR（标题 / 链接 / 作者），不加任何小节标题
+            $notesLines = @()
+
+            foreach ($pr in $changedPrs) {
+              $notesLines += "- $($pr.title) ([#$($pr.number)]($($pr.url))) @$($pr.author.login)"
+            }
+
+            # 隐藏的 HTML 注释：记录本次 Notes 覆盖了哪些 PR
+            # GitHub 页面不会渲染它，下一次打包用它精确计算增量
+            $coveredNumbers = ($changedPrs | ForEach-Object { $_.number }) -join ','
+
+            $notesLines += ""
+            $notesLines += "<!-- cd-notes-prs: $coveredNumbers -->"
+
+            return ($notesLines -join "`n")
+          }
+
           Write-Host "Checking latest release..."
 
+          $publishedReleases = Get-PublishedReleases
+
           # 获取当前最新正式 Release
-          $latestReleaseJson = gh release list `
-            --repo $env:REPOSITORY `
-            --limit 100 `
-            --json tagName,isDraft,isPrerelease
-
-          $latestReleases = $latestReleaseJson | ConvertFrom-Json
-
-          $latestRelease = $latestReleases |
-            Where-Object {
-              $_.isDraft -eq $false -and
-              $_.isPrerelease -eq $false -and
-              $_.tagName -match '^v\d+\.\d+\.\d+$'
-            } |
-            Select-Object -First 1
+          $latestRelease = $publishedReleases | Select-Object -First 1
 
           if ($null -eq $latestRelease) {
             Write-Host "No existing release was found."
@@ -82,9 +206,18 @@ jobs:
               $version = "1.0.0"
             }
 
+            if ($version -notmatch '^\d+\.\d+\.\d+$') {
+              throw "Invalid version '$version'. Expected format: number.number.number (e.g. 1.3.0)."
+            }
+
             $previousVersion = ""
             $majorMinorChanged = "false"
-            $releaseNotes = ""
+
+            # 没有任何历史 Release 时，把所有已 merge 的 PR 都列出来
+            $releaseNotes = Get-ReleaseNotesFromMergedPullRequests `
+              -AlreadyNoted @() `
+              -SinceDate ([DateTimeOffset]::MinValue) `
+              -VersionLabel $version
           }
           else {
             $previousVersion = $latestRelease.tagName -replace '^v', ''
@@ -128,7 +261,7 @@ jobs:
               }
             }
             else {
-              # PR merge 自动触发时，当前 Release 的 patch + 1
+              # master push 自动触发时，当前 Release 的 patch + 1
               $patch = $previousPatch + 1
               $version = "$previousMajor.$previousMinor.$patch"
             }
@@ -148,89 +281,98 @@ jobs:
               $majorMinorChanged = "false"
             }
 
-            $releaseNotes = ""
+            # Notes 的起点固定为「上一轮该版本线的 .0 版本」
+            # 例如当前是 1.4.x，起点就是 v1.3.0，因此 1.4.0 会汇总 1.3.0 至今的所有 PR。
+            # 同一版本线内的 patch 更新（1.3.3 -> 1.3.4）起点同样是 v1.3.0，
+            # 但那条线上所有已发布 Notes 记录过的 PR 都会被排除，
+            # 所以实际只会列出这次新增的 PR。
+            $baselineTag = "v$previousMajor.$previousMinor.0"
+            $baselineLabel = $baselineTag
+
+            $baselineRelease = $publishedReleases |
+              Where-Object { $_.tagName -eq $baselineTag } |
+              Select-Object -First 1
+
+            if ($null -eq $baselineRelease) {
+              # 该版本线的 .0 版本不存在（例如历史上的第一个 Release 不是 .0）
+              # 退回到该版本线里最早的 Release
+              $baselineRelease = $publishedReleases |
+                Where-Object {
+                  $_.tagName -match "^v$previousMajor\.$previousMinor\.\d+$"
+                } |
+                Sort-Object {
+                  [int](($_.tagName -replace "^v$previousMajor\.$previousMinor\.", ""))
+                } |
+                Select-Object -First 1
+
+              if ($null -ne $baselineRelease) {
+                $baselineTag = $baselineRelease.tagName
+                Write-Host "Release $baselineLabel was not found; using the earliest release of this line instead: $baselineTag"
+              }
+            }
+
+            # 只要「该版本线里任意一次已发布的 Notes」写过某个 PR，就不再重复列出
+            # 这样 1.4.0 汇总 1.3.0 至今的 PR 时，不会把 1.3.2 / 1.3.9 时代已经写过的 PR 再抄一遍
+            $alreadyNoted = @()
+
+            $lineReleases = @(
+              $publishedReleases |
+                Where-Object {
+                  $_.tagName -match "^v$previousMajor\.$previousMinor\.\d+$"
+                }
+            )
+
+            foreach ($lineRelease in $lineReleases) {
+              $alreadyNoted += @(Get-NotePullRequestNumbers -Notes $lineRelease.body)
+            }
+
+            $alreadyNoted = @($alreadyNoted | Sort-Object -Unique)
+
+            if ($null -eq $baselineRelease) {
+              $baselineTag = "(none)"
+              $baselineDate = [DateTimeOffset]::MinValue
+
+              Write-Host "Could not find a previous release for baseline $baselineLabel."
+              Write-Host "Falling back to every merged pull request."
+            }
+            else {
+              $baselineTag = $baselineRelease.tagName
+
+              if ([string]::IsNullOrWhiteSpace($baselineRelease.publishedAt)) {
+                $baselineDate = [DateTimeOffset]::MinValue
+              }
+              else {
+                # 往前多取 5 分钟作为安全窗口：
+                # Release 的 publishedAt 是「打包完成并发布」的时刻，
+                # 如果某个 PR 刚好在上一次打包期间 merge，它的 mergedAt 会早于 publishedAt，
+                # 但那次 Notes 是在更早的 prepare 阶段生成的，所以它并没有被记录进去。
+                # 安全窗口把这些 PR 捞回来，已记录过的 PR 由 alreadyNoted 去重。
+                $baselineDate = [DateTimeOffset]::Parse($baselineRelease.publishedAt).AddMinutes(-5)
+              }
+
+              Write-Host "Baseline release: $baselineTag (published $($baselineRelease.publishedAt))"
+              Write-Host "Notes window starts at: $baselineDate"
+            }
+
+            Write-Host "PRs already covered by the v$previousMajor.$previousMinor.x notes: $($alreadyNoted -join ', ')"
 
             if ($majorMinorChanged -eq "true") {
               Write-Host "Major/minor version update detected."
               Write-Host "Previous release: $previousVersion"
               Write-Host "New release: $version"
-
-              # 找到与当前 Release 相同 major/minor 的最新 Release
-              $previousMajorMinorReleases = $latestReleases |
-                Where-Object {
-                  $_.isDraft -eq $false -and
-                  $_.isPrerelease -eq $false -and
-                  $_.tagName -match "^v$previousMajor\.$previousMinor\.\d+$"
-                }
-
-              $previousMajorMinorRelease = $previousMajorMinorReleases |
-                Sort-Object {
-                  [int](($_.tagName -replace "^v$previousMajor\.$previousMinor\.", ""))
-                } -Descending |
-                Select-Object -First 1
-
-              if ($null -eq $previousMajorMinorRelease) {
-                Write-Host "Could not find the previous major/minor release."
-                Write-Host "No automatic PR list will be generated."
-              }
-              else {
-                $previousMajorMinorTag = $previousMajorMinorRelease.tagName
-
-                Write-Host "Previous major/minor release: $previousMajorMinorTag"
-
-                # 获取该 Release 的发布时间
-                $previousReleaseInfoJson = gh release view `
-                  $previousMajorMinorTag `
-                  --repo $env:REPOSITORY `
-                  --json publishedAt
-
-                $previousReleaseInfo = $previousReleaseInfoJson | ConvertFrom-Json
-                $previousReleaseDate = [DateTimeOffset]::Parse($previousReleaseInfo.publishedAt)
-
-                Write-Host "Collecting merged PRs after $previousReleaseDate..."
-
-                # 获取所有已 merge PR
-                $mergedPrsJson = gh pr list `
-                  --repo $env:REPOSITORY `
-                  --state merged `
-                  --limit 1000 `
-                  --json number,title,author,mergedAt,url
-
-                $mergedPrs = $mergedPrsJson | ConvertFrom-Json
-
-                $changedPrs = $mergedPrs |
-                  Where-Object {
-                    $_.mergedAt -ne $null -and
-                    ([DateTimeOffset]::Parse($_.mergedAt) -gt $previousReleaseDate)
-                  } |
-                  Sort-Object {
-                    [DateTimeOffset]::Parse($_.mergedAt)
-                  }
-
-                Write-Host "Changed PR count: $($changedPrs.Count)"
-
-                foreach ($pr in $changedPrs) {
-                    Write-Host "$($pr.number): $($pr.title)"
-                }
-
-                if ($changedPrs.Count -gt 0) {
-                  $notesLines = @(
-                    "## What's Changed"
-                    ""
-                  )
-
-                  foreach ($pr in $changedPrs) {
-                    $author = $pr.author.login
-                    $notesLines += "- $($pr.title) (#$($pr.number)) @$author"
-                  }
-
-                  $releaseNotes = $notesLines -join "`n"
-                }
-                else {
-                  Write-Host "No merged PRs were found after the previous major/minor release."
-                }
-              }
+              Write-Host "Aggregating every PR merged since the baseline release $baselineTag."
             }
+            else {
+              Write-Host "Patch-only update."
+              Write-Host "Previous release: $previousVersion"
+              Write-Host "New release: $version"
+              Write-Host "Listing every PR merged since the baseline release $baselineTag."
+            }
+
+            $releaseNotes = Get-ReleaseNotesFromMergedPullRequests `
+              -AlreadyNoted $alreadyNoted `
+              -SinceDate $baselineDate `
+              -VersionLabel $version
           }
 
           Write-Host "Release version: $version"
@@ -238,13 +380,18 @@ jobs:
           Write-Host "Major/minor changed: $majorMinorChanged"
 
           # 写入 GitHub Actions outputs
-          "version=$version" >> $env:GITHUB_OUTPUT
-          "previous_version=$previousVersion" >> $env:GITHUB_OUTPUT
-          "major_minor_changed=$majorMinorChanged" >> $env:GITHUB_OUTPUT
+          # 注意：Windows PowerShell 5.1 的 >> / Add-Content 默认写 UTF-16LE，
+          # 会让 runner 无法解析 step output，因此必须显式指定 utf8 编码
+          $outputLines = @(
+            "version=$version"
+            "previous_version=$previousVersion"
+            "major_minor_changed=$majorMinorChanged"
+            "release_notes<<EOF"
+            $releaseNotes
+            "EOF"
+          )
 
-          "release_notes<<EOF" >> $env:GITHUB_OUTPUT
-          $releaseNotes >> $env:GITHUB_OUTPUT
-          "EOF" >> $env:GITHUB_OUTPUT
+          $outputLines | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
   build:
     needs: prepare
@@ -424,7 +571,6 @@ jobs:
             if ($LASTEXITCODE -ne 0) {
               throw "GitHub Release creation failed."
             }
-
           }
           else {
             Write-Host "Creating release with merged PR titles."
@@ -442,10 +588,10 @@ jobs:
               --title $tag `
               --notes-file $notesFile `
               --repo $env:REPOSITORY
+
             if ($LASTEXITCODE -ne 0) {
               throw "GitHub Release creation failed."
             }
-
           }
 
           Write-Host "Release $tag created successfully."
