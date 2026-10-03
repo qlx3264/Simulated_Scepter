@@ -68,9 +68,9 @@ class DivergentUniverse(UniverseUtils):
         self.init_tm = time.time()
         self.area_now = None
         self.action_history = []
-        self.event_prior = self.read_csv("actions/event.csv", name='event')
-        self.character_prior = self.read_csv("actions/character.csv", name='char')
-        self.all_bless = self.read_csv("actions/bless.csv", name='bless')
+        self.event_prior = self.read_csv(os.path.join(PATHS["csv"], "event.csv"), name='event')
+        self.character_prior = self.read_csv(os.path.join(PATHS["csv"], "character.csv"), name='char')
+        self.all_bless = self.read_csv(os.path.join(PATHS["csv"], "bless.csv"), name='bless')
         self.bless_prior = defaultdict(int)
         self.team_member = {}
         self.ocr_time_list = [0.5]

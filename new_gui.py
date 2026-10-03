@@ -10,6 +10,7 @@ from PyQt5.QtGui import QFont, QKeySequence
 
 from route import PATHS
 from tool import EXTRA
+from tool.action_script import run_script as run_action_script
 from tool.countdown_config import (
     DECISION_MODES, MC_SETTING_FIELDS, load_finger_snap_settings,
     save_finger_snap_settings,
@@ -40,7 +41,7 @@ from tool.currency.settings import (
     save_currency_settings,
 )
 from tool.GLOBAL import set_global_stop_flag
-from tool.log import log_emitter
+from tool.log import CUS_LOGGER, log_emitter
 from tool.thread import ThreadWithException
 from tool.utils.image_tool import find_image_by_name, load_all_images_from_directory
 
@@ -770,6 +771,7 @@ class MainWindow(QMainWindowLog):
         self.any_fate_btn.clicked.connect(self.run_any_fate)
         self.finger_snap_btn.clicked.connect(self.run_finger_snap)
         self.currency_war_btn.clicked.connect(self.run_currency_war)
+        self.init_script_controls()
         self.calibrate_btn.clicked.connect(self.calibrate)
         self.test_btn.clicked.connect(self.test)
         self.print_btn.clicked.connect(self.test_2)
@@ -1254,6 +1256,83 @@ class MainWindow(QMainWindowLog):
             self.start_task(task)
         except RuntimeError as e:
             QMessageBox.warning(self, "警告", str(e))
+
+    def init_script_controls(self):
+        """初始化自由脚本的内核选项与运行入口。"""
+        for name, engine in (
+            ("Simulated", SimulatedUniverse),
+            ("Divergent", DivergentUniverse),
+            ("AnyFate", AnyFateUniverse),
+            ("IronBlood", IronBloodUniverse),
+            ("Currency", CurrencyWar),
+        ):
+            self.engine_combo.addItem(name, engine)
+        self.run_script_btn.clicked.connect(self.run_script)
+        self.refresh_scripts()
+
+    def refresh_scripts(self):
+        """列出 actions 中的 JSON 动作脚本，排除角色别名等数据文件。"""
+        self.script_combo.clear()
+        folder = os.path.join(PATHS["root"], "actions")
+        if os.path.isdir(folder):
+            for name in sorted(os.listdir(folder)):
+                path = os.path.join(folder, name)
+                if not name.lower().endswith(".json") or not os.path.isfile(path):
+                    continue
+                try:
+                    with open(path, encoding="utf-8") as file:
+                        actions = json.load(file)
+                except (OSError, ValueError) as error:
+                    CUS_LOGGER.warning("无法读取脚本 %s，将跳过此文件：%s", name, error)
+                    continue
+                if isinstance(actions, list) and actions:
+                    self.script_combo.addItem(os.path.splitext(name)[0], path)
+        available = self.script_combo.count() > 0
+        if not available:
+            self.script_combo.addItem("actions 中没有可用脚本")
+        self.script_combo.setEnabled(available)
+        self.run_script_btn.setEnabled(available)
+
+    def run_script(self):
+        """在现有任务线程中运行选中的动作脚本。"""
+        script_path = self.script_combo.currentData()
+        if script_path is None:
+            QMessageBox.warning(self, "提示", "请先在 actions 文件夹中添加 JSON 动作脚本。")
+            return
+        engine_class = self.engine_combo.currentData()
+        engine_name = self.engine_combo.currentText()
+        stop_key = self.load_hotkey_config()["stop"].upper()
+
+        # 在主线程确定脚本与内核，运行期间切换下拉框不会改变当前任务。
+        def task():
+            if engine_class is SimulatedUniverse:
+                su = engine_class(
+                    1,
+                    int(config_simul.debug_mode),
+                    int(config_simul.speed_mode),
+                    int(config_simul.use_consumable),
+                    int(config_simul.slow_mode),
+                    bonus=config_simul.bonus,
+                )
+            elif engine_class is DivergentUniverse:
+                su = engine_class(
+                    int(config_diver.debug_mode),
+                    int(config_diver.max_run),
+                    int(config_diver.speed_mode),
+                )
+            else:
+                su = engine_class()
+            self.current_task = su
+            CUS_LOGGER.info("使用%s内核运行脚本：%s；点击“停止任务”或按 %s 可终止。",
+                            engine_name, os.path.basename(script_path), stop_key)
+            run_action_script(su, script_path)
+
+        try:
+            self.start_task(task)
+        except RuntimeError as error:
+            QMessageBox.warning(self, "警告", str(error))
+        except Exception as error:
+            QMessageBox.critical(self, "错误", str(error))
 
     def run_simul(self):
         def task():
