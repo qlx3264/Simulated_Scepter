@@ -1438,7 +1438,7 @@ class MainWindow(QMainWindowLog):
         dialog.exec_()
 
     def open_record_stats(self):
-        os.startfile(PATHS["html"], "record_stats.html")
+        os.startfile(os.path.join(PATHS["html"], "record_stats.html"))
 
     def save_iron_config(self):
         self.update_settings({
