@@ -72,7 +72,7 @@ class SilverWolfManager:
 
         Returns:
             True 表示应跳过秘技直接平A；未开启银狼、未识别到银狼、
-            非黄泉/白厄、识别失败时返回 False，保持原行为。
+            非黄泉/白厄时返回 False，保持原行为。
         """
         if not self.parent.opt.get("silver_wolf_enable", False):
             return False
