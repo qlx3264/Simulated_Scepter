@@ -7,8 +7,9 @@
     temp   temp 及其七个子目录下的 年月日_时分秒(.毫秒).png，
            以及 blank_state 下名称带时间的 blank_像素数_年月日_时分秒 调试目录
 
-时间直接取自文件或目录名称中的时间，不依赖文件系统的创建或修改时间。单个
-对象删除失败不会中断清理，失败数量单独统计。配置单独保存在
+时间直接取自文件或目录名称中的时间，不依赖文件系统的创建或修改时间。本次运行
+正在写入的日志由当前进程占用，删除必然失败，因此不在清理范围内。单个对象删除
+失败不会中断清理，失败数量单独统计。配置单独保存在
 config/config/cleanup_config.yml，参数不合法时用 example 配置的默认值覆盖。
 """
 
@@ -23,7 +24,7 @@ import yaml
 
 from route import PATHS
 from tool import EXTRA
-from tool.log import CUS_LOGGER, log_emitter
+from tool.log import CUS_LOGGER, current_log_file, log_emitter
 
 CONFIG_PATH = os.path.join(PATHS["config"], "cleanup_config.yml")
 EXAMPLE_PATH = os.path.join(PATHS["example"], "cleanup_config_example.yml")
@@ -546,7 +547,7 @@ def delete_files(files: list[CollectFile]) -> tuple[int, int]:
     """逐个删除命中的文件或目录并统计结果。
 
     删除失败的对象跳过并计入失败数量，不中断整体清理；命中目录时连同目录
-    内容一起删除。
+    内容一起删除。正在写入的日志不在待删除列表内，见 skip_current_log。
 
     Args:
         files: 待删除的文件与目录列表。
@@ -570,6 +571,21 @@ def delete_files(files: list[CollectFile]) -> tuple[int, int]:
     return success_count, failure_count
 
 
+def skip_current_log(files: list[CollectFile]) -> list[CollectFile]:
+    """跳过本次运行正在写入的日志文件。
+
+    该文件由当前进程持有，删除必然失败，把它计入失败数量会让清理结果失真。
+
+    Args:
+        files: 待删除的文件与目录列表。
+
+    Returns:
+        去掉正在写入的日志文件后的列表。
+    """
+    current_log = current_log_file()
+    return [item for item in files if os.path.basename(item.path) != current_log]
+
+
 def cleanup_manual(config: CleanupConfig, category: str, now: datetime | None = None) -> CleanupResult:
     """按用户设定的期限执行一次手动清理。
 
@@ -586,7 +602,7 @@ def cleanup_manual(config: CleanupConfig, category: str, now: datetime | None = 
     """
     now = now or datetime.now()
     item = config.item(category)
-    files = collect_files(category)
+    files = skip_current_log(collect_files(category))
     if item.value > 0:
         cutoff = subtract_duration(now, item.value, item.unit)
         files = [collect_file for collect_file in files if collect_file.created_at < cutoff]
@@ -627,7 +643,8 @@ def cleanup_all(config: CleanupConfig, category: str, now: datetime | None = Non
         本次清理的成功与失败数量。
     """
     now = now or datetime.now()
-    success_count, failure_count = delete_files(collect_files(category))
+    success_count, failure_count = delete_files(
+        skip_current_log(collect_files(category)))
     return CleanupResult(
         category=category,
         success_count=success_count,

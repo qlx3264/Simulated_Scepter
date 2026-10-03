@@ -216,6 +216,37 @@ class CleanupBehaviourTests(CleanupServiceTestBase):
         self.assertFalse(os.path.exists(recent_temp))
         self.assertEqual(result.success_count, 2)
 
+    def test_current_log_is_not_cleaned(self):
+        # 本次运行正在写入的日志，无论期限如何都不参与清理。
+        current = self.write(self.paths["logs"], "log_2020-01-01-00-00.txt")
+        old_log = self.write(self.paths["logs"], log_name(NOW - timedelta(days=30)))
+        config = self.config(value=0, unit="day")
+
+        with patch.object(service, "current_log_file", return_value="log_2020-01-01-00-00.txt"):
+            result = cleanup_manual(config, "log", NOW)
+
+        self.assertTrue(os.path.exists(current))
+        self.assertFalse(os.path.exists(old_log))
+        self.assertEqual((result.success_count, result.failure_count), (1, 0))
+
+    def test_skip_current_log_keeps_other_objects(self):
+        current = self.write(self.paths["logs"], "log_2026-10-10-12-00.txt")
+        other = self.write(self.paths["logs"], "log_2026-10-09-12-00.txt")
+        items = [
+            service.CollectFile(path=current, created_at=NOW),
+            service.CollectFile(path=other, created_at=NOW),
+            service.CollectFile(
+                path=os.path.join(self.paths["temp"], "kill"),
+                created_at=NOW,
+                is_directory=True,
+            ),
+        ]
+
+        with patch.object(service, "current_log_file", return_value="log_2026-10-10-12-00.txt"):
+            kept = service.skip_current_log(items)
+
+        self.assertEqual([item.path for item in kept], [other, items[2].path])
+
     def test_failed_deletion_is_counted_and_does_not_stop_cleanup(self):
         files = [
             self.write(self.paths["video"], video_name(NOW - timedelta(days=index)))
