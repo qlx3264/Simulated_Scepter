@@ -153,7 +153,7 @@ jobs:
               --repo $env:REPOSITORY `
               --state merged `
               --limit 1000 `
-              --json number,title,author,mergedAt,url
+              --json number,title,author,mergedAt,url,headRefName
 
             if ([string]::IsNullOrWhiteSpace($mergedPrsJson)) {
               return ""
@@ -170,6 +170,9 @@ jobs:
                   $_.GetType().Name -eq 'PSCustomObject' -and
                   $_.mergedAt -ne $null -and
                   $alreadyNoted -notcontains $_.number -and
+                  # 版本号回写用的 PR（分支名 version-change-vX.Y.Z）是打包流程自己产生的，
+                  # 与本次发布的内容无关，不能出现在 Release Notes 里
+                  $_.headRefName -notmatch '^version-change-v' -and
                   ([DateTimeOffset]::Parse($_.mergedAt) -gt $SinceDate)
                 } |
                 Sort-Object {
@@ -792,11 +795,19 @@ jobs:
           Write-Host "Version $version pushed to $branch; opening a pull request."
 
       # 分支保护下 master 不接受直接推送，因此版本号一律以 PR 形式提交
+      #
+      # 关于令牌：GITHUB_TOKEN 能否创建 PR 由仓库策略决定
+      # （Settings → Actions → General → Workflow permissions →
+      #  Allow GitHub Actions to create and approve pull requests）。
+      # 若该开关打不开（或受组织策略限制），配置一个名为 VERSION_BUMP_TOKEN 的
+      # secret（PAT / GitHub App 安装令牌，需 contents:write + pull-requests:write），
+      # 下面的步骤会自动优先使用它，无需改动其它地方。
       - name: Open version bump pull request
         if: steps.version.outputs.pr == 'true'
         shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
+          BUMP_TOKEN: ${{ secrets.VERSION_BUMP_TOKEN }}
           VERSION: ${{ needs.prepare.outputs.version }}
           REPOSITORY: ${{ github.repository }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
@@ -807,12 +818,40 @@ jobs:
           PR_BODY: |
             打包并发布 Release 后自动回写的版本号。
             master 开启了分支保护，因此以 PR 形式提交。
+          CLOSE_COMMENT: |
+            已被更高版本的版本号 PR 取代，自动关闭。
         run: |
           $ErrorActionPreference = "Stop"
+
+          # 有 VERSION_BUMP_TOKEN 就优先用它（GITHUB_TOKEN 可能被策略禁止创建 PR）
+          if (-not [string]::IsNullOrWhiteSpace($env:BUMP_TOKEN)) {
+            $env:GH_TOKEN = $env:BUMP_TOKEN
+            Write-Host "Using VERSION_BUMP_TOKEN to open the pull request."
+          }
+          else {
+            Write-Host "VERSION_BUMP_TOKEN is not set; falling back to GITHUB_TOKEN."
+          }
 
           $version = $env:VERSION
           $title = "chore: bump version to v$version [skip ci]"
           $prBody = $env:PR_BODY
+
+          # 把 "x.y.z" 解析成三段数字；不合法就返回 $null
+          # （不能靠 try/catch：PS 5.1 里 ForEach-Object 块内的转换错误不会被外层捕获）
+          function ConvertTo-VersionParts {
+            param([string]$Value)
+
+            if ($Value -notmatch '^\d+\.\d+\.\d+$') {
+              return $null
+            }
+
+            return @($Value.Split('.') | ForEach-Object { [int]$_ })
+          }
+
+          $headPrefix = "version-change-v"
+
+          # gh pr list 的 --jq 里做不了字符串截取，分支名在本地解析
+          $thisParts = ConvertTo-VersionParts ($env:BRANCH -replace "^$headPrefix", "")
 
           # 同一个分支上可能已经有开着的 PR（例如上一次运行中断后重跑）：
           # 分支刚刚被更新过，所以直接更新它的标题与正文，不重复开
@@ -838,20 +877,82 @@ jobs:
             if ($LASTEXITCODE -ne 0) {
               throw "Failed to update the version bump pull request."
             }
+          }
+          else {
+            # 标题里的 [skip ci] 用于跳过 PR 触发的 CI（提交信息里的那个只对 push 事件生效）
+            gh pr create `
+              --repo $env:REPOSITORY `
+              --base $env:DEFAULT_BRANCH `
+              --head $env:BRANCH `
+              --title $title `
+              --body $prBody
 
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to create the pull request. Enable 'Allow GitHub Actions to create and approve pull requests' in the repository Actions settings, or configure the VERSION_BUMP_TOKEN secret."
+            }
+
+            Write-Host "Pull request created for $($env:BRANCH)."
+          }
+
+          # 收尾：把被本次取代的旧版本号 PR 关掉，避免它们堆积成互相冲突的 PR
+          # （每个旧 PR 改的是同样那两行版本号，后合并的必然冲突）
+          $openJson = gh pr list `
+            --repo $env:REPOSITORY `
+            --state open `
+            --limit 100 `
+            --json number,headRefName
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Could not list the open pull requests; skipping the stale bump cleanup."
             exit 0
           }
 
-          # 标题里的 [skip ci] 用于跳过 PR 触发的 CI（提交信息里的那个只对 push 事件生效）
-          gh pr create `
-            --repo $env:REPOSITORY `
-            --base $env:DEFAULT_BRANCH `
-            --head $env:BRANCH `
-            --title $title `
-            --body $prBody
+          $openPrs = @()
+          $parsedOpen = $openJson | ConvertFrom-Json
 
-          if ($LASTEXITCODE -ne 0) {
-            throw "Failed to create the version bump pull request."
+          if ($null -ne $parsedOpen) {
+            $openPrs = @($parsedOpen)
           }
 
-          Write-Host "Pull request created for $($env:BRANCH)."
+          foreach ($openPr in $openPrs) {
+            $otherRef = [string]$openPr.headRefName
+
+            if ($otherRef -eq $env:BRANCH) {
+              continue
+            }
+
+            if (-not $otherRef.StartsWith($headPrefix)) {
+              continue
+            }
+
+            # 只关掉版本号更小的那些；分支名不规范时解析结果为空，直接跳过
+            $otherParts = ConvertTo-VersionParts ($otherRef -replace "^$headPrefix", "")
+
+            if ($null -eq $thisParts -or $null -eq $otherParts) {
+              continue
+            }
+
+            if ($thisParts.Count -ne 3 -or $otherParts.Count -ne 3) {
+              continue
+            }
+
+            $older =
+              ($otherParts[0] -lt $thisParts[0]) -or
+              ($otherParts[0] -eq $thisParts[0] -and $otherParts[1] -lt $thisParts[1]) -or
+              ($otherParts[0] -eq $thisParts[0] -and $otherParts[1] -eq $thisParts[1] -and $otherParts[2] -lt $thisParts[2])
+
+            if (-not $older) {
+              continue
+            }
+
+            Write-Host "Closing superseded version bump PR #$($openPr.number) ($otherRef)."
+
+            gh pr close $openPr.number `
+              --repo $env:REPOSITORY `
+              --delete-branch `
+              --comment $env:CLOSE_COMMENT
+
+            if ($LASTEXITCODE -ne 0) {
+              Write-Warning "Could not close PR #$($openPr.number); continuing."
+            }
+          }
