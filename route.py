@@ -27,6 +27,7 @@ def build_paths(root):
         # 日志文件
         "logs": os.path.join(root, "logs"),
         # 资源文件
+        "csv": os.path.join(root, "resource", "csv"),
         "event": os.path.join(root, "resource", "event"),
         "font": os.path.join(root, "resource", "font"),
         "html": os.path.join(root, "resource", "html"),

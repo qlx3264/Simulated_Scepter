@@ -436,7 +436,7 @@ border:none</string>
               </layout>
              </item>
              <item>
-              <layout class="QVBoxLayout" name="Lay_Tab1_Right" stretch="0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0">
+              <layout class="QVBoxLayout" name="Lay_Tab1_Right" stretch="0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0">
                <property name="spacing">
                 <number>6</number>
                </property>
@@ -750,6 +750,31 @@ border:none</string>
                   <string>货币战争自动收集</string>
                  </property>
                 </widget>
+               </item>
+               <item>
+                <layout class="QHBoxLayout" name="script_layout" stretch="0,1,0">
+                 <item>
+                  <widget class="QComboBox" name="engine_combo">
+                   <property name="toolTip">
+                    <string>选择脚本使用的运行内核</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QComboBox" name="script_combo">
+                   <property name="toolTip">
+                    <string>选择 actions 文件夹中的 JSON 动作脚本</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="run_script_btn">
+                   <property name="text">
+                    <string>运行脚本</string>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
                </item>
                <item>
                 <widget class="QPushButton" name="calibrate_btn">
