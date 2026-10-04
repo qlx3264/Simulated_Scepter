@@ -483,6 +483,15 @@ jobs:
             @{
               Path    = "tool\EXTRA.py"
               Pattern = '(?m)^(\s*VERSION\s*=\s*")[^"]*(")'
+            },
+            @{
+              # uv.lock 里项目自己那条也带版本号，必须一起改：uv 会拿它和 pyproject.toml 比对，
+              # 不一致时任何 uv 命令都会把它重写（本地就会冒出莫名其妙的 diff），
+              # 将来若给 CI 加上 uv sync --locked 还会直接构建失败。
+              # 锁文件里每个依赖也有 version，所以匹配必须锚定在项目自己那个块内 ——
+              # 下面的「只能有 1 处匹配」检查就是防止这里匹配错位置的保险。
+              Path    = "uv.lock"
+              Pattern = '(?ms)(\[\[package\]\]\r?\nname = "auto-difficult-achievement"\r?\nversion = ")[^"]*(")'
             }
           )
 
@@ -699,7 +708,7 @@ jobs:
           # 默认不创建 PR：内容没变化时直接结束
           "pr=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
-          # 两处版本号：pyproject.toml 的 [project] version、tool/EXTRA.py 的 VERSION
+          # 三处版本号：pyproject.toml 的 [project] version、tool/EXTRA.py 的 VERSION、uv.lock 里项目自己那条
           # 只替换版本号本身，不动引号/空格等原有写法
           $targets = @(
             @{
@@ -709,6 +718,11 @@ jobs:
             @{
               Path    = "tool\EXTRA.py"
               Pattern = '(?m)^(\s*VERSION\s*=\s*")[^"]*(")'
+            },
+            @{
+              # 只在项目自己那个块内替换；锁文件里每个依赖也有 version 行
+              Path    = "uv.lock"
+              Pattern = '(?ms)(\[\[package\]\]\r?\nname = "auto-difficult-achievement"\r?\nversion = ")[^"]*(")'
             }
           )
 

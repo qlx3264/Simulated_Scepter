@@ -2724,7 +2724,9 @@ class UniverseUtils:
         for k in [0, 90, 90, 90, 45, -90, -90, -90, -45]:
             pos = get_text_position(self.get_screen())
             if pos:
-                CUS_LOGGER.debug(f"距离中心点{960 - pos[0][0]}，进行旋转")
+                CUS_LOGGER.debug(
+                    f"检测到文字候选{pos}，取最左侧{pos[0]}，距中心点{960 - pos[0][0]}，进行旋转"
+                )
                 key_mouse_manager.mouse_move((pos[0][0] - 960) / 16.5)
                 find=True
                 key_mouse_manager.wait()
@@ -2732,6 +2734,8 @@ class UniverseUtils:
             key_mouse_manager.mouse_move(-k)
             key_mouse_manager.wait()
         self.moving_direct = False
+        if not find:
+            CUS_LOGGER.debug("旋转一周未检测到文字")
         return find
     def use_e(self,face=False,fixed=False):
         if not fixed:
