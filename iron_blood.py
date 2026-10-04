@@ -68,6 +68,7 @@ class IronBloodUniverse(AnyFateUniverse):
             self.update_state("re_start")
         self.elapsed_time = 0  # 重置演算持续时间
         self.kill_count = 0
+        self.expectation_weight ＝ 0 # 重置地图路径权重
         self.first_plane_weight = 0 # 重置开局期望
         self.fail_match_count=0
         self.node_count=0
@@ -168,7 +169,7 @@ class IronBloodUniverse(AnyFateUniverse):
             CUS_LOGGER.debug(f"当前一面最低期望{self.first_plane_min_weight}，识别到开局期望{self.expectation_weight}")
             if self.plane_floor==1:
                 self.first_plane_weight = self.expectation_weight
-                if self.expectation_weight < self.first_plane_min_weight:
+                if self.expectation_weight and self.expectation_weight < self.first_plane_min_weight:
                     CUS_LOGGER.warning("如果不能将此世从「毁灭」中拯救它，那就让寰宇在愤怒中燃烧吧......")
                     self.need_end=True
         for _ in range(5):
