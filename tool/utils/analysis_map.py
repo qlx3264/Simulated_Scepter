@@ -18,8 +18,8 @@ GREEN_HALO_VALUE_MIN = 100
 GREEN_HALO_RATIO_THRESHOLD = 0.02
 
 # 42x42 的四个队伍栏头像裁剪区域（1920x1080 窗口下实测校准）。
-# 每项为 (x1, y1, x2, y2)，单位像素；依次从这四个区域截出头像作为模板
-# 用于定位角色在选路/选目标界面中当前所在的节点。
+# 每项为 (x1, y1, x2, y2)，单位像素；依次从这四个区域截出头像作为
+# 模板，用于定位角色在选路/选目标界面中当前所在的节点。
 ROLE_SLOT_RECTS = (
     (55, 66, 97, 108),    # 1P
     (55, 158, 97, 200),   # 2P
@@ -27,12 +27,9 @@ ROLE_SLOT_RECTS = (
     (55, 343, 97, 385),   # 4P
 )
 # 队伍栏头像与地图图标之间的固定缩放比例：4 张不同截图、不同操控角色
-# 校准显示最优缩放均落在 0.88~0.92，统一取 0.90；游戏自身 UI 缩放改变时
-# 需要重新校准。
+# 校准显示最优缩放均落在 0.88~0.92，统一取 0.90；游戏 UI 缩放改变时需要
+# 重新校准。
 ROLE_TPL_SCALE = 0.90
-# 上一次成功匹配到的队伍栏槽位（1~4）。下一次调用优先重试该槽位，
-# 任一槽位命中即返回。
-_last_matched_slot = None
 
 def _green_halo_ratio(roi):
     """Return the share of bright green pixels used by an infected-node halo."""
@@ -475,12 +472,13 @@ def evaluate_best_single_replacement(nodes, edges, start_idx, t=0.2):
 
     return best_path, best_weight, best_end_idx, best_replace_idx, float(best_delta), float(best_discounted_delta)
 
-def compute_start_point_from_crop(image, mode=2, th=0.85, return_details=False):
+def compute_start_point_from_crop(image, mode=2, th=0.85, return_details=False,
+                                   preferred_slot=None):
     """通过队伍栏头像匹配定位角色当前所在节点。
 
     mode=2（选路/选目标界面）：从队伍栏 4 个固定位置裁出 42x42 头像，
     按 ROLE_TPL_SCALE 缩放后，在 head_mask 限定的地图区域内搜索；
-    上一次命中的槽位优先重试，任一槽位命中即返回。
+    preferred_slot 指定的槽位优先尝试，任一槽位命中即返回。
     mode=3（中途打开地图界面）：沿用原有灰度 + head_mask2 流程。
 
     Args:
@@ -488,13 +486,13 @@ def compute_start_point_from_crop(image, mode=2, th=0.85, return_details=False):
         mode: 2=选路/选目标界面；3=中途打开地图界面。
         th: 匹配阈值，低于该值视为未识别到角色。
         return_details: 为 True 时额外返回匹配细节，供 GUI 复用原图裁片。
+        preferred_slot: 优先尝试的槽位（1~4）。由调用方传入当前操控角色位，
+            可用时优先尝试该槽位，未命中再按 1~4 顺序扫描其余槽位。
 
     Returns:
         默认返回匹配位置中心 (cx, cy)；失败返回 None。
         return_details=True 时返回 (center, details)，失败返回 (None, None)。
     """
-    global _last_matched_slot
-
     if image is None:
         return (None, None) if return_details else None
 
@@ -513,12 +511,11 @@ def compute_start_point_from_crop(image, mode=2, th=0.85, return_details=False):
             image[my1:my2, mx1:mx2], image[my1:my2, mx1:mx2],
             mask=mask_gray[my1:my2, mx1:mx2])
 
-        # 优先重试上次命中的槽位；任一槽位命中即返回。
-        cached_slot = _last_matched_slot
+        # preferred_slot 优先尝试；其余槽位按 1~4 顺序遍历，命中即返回。
         slots_order = list(range(1, len(ROLE_SLOT_RECTS) + 1))
-        if cached_slot in slots_order:
-            slots_order.remove(cached_slot)
-            slots_order.insert(0, cached_slot)
+        if preferred_slot in slots_order:
+            slots_order.remove(preferred_slot)
+            slots_order.insert(0, preferred_slot)
 
         for slot in slots_order:
             sx1, sy1, sx2, sy2 = ROLE_SLOT_RECTS[slot - 1]
@@ -533,13 +530,10 @@ def compute_start_point_from_crop(image, mode=2, th=0.85, return_details=False):
                                 interpolation=cv2.INTER_AREA)
             res = cv2.matchTemplate(search, scaled, cv2.TM_CCOEFF_NORMED)
             _, max_val, _, max_loc = cv2.minMaxLoc(res)
-            cache_tag = '（缓存命中）' if slot == cached_slot else ''
-            CUS_LOGGER.debug(
-                f'角色{slot}P匹配{cache_tag} 得分={max_val:.3f}')
+            CUS_LOGGER.debug(f'角色{slot}P匹配 得分={max_val:.3f}')
             if max_val <= th:
                 continue
 
-            _last_matched_slot = slot
             cx = mx1 + max_loc[0] + tw / 2.0
             cy = my1 + max_loc[1] + th_px / 2.0
             CUS_LOGGER.debug(
@@ -556,7 +550,6 @@ def compute_start_point_from_crop(image, mode=2, th=0.85, return_details=False):
             return center
 
         CUS_LOGGER.warning('角色起始位置：所有槽位均无有效匹配')
-        _last_matched_slot = None
         return (None, None) if return_details else None
 
     # mode == 3：中途打开地图界面，头像位于画面中下方，沿用原有灰度 + 掩码流程
