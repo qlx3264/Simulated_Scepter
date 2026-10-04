@@ -69,7 +69,6 @@ class IronBloodUniverse(AnyFateUniverse):
             self.update_state("re_start")
         self.elapsed_time = 0  # 重置演算持续时间
         self.kill_count = 0
-        self.expectation_weight = 0 # 重置地图路径期望
         self.first_plane_weight = 0 # 重置开局期望
         self.fail_match_count=0
         self.node_count=0
@@ -165,6 +164,7 @@ class IronBloodUniverse(AnyFateUniverse):
         else:
             CUS_LOGGER.warning("多么绝妙的巧合。你我都心知肚明。")
             return
+        self.expectation_weight = 0 # 重置地图路径期望
         for _ in range(3):
             self.try_analysis_map(1,1)
             if self.expectation_weight:
