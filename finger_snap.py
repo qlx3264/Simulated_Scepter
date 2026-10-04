@@ -329,9 +329,23 @@ class FingerSnap(AnyFateUniverse):
             for idx in infectable_indices:
                 CUS_LOGGER.debug(f"  节点{idx}: {matches[idx]['name']} at {matches[idx]['location']}")
         if mode==2:
-            start=compute_start_point_from_crop(image)
-            if start is None:
-                start = compute_start_point_from_crop(image,th=0.7)
+            # 把当前操控角色位交给 analysis_map 优先尝试；检测结果与
+            # current_role 不一致时（例如 silver_wolf_manager 在秘技点
+            # 耗尽时直接按 "1" 切回一号位，未经过 switch_current_role），
+            # 以检测结果为准更新 current_role，使该属性始终反映实际状态。
+            center, details = compute_start_point_from_crop(
+                image, return_details=True, preferred_slot=self.current_role)
+            if center is None:
+                center, details = compute_start_point_from_crop(
+                    image, th=0.7, return_details=True,
+                    preferred_slot=self.current_role)
+            start = center
+            if details is not None and details['slot'] != self.current_role:
+                CUS_LOGGER.debug(
+                    f"角色位与 current_role 不一致："
+                    f"current_role={self.current_role} 检测={details['slot']}，"
+                    f"同步为检测结果")
+                self.current_role = details['slot']
         elif mode==3:
             start = compute_start_point_from_crop(image,mode=mode)
             if start is None:
