@@ -907,7 +907,7 @@ class MainWindow(QMainWindowLog):
         self.auto_attack_breakable.setChecked(data.get("auto_attack_breakable", False))
         self.debug_checkbox2.setChecked(data.get("debug", False))
         self.record_event_map_checkbox.setChecked(data.get("record_event_map", False))
-        self.recording_keep_long_run_checkbox.setChecked(data.get("recording_keep_long_run", True))
+        self.recording_keep_long_run_checkbox.setChecked(data.get("recording_keep_long_run", False))
         self.recording_keep_long_run_threshold_input.setText(str(data.get("recording_keep_long_run_threshold", 1.2)))
         self.recording_label_checkbox.setChecked(data.get("record_add_label", True))
 
