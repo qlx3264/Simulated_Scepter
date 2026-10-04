@@ -165,7 +165,11 @@ class IronBloodUniverse(AnyFateUniverse):
         else:
             CUS_LOGGER.warning("多么绝妙的巧合。你我都心知肚明。")
             return
-        self.try_analysis_map(1,1)
+        for _ in range(3):
+            self.try_analysis_map(1,1)
+            if self.expectation_weight:
+                break
+            time.sleep(0.6)
         if self.early_stop and self.gwypzmgzcndqlp:
             CUS_LOGGER.debug(f"当前一面最低期望{self.first_plane_min_weight}，识别到开局期望{self.expectation_weight}")
             if self.plane_floor==1:
