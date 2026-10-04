@@ -7,7 +7,7 @@ import sys
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 FAKE_WINDOW_RECT = (623, 5, 2565, 1141)
 TEMP_PREFIX = ".recorder-test-"
@@ -135,12 +135,10 @@ class WindowRecorderTests(unittest.TestCase):
         self.thread_class = Mock(side_effect=lambda **kwargs: Mock(is_alive=Mock(return_value=False)))
         module = load_recorder_module(self.cv2_stub, self.thread_class)
         self.module = module
-        # 真实上限为 5 秒，测试用极小值等价覆盖同一分支，避免拖慢测试。
         self.recorder = module.WindowRecorder(
             output_path=self.output_path,
             window_title="崩坏：星穹铁道",
             window_class_name="UnityWndClass",
-            stop_thread_timeout=0.05,
         )
 
     def tearDown(self):
@@ -217,45 +215,42 @@ class WindowRecorderTests(unittest.TestCase):
 
         self.assertTrue(self.recorder._is_playable())
 
-    def test_stopping_thread_ends_process_without_touching_recording(self):
-        # 录制线程卡在无法中断的调用里时，继续等待只会让视频一直增长且始终缺少
-        # moov 索引；此时应结束进程，而不是删掉或重命名一个仍在写入的文件。
+    def test_stopping_thread_leaves_recording_untouched_and_continues(self):
+        # 录制线程卡在无法中断的调用里时，不能强行终止它，也不能去删或重命名一个
+        # 仍在写入的文件；本次录制按失败处理，任务本身继续运行。
         self.write_recording(with_moov=False)
         self.recorder.recording = True
         self.recorder.recording_thread = Mock(is_alive=Mock(return_value=True))
-        self.recorder._halt_process = Mock()
-        self.recorder._halt_process.side_effect = SystemExit(1)
 
-        with self.assertRaises(SystemExit):
-            self.recorder.stop_recording(delete_video=True, battle_count=2)
+        self.recorder.stop_recording(delete_video=True, battle_count=2)
 
-        self.recorder.recording_thread.join.assert_called_once_with(
-            timeout=self.recorder.stop_thread_timeout)
-        self.recorder._halt_process.assert_called_once_with()
+        self.recorder.recording_thread.join.assert_called_once_with(timeout=3.0)
         self.assertTrue(os.path.exists(self.output_file))
         self.assertNotIn("2战-", self.output_file)
 
-    def test_thread_stopped_in_time_does_not_end_process(self):
-        self.write_recording()
+    def test_thread_not_stopped_blocks_further_recording(self):
+        # 线程仍在运行时不得启动新会话：旧线程退出时会释放 self.out，
+        # 那会误释放新会话的写入器。
+        self.write_recording(with_moov=False)
+        self.recorder.recording = True
+        self.recorder.recording_thread = Mock(
+            is_alive=Mock(return_value=True), start=Mock())
+        self.recorder.stop_recording()
+
+        self.recorder.start_recording(9)
+
+        self.assertFalse(self.recorder.recording)
+        self.assertEqual(self.thread_class.call_count, 0)
+        self.recorder.recording_thread.start.assert_not_called()
+
+    def test_thread_stopped_in_time_still_disposes_recording(self):
+        self.write_recording(with_moov=False)
         self.recorder.recording = True
         self.recorder.recording_thread = Mock(is_alive=Mock(return_value=False))
-        self.recorder._halt_process = Mock()
 
         self.recorder.stop_recording()
 
-        self.recorder._halt_process.assert_not_called()
-        self.assertTrue(os.path.exists(self.output_file))
-
-    def test_stop_timeout_defaults_to_five_seconds(self):
-        recorder = self.module.WindowRecorder(output_path=self.output_path)
-
-        self.assertEqual(recorder.stop_thread_timeout, 5.0)
-
-    def test_halt_process_exits_with_failure_code(self):
-        with patch.object(self.module.os, "_exit") as exit_process:
-            self.recorder._halt_process()
-
-        exit_process.assert_called_once_with(1)
+        self.assertFalse(os.path.exists(self.output_file))
 
 
 if __name__ == "__main__":

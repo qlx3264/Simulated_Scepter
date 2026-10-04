@@ -24,20 +24,16 @@ from tool.utils.game_window import (
     get_window_kind,
     is_usable_game_window,
 )
-# 停止录制时等待录制线程退出的上限，超过则结束进程，避免卡在无法中断的截图或写盘调用上。
-# 录制线程每帧都会检查停止标志，正常情况下远快于此上限。
-STOP_THREAD_TIMEOUT = 5.0
 
 
 class WindowRecorder:
-    def __init__(self, output_path=PATHS["video"], handle=None, fps=30.0, window_title=None, window_class_name=None, see_time=False, is_show=False, offsets=None, overlay_map=False, map_alpha=0.7, simul_instance=None, stop_thread_timeout=STOP_THREAD_TIMEOUT):
+    def __init__(self, output_path=PATHS["video"], handle=None, fps=30.0, window_title=None, window_class_name=None, see_time=False, is_show=False, offsets=None, overlay_map=False, map_alpha=0.7, simul_instance=None):
         self.output_path = output_path
         self.fps = fps
         self.window_title = window_title
         self.window_class_name = window_class_name
         self.recording = False
         self.recording_thread = None
-        self.stop_thread_timeout = stop_thread_timeout
         self.hwnd = handle
         self.out = None
         self.width = 0
@@ -567,8 +563,11 @@ class WindowRecorder:
 
             self.recording = False
 
-        # 等待录制线程完全退出，避免 FFmpeg DLL 资源竞争
-        self._stop_recording_thread()
+        # 等待录制线程完全退出，避免 FFmpeg DLL 资源竞争；
+        # 线程仍未退出时下面会跳过清理，不能去动一个正在写入的文件。
+        if not self._stop_recording_thread():
+            CUS_LOGGER.debug(f"录制线程未退出，暂不处置录制文件：{self.output_file}")
+            return
 
         # 调用方要求删除或已损坏文件都直接删除
         if delete_video or not self._is_playable():
@@ -587,40 +586,34 @@ class WindowRecorder:
         CUS_LOGGER.debug(f"停止录制{self.output_file}")
 
     def _stop_recording_thread(self):
-        """等待录制线程退出，线程无法停止时结束进程。
+        """等待录制线程退出，返回是否可以安全处置录制文件。
 
-        录制线程可能阻塞在截图或写盘调用中，这类调用无法被停止标志或线程中断打断，
-        继续等待会卡住停止流程并让视频文件持续增长、始终缺少 moov 索引。因此超过
-        停止上限即结束进程：进程退出由系统收回文件句柄，避免留下仍在增长的坏文件。
+        录制线程可能阻塞在截图或写盘调用中，这类调用无法被停止标志或线程中断打断。
+        此时不能强行终止线程，也不应继续等待卡住停止流程；本次录制按失败处理，
+        调用方跳过清理与重命名，等线程自行退出后再由后续的停止流程处置。
+
+        Returns:
+            线程已退出（或本来就没有在录制）时为 True，否则为 False。
         """
         if not self.recording_thread or not self.recording_thread.is_alive():
-            return
+            return True
 
         try:
             CUS_LOGGER.debug("等待录制线程结束...")
-            self.recording_thread.join(timeout=self.stop_thread_timeout)
+            self.recording_thread.join(timeout=3.0)
         except Exception as e:
             CUS_LOGGER.warning(f"等待录制线程结束时发生错误：{e}")
-            return
+            return False
 
         if not self.recording_thread.is_alive():
             CUS_LOGGER.debug("录制线程已正常结束")
-            return
+            return True
 
         CUS_LOGGER.error(
-            f"录制线程在 {self.stop_thread_timeout} 秒内未能结束，无法中断其截图或写盘调用，将强制结束录制线程"
+            "录制线程未在规定时间内结束，它可能阻塞在无法中断的截图或写盘调用中；"
+            "本次跳过文件清理与重命名，避免处置一个仍在写入的录制文件"
         )
-        self._halt_process()
-        # os._exit 不会返回；此行保证结束进程的逻辑被替换或失效时，
-        # 仍不会继续执行后续的删除与重命名，去动一个线程正在写入的文件。
-        raise SystemExit(1)
-
-    def _halt_process(self):
-        """结束进程，不等待无法停止的录制线程。
-
-        单独成方法便于验证超时路径，正常停止不会走到这里。
-        """
-        os._exit(1)
+        return False
 
 
 if __name__ == "__main__":
