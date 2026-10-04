@@ -39,7 +39,7 @@ class IronBloodUniverse(AnyFateUniverse):
         self.fate = "毁灭"
         self.my_fate = config.fates.index(self.fate)
         self.tk = text_keys(self.my_fate)
-        self.expectation_weight ＝ 0 # 地图路径期望
+        self.expectation_weight = 0 # 地图路径期望
         self.first_plane_weight = 0 # 保存开局期望
         # 铁血战士使用毁灭专属事件优先级
         event_iron_blood = os.path.join(PATHS["event"], "event_iron_blood.yml")
@@ -69,7 +69,7 @@ class IronBloodUniverse(AnyFateUniverse):
             self.update_state("re_start")
         self.elapsed_time = 0  # 重置演算持续时间
         self.kill_count = 0
-        self.expectation_weight ＝ 0 # 重置地图路径期望
+        self.expectation_weight = 0 # 重置地图路径期望
         self.first_plane_weight = 0 # 重置开局期望
         self.fail_match_count=0
         self.node_count=0
