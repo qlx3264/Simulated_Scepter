@@ -177,6 +177,8 @@ class IronBloodUniverse(AnyFateUniverse):
                 if self.expectation_weight and self.expectation_weight < self.first_plane_min_weight:
                     CUS_LOGGER.warning("如果不能将此世从「毁灭」中拯救它，那就让寰宇在愤怒中燃烧吧......")
                     self.need_end=True
+                elif not self.expectation_weight:
+                    CUS_LOGGER.warning("识别开局期望失败")
         for _ in range(5):
             self.click_text(text="进入位面", box=[907, 1009, 857, 891])
             self.node_count = 0
