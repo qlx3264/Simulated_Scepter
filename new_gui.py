@@ -840,7 +840,7 @@ class MainWindow(QMainWindowLog):
             )
             self.Currency_prior_exit_plane_combo.setCurrentIndex(prior_exit_plane_index)
 
-        SILVER_WOLF_SWITCH = (1, 2)
+        SILVER_WOLF_SWITCH = (1, 2, 3, 4)
         for silver_wolf_switch in SILVER_WOLF_SWITCH:
             self.silver_wolf_switch_combo.addItem(
                 f"{silver_wolf_switch}号位",
@@ -877,7 +877,7 @@ class MainWindow(QMainWindowLog):
             data["silver_wolf_switch"] = silver_wolf_switch
             settings_changed = True
         elif isinstance(silver_wolf_switch, str):
-            silver_wolf_switch = {"一号位":1,"二号位":2}.get(silver_wolf_switch, 1)
+            silver_wolf_switch = {"一号位":1,"二号位":2,"三号位":3,"四号位":4}.get(silver_wolf_switch, 1)
             data["silver_wolf_switch"] = silver_wolf_switch
             settings_changed = True
 

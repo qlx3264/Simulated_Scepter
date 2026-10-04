@@ -17,6 +17,23 @@ GREEN_HALO_SATURATION_MIN = 50
 GREEN_HALO_VALUE_MIN = 100
 GREEN_HALO_RATIO_THRESHOLD = 0.02
 
+# 42x42 的四个队伍栏头像裁剪区域（1920x1080 窗口下实测校准）。
+# 每项为 (x1, y1, x2, y2)，单位像素；依次从这四个区域截出头像作为
+# 模板，用于定位角色在选路/选目标界面中当前所在的节点。
+ROLE_SLOT_RECTS = (
+    (55, 66, 97, 108),    # 1P
+    (55, 158, 97, 200),   # 2P
+    (55, 250, 97, 292),   # 3P
+    (55, 343, 97, 385),   # 4P
+)
+# 角色图标只出现在右侧地图面板。用矩形限定搜索范围，
+# 避开左侧队伍栏（x < 900）、底部状态栏（y > 850）与右侧装饰区。
+ROLE_SEARCH_RECT = (900, 150, 1900, 850)   # x1, y1, x2, y2
+# 队伍栏头像与地图图标之间的固定缩放比例：4 张不同截图、不同操控角色
+# 校准显示最优缩放均落在 0.88~0.92，统一取 0.90；游戏分辨率或 UI 缩放
+# 改变时需要重新校准。
+ROLE_TPL_SCALE = 0.90
+
 
 def _green_halo_ratio(roi):
     """Return the share of bright green pixels used by an infected-node halo."""
@@ -460,40 +477,119 @@ def evaluate_best_single_replacement(nodes, edges, start_idx, t=0.2):
     return best_path, best_weight, best_end_idx, best_replace_idx, float(best_delta), float(best_discounted_delta)
 
 
-def compute_start_point_from_crop(image, mode=2, th=0.9,
-                                  return_details=False):
-    """通过裁剪图像并将裁剪区域与完整图像进行模板匹配来计算起点。
+def _locate_role_in_map(image, th, return_details):
+    """在选路/选目标界面定位当前角色所在节点。
+
+    做法：
+        1. 从左侧队伍栏 4 个固定位置裁出 42x42 头像；
+        2. 每个头像按固定比例 ROLE_TPL_SCALE 缩放后，在右侧地图区域搜索；
+        3. 取全局最高分作为角色当前位置，同时确定当前操控的是哪一位。
 
     Args:
-        image: 原始图像（BGR 或灰度）
-        mode: 2=正常执行位面(小裁剪区缩小), 3=中途打开地图界面(大裁剪区放大)
-        th: 匹配阈值
+        image: 原始 BGR 截图。
+        th: 匹配阈值，低于该值视为未识别到角色。
+        return_details: 是否额外返回匹配细节。
 
     Returns:
-        默认返回匹配位置的中心坐标 (cx, cy)，失败则返回 None。
-        return_details=True 时返回 ``(center, details)``，其中 details
-        带有实际用于匹配的起点头像裁剪框，供 GUI 直接复用该原图裁片。
+        默认返回 (cx, cy)；失败返回 None。
+        return_details=True 时返回 (center, details)，失败返回 (None, None)。
+    """
+    if image is None or image.ndim != 3:
+        return (None, None) if return_details else None
+
+    h, w = image.shape[:2]
+    sx1, sy1, sx2, sy2 = ROLE_SEARCH_RECT
+    sx1 = max(0, sx1); sy1 = max(0, sy1)
+    sx2 = min(w, sx2); sy2 = min(h, sy2)
+    if sx2 <= sx1 or sy2 <= sy1:
+        return (None, None) if return_details else None
+    search = image[sy1:sy2, sx1:sx2]
+    if search.size == 0:
+        return (None, None) if return_details else None
+
+    best = None
+    for slot, crop_rect in enumerate(ROLE_SLOT_RECTS, start=1):
+        x1, y1, x2, y2 = crop_rect
+        tpl = image[y1:y2, x1:x2]
+        if tpl.size == 0:
+            continue
+        tw = max(8, int(round(tpl.shape[1] * ROLE_TPL_SCALE)))
+        th_px = max(8, int(round(tpl.shape[0] * ROLE_TPL_SCALE)))
+        if tw >= search.shape[1] or th_px >= search.shape[0]:
+            continue
+        scaled = cv2.resize(tpl, (tw, th_px), interpolation=cv2.INTER_AREA)
+        res = cv2.matchTemplate(search, scaled, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, max_loc = cv2.minMaxLoc(res)
+        slot_best = {
+            'score': float(max_val),
+            'loc': max_loc,
+            'size': (tw, th_px),
+            'slot': slot,
+        }
+        CUS_LOGGER.debug(
+            f'角色{slot}P匹配 crop=[{x1},{y1},{x2},{y2}] 得分={max_val:.3f}')
+        if best is None or slot_best['score'] > best['score']:
+            best = slot_best
+
+    if best is None:
+        CUS_LOGGER.warning('角色起始位置：所有槽位均无有效匹配')
+        return (None, None) if return_details else None
+
+    mx, my = best['loc']
+    tw, th_px = best['size']
+    cx = sx1 + mx + tw / 2.0
+    cy = sy1 + my + th_px / 2.0
+    CUS_LOGGER.debug(
+        f'角色起始位置：{best["slot"]}P 得分={best["score"]:.3f} '
+        f'中心=({cx:.1f},{cy:.1f})')
+
+    if best['score'] > th:
+        center = (float(cx), float(cy))
+        if return_details:
+            return center, {
+                'crop_rect': ROLE_SLOT_RECTS[best['slot'] - 1],
+                'match_score': best['score'],
+                'matched_size': best['size'],
+                'slot': best['slot'],
+            }
+        return center
+    return (None, None) if return_details else None
+
+
+def compute_start_point_from_crop(image, mode=2, th=0.85, return_details=False):
+    """通过队伍栏头像匹配定位角色当前所在节点。
+
+    mode=2 时用 42x42 队伍栏头像按固定比例缩放后，在右侧地图区域搜索；
+    mode=3（中途打开地图界面）沿用原有灰度 + 掩码流程。
+
+    Args:
+        image: 原始 BGR 截图。
+        mode: 2=选路/选目标界面；3=中途打开地图界面。
+        th: 匹配阈值，低于该值视为未识别到角色。
+        return_details: 为 True 时额外返回匹配细节，供 GUI 复用原图裁片。
+
+    Returns:
+        默认返回匹配位置中心 (cx, cy)；失败返回 None。
+        return_details=True 时返回 (center, details)，失败返回 (None, None)。
     """
     if image is None:
         return (None, None) if return_details else None
-    if mode == 2:
-        crop_list = [[55, 63, 92, 104], [58, 159, 94, 199]]#1p与2p角色的位置
-    else:
-        crop_list = [[1003, 929, 1035, 965]]
 
-    for crop_coords in crop_list:
-        x1, y1, x2, y2 = crop_coords
-        tpl = image[y1:y2, x1:x2].copy()
+    if mode == 2:
+        return _locate_role_in_map(image, th=th, return_details=return_details)
+
+    # mode == 3：中途打开地图界面，头像位于画面中下方，沿用原有灰度 + 掩码流程
+    for crop_rect in ((1003, 929, 1035, 965),):
+        x1, y1, x2, y2 = crop_rect
+        tpl = image[y1:y2, x1:x2]
+        if tpl.size == 0:
+            continue
         tpl_gray = cv2.cvtColor(tpl, cv2.COLOR_BGR2GRAY)
-        if mode == 2:
-            new_w = int(tpl_gray.shape[1] * 0.91)
-            new_h = int(tpl_gray.shape[0] * 0.91)
-        else:
-            new_w = int(tpl_gray.shape[1] * 1.19)
-            new_h = int(tpl_gray.shape[0] * 1.19)
+        new_w = int(tpl_gray.shape[1] * 1.19)
+        new_h = int(tpl_gray.shape[0] * 1.19)
         tpl_gray = cv2.resize(tpl_gray, (new_w, new_h))
-        search_gray = cv2.cvtColor(image.copy(), cv2.COLOR_BGR2GRAY)
-        mask = find_image_in_folder('gray_image/', 'head_mask') if mode==2 else find_image_in_folder('gray_image/', 'head_mask2')
+        search_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        mask = find_image_in_folder('gray_image/', 'head_mask2')
         res = cv2.matchTemplate(
             cv2.bitwise_and(search_gray, search_gray, mask=mask), tpl_gray,
             cv2.TM_CCOEFF_NORMED)
@@ -501,12 +597,12 @@ def compute_start_point_from_crop(image, mode=2, th=0.9,
         mx, my = max_loc
         cx = mx + tpl_gray.shape[1] / 2.0
         cy = my + tpl_gray.shape[0] / 2.0
-        CUS_LOGGER.debug(f'角色匹配 crop={crop_coords} 得分={max_val:.3f}')
+        CUS_LOGGER.debug(f'角色匹配 crop={crop_rect} 得分={max_val:.3f}')
         if max_val > th:
             center = (float(cx), float(cy))
             if return_details:
                 return center, {
-                    'crop_rect': tuple(crop_coords),
+                    'crop_rect': tuple(crop_rect),
                     'match_score': float(max_val),
                     'matched_size': (int(tpl_gray.shape[1]),
                                      int(tpl_gray.shape[0])),
