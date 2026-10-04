@@ -165,11 +165,11 @@ class IronBloodUniverse(AnyFateUniverse):
             CUS_LOGGER.warning("多么绝妙的巧合。你我都心知肚明。")
             return
         self.expectation_weight = 0 # 重置地图路径期望
-        for _ in range(3):
+        tm = time.time()
+        while time.time() - tm < 3: # 3秒内反复识别地图直至成功
             self.try_analysis_map(1,1)
             if self.expectation_weight:
                 break
-            time.sleep(0.6)
         if self.early_stop and self.gwypzmgzcndqlp:
             CUS_LOGGER.debug(f"当前一面最低期望{self.first_plane_min_weight}，识别到开局期望{self.expectation_weight}")
             if self.plane_floor==1:
