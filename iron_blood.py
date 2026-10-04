@@ -57,7 +57,7 @@ class IronBloodUniverse(AnyFateUniverse):
             recording_keep_long_run_threshold = self.opt.get("recording_keep_long_run_threshold", 1.2)
             keep_long_run = (
                 self.debug
-                and self.opt.get("recording_keep_long_run", True)
+                and self.opt.get("recording_keep_long_run", False)
                 and minutes_divide_kill >= recording_keep_long_run_threshold # 演算时间过长录制保留阈值（分钟数÷战斗数）
             )
             need_del = self.del_record_time and self.del_record_time>self.kill_count and not keep_long_run
