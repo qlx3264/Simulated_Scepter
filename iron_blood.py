@@ -68,7 +68,7 @@ class IronBloodUniverse(AnyFateUniverse):
             self.update_state("re_start")
         self.elapsed_time = 0  # 重置演算持续时间
         self.kill_count = 0
-        self.expectation_weight ＝ 0 # 重置地图路径权重
+        self.expectation_weight ＝ 0 # 重置地图路径期望
         self.first_plane_weight = 0 # 重置开局期望
         self.fail_match_count=0
         self.node_count=0
