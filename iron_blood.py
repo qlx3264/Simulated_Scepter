@@ -39,6 +39,7 @@ class IronBloodUniverse(AnyFateUniverse):
         self.fate = "毁灭"
         self.my_fate = config.fates.index(self.fate)
         self.tk = text_keys(self.my_fate)
+        self.expectation_weight = 0 # 地图路径期望
         self.first_plane_weight = 0 # 保存开局期望
         # 铁血战士使用毁灭专属事件优先级
         event_iron_blood = os.path.join(PATHS["event"], "event_iron_blood.yml")
@@ -163,14 +164,21 @@ class IronBloodUniverse(AnyFateUniverse):
         else:
             CUS_LOGGER.warning("多么绝妙的巧合。你我都心知肚明。")
             return
-        self.try_analysis_map(1,1)
+        self.expectation_weight = 0 # 重置地图路径期望
+        tm = time.time()
+        while time.time() - tm < 3: # 3秒内反复识别地图直至成功
+            self.try_analysis_map(1,1)
+            if self.expectation_weight:
+                break
         if self.early_stop and self.gwypzmgzcndqlp:
             CUS_LOGGER.debug(f"当前一面最低期望{self.first_plane_min_weight}，识别到开局期望{self.expectation_weight}")
             if self.plane_floor==1:
                 self.first_plane_weight = self.expectation_weight
-                if self.expectation_weight < self.first_plane_min_weight:
+                if self.expectation_weight and self.expectation_weight < self.first_plane_min_weight:
                     CUS_LOGGER.warning("如果不能将此世从「毁灭」中拯救它，那就让寰宇在愤怒中燃烧吧......")
                     self.need_end=True
+                elif not self.expectation_weight:
+                    CUS_LOGGER.warning("识别开局期望失败")
         for _ in range(5):
             self.click_text(text="进入位面", box=[907, 1009, 857, 891])
             self.node_count = 0
