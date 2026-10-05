@@ -61,6 +61,9 @@ class WindowRecorder:
         self.stop_event = threading.Event()
         # 保护录制状态与停止请求的转移，避免停止到达时错误放行一次新的录制
         self.state_lock = threading.Lock()
+        # 录制所服务的任务线程。录制线程每轮检查它是否还活着，任务一结束就停止录制，
+        # 避免录制线程成为孤儿、任务早就停了录像却一直在长大。
+        self.task_owner = None
 
     def capture_window_background(self, hwnd):
         """使用 PrintWindow API 后台截图指定窗口"""
@@ -298,8 +301,19 @@ class WindowRecorder:
     def _record_window(self):
         """实际的窗口录制线程"""
         frame_count = 0
+        started_at = time.monotonic()
         try:
             while self.recording and not self.stop_event.is_set():
+                owner = self.task_owner
+                if owner is not None and not owner.is_alive():
+                    # 所属任务已结束（正常退出或异常终止）：录制必须跟着结束。
+                    # 否则录制线程会作为孤儿继续写盘，直到进程被强制结束为止，
+                    # 表现为「任务早就停了，录像文件却一直在长大」。
+                    CUS_LOGGER.warning(
+                        f"录制的任务已结束，停止录制（已录 "
+                        f"{time.monotonic() - started_at:.0f} 秒 / {frame_count} 帧）"
+                    )
+                    break
                 try:
                     # 应用偏移值来收缩录制范围 [left, top, right, bottom]
                     # 使用ImageGrab直接捕获窗口区域
@@ -527,11 +541,16 @@ class WindowRecorder:
             self.stop_event.set()
             self.recording = False
 
-        # 等待录制线程完全退出，避免编码器资源竞争；
-        # 线程仍未退出时下面会跳过清理，不能去动一个仍在写入的文件。
-        if not self._stop_recording_thread():
-            CUS_LOGGER.debug(f"录制线程未退出，暂不处置录制文件：{self.output_file}")
-            return
+        # 等待录制线程完全退出，避免编码器资源竞争。
+        # 无论线程是否退出，下面都必须释放写入器：这是唯一能止住文件继续增长的动作。
+        thread_stopped = self._stop_recording_thread()
+        if not thread_stopped:
+            # 线程卡在无法中断的截图或写盘调用里；它可能永远不再回到循环开头，
+            # 此时若继续持有写入器，文件就会一直增长。释放后已写入的分片仍可播放，
+            # 卡住的线程即使恢复也只会写入失败并退出。
+            CUS_LOGGER.warning(
+                f"录制线程未在规定时间内结束，先止住写入以避免文件持续增长：{self.output_file}"
+            )
 
         # 分片 MP4 的 moov 写在文件开头，进程被强制结束时已写入的分片仍可播放，
         # 因此不再按索引判定有效性。也只有写入线程真的失败（文件里没有可用内容）
@@ -542,6 +561,11 @@ class WindowRecorder:
             if not self.out.stop():
                 CUS_LOGGER.warning(f"写入器未正常收尾，保留已写入的分片：{self.output_file}")
             self.out = None
+
+        if not thread_stopped:
+            # 无法确认线程已退出，不能去动文件（不删除、不重命名、不转封装）
+            CUS_LOGGER.debug(f"录制线程未退出，暂不处置录制文件：{self.output_file}")
+            return
 
         if delete_video or write_failed:
             self._abort_start()

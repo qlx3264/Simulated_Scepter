@@ -955,9 +955,6 @@ border:none</string>
            </item>
           </layout>
          </widget>
-
-
-
          <widget class="QWidget" name="AbyssTab">
           <attribute name="title">
            <string>进阶设置</string>
@@ -1008,7 +1005,6 @@ border:none</string>
                   </rect>
                  </property>
                  <layout class="QVBoxLayout" name="verticalLayout_13">
-
                   <item>
                    <layout class="QVBoxLayout" name="verticalLayout_14">
                     <item>
@@ -1031,6 +1027,9 @@ border:none</string>
                    <layout class="QHBoxLayout" name="horizontalLayout_24">
                     <item>
                      <widget class="QLabel" name="label_23">
+                      <property name="FixedWidth">
+                       <number>112</number>
+                      </property>
                       <property name="text">
                        <string>视频保存需求数</string>
                       </property>
@@ -1038,6 +1037,37 @@ border:none</string>
                     </item>
                     <item>
                      <widget class="QLineEdit" name="recording_time_input"/>
+                    </item>
+                   </layout>
+                  </item>
+                  <item>
+                   <layout class="QHBoxLayout" name="horizontalLayout_video_convert">
+                    <item>
+                     <widget class="QLabel" name="video_convert_label">
+                      <property name="FixedWidth">
+                       <number>112</number>
+                      </property>
+                      <property name="text">
+                       <string>异常视频转换</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item stretch="1">
+                     <widget class="QComboBox" name="video_convert_mode_combo">
+                      <property name="toolTip">
+                       <string>选择异常录像的封装方式</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QPushButton" name="video_convert_btn">
+                      <property name="FixedWidth">
+                       <number>96</number>
+                      </property>
+                      <property name="text">
+                       <string>转换</string>
+                      </property>
+                     </widget>
                     </item>
                    </layout>
                   </item>
@@ -1156,20 +1186,20 @@ border:none</string>
                       </property>
                       <property name="toolTip">
                        <string>清理规则：只会检查命名中带有时间格式的文件或文件夹，其他文件不会被清理。
-         可为三类文件独立选择清理模式：
-         1. 永不清理——不执行清理，数值与时间单位仍然显示但不可修改，清理按钮不可用。
-         2. 手动清理——点击按钮时依据所设时间进行清理：
-           - 数值与单位代表一个时间段，保存时间超过该时间段的文件会被清理。
-           - 若数值为0，则清理全部相关文件。
-         3. 周期清理——达到触发时机时，首先检查距离上次清理时间是否达到所设的时间周期：
-           - 若达到，则检查并清理全部相关文件；
-           - 若未达到，则不执行清理。
-           - 若数值为0，则每次达到触发时机都会自动执行清理。
-           - 可以看作每次都会清理全部文件的“手动清理”。
-         4. 自动清理——达到触发时机时依据所设时间进行清理：
-           - 数值与单位代表一个时间段，保存时间超过该时间段的文件会被清理。
-           - 若数值为0，则触发时清理全部相关文件。
-           - 可以看作自动触发的“手动清理”。</string>
+可为三类文件独立选择清理模式：
+1. 永不清理——不执行清理，数值与时间单位仍然显示但不可修改，清理按钮不可用。
+2. 手动清理——点击按钮时依据所设时间进行清理：
+ - 数值与单位代表一个时间段，保存时间超过该时间段的文件会被清理。
+ - 若数值为0，则清理全部相关文件。
+3. 周期清理——达到触发时机时，首先检查距离上次清理时间是否达到所设的时间周期：
+ - 若达到，则检查并清理全部相关文件；
+ - 若未达到，则不执行清理。
+ - 若数值为0，则每次达到触发时机都会自动执行清理。
+ - 可以看作每次都会清理全部文件的“手动清理”。
+4. 自动清理——达到触发时机时依据所设时间进行清理：
+ - 数值与单位代表一个时间段，保存时间超过该时间段的文件会被清理。
+ - 若数值为0，则触发时清理全部相关文件。
+ - 可以看作自动触发的“手动清理”。</string>
                       </property>
                       <property name="alignment">
                        <set>Qt::AlignCenter</set>
@@ -1417,6 +1447,19 @@ border:none</string>
                     </property>
                    </widget>
                   </item>
+                  <item>
+                   <spacer name="verticalSpacer_currency_war">
+                    <property name="orientation">
+                     <enum>Qt::Vertical</enum>
+                    </property>
+                    <property name="sizeHint" stdset="0">
+                     <size>
+                      <width>20</width>
+                      <height>40</height>
+                     </size>
+                    </property>
+                   </spacer>
+                  </item>
                  </layout>
                 </widget>
                </widget>
@@ -1426,7 +1469,6 @@ border:none</string>
            </item>
           </layout>
          </widget>
-
          <widget class="QWidget" name="Tab5">
           <property name="styleSheet">
            <string notr="true"/>
@@ -1665,8 +1707,7 @@ border:none</string>
                 </sizepolicy>
                </property>
                <property name="text">
-                <string>假装出现了一个仪表盘
-</string>
+                <string>假装出现了一个仪表盘</string>
                </property>
                <property name="alignment">
                 <set>Qt::AlignCenter</set>
@@ -1749,8 +1790,7 @@ border:none</string>
              <item>
               <widget class="QLabel" name="Memory_panel">
                <property name="text">
-                <string>假装出现了一个仪表盘
-</string>
+                <string>假装出现了一个仪表盘</string>
                </property>
                <property name="alignment">
                 <set>Qt::AlignCenter</set>
@@ -1822,8 +1862,7 @@ border:none</string>
              <item>
               <widget class="QLabel" name="cpu_panel">
                <property name="text">
-                <string>假装出现了一个仪表盘
-</string>
+                <string>假装出现了一个仪表盘</string>
                </property>
                <property name="alignment">
                 <set>Qt::AlignCenter</set>

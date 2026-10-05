@@ -51,6 +51,7 @@ class LogEmitter(QObject):
     kill_num_signal = pyqtSignal(str)  # (路径状态文本)
     fps_update_signal = pyqtSignal(float)  # (FPS值)
     cleanup_finished_signal = pyqtSignal(object)  # (本次清理结果列表)
+    video_convert_finished_signal = pyqtSignal(int, int)  # (成功数, 失败数)
 
 
 log_emitter = LogEmitter()

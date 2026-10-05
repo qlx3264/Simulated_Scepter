@@ -41,7 +41,7 @@ version = "v8.042"
 
 
 class DivergentUniverse(UniverseUtils):
-    def __init__(self, debug=0, nums=-1, speed=0):
+    def __init__(self, debug=0, nums=-1, speed=0, task_owner=None):
         super().__init__()
         # 设置并启动键鼠管理器
         key_mouse_manager.set_config(config)
@@ -111,7 +111,7 @@ class DivergentUniverse(UniverseUtils):
                 data = json.load(file)
         self.record = data.get("recording_state", True)
         self.recorder = WindowRecorder(output_path=PATHS["video"], fps=30, window_title="崩坏：星穹铁道",
-                                       window_class_name="UnityWndClass", see_time=True, offsets=[10, 50, 10, 10], simul_instance=self)
+                                       window_class_name="UnityWndClass", see_time=True, offsets=[10, 50, 10, 10], simul_instance=self, task_owner=task_owner)
 
     def route(self):
         self.goto_diver_universe()

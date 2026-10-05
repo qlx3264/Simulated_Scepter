@@ -1,9 +1,10 @@
-﻿"""隔离窗口与编码依赖，验证录制停止请求、录制文件处置与写入器协作。"""
+"""隔离窗口与编码依赖，验证录制停止请求、录制文件处置与写入器协作。"""
 
 import glob
 import importlib.util
 import os
 import sys
+import time
 import types
 import unittest
 from pathlib import Path
@@ -75,9 +76,38 @@ def load_recorder_module(stubs):
         stub_names["time"] = stubs["time"]
     saved = {name: sys.modules.get(name) for name in stub_names}
 
+    # 这里可能新建 tool / tool.utils 两个包壳（真实运行时它们来自项目）。
+    # 必须一并记录：否则空壳会留在 sys.modules 里，导致后续测试
+    # import tool.action_script 之类的子模块全部失败。
+    for name in ("tool", "tool.utils", "tool.window_recorder"):
+        saved.setdefault(name, sys.modules.get(name))
+
+    # 注意：saved 里存的是模块对象本身，而下面会把 __path__ 改掉——
+    # 那是对同一个对象的原地修改，所以 __path__ 必须单独留底，否则恢复等于没恢复。
+    missing = object()
+    saved_paths = {
+        name: (module, getattr(module, "__path__", missing))
+        for name, module in saved.items()
+        if module is not None
+    }
+
     for name in ("tool", "tool.utils"):
         module = sys.modules.setdefault(name, types.ModuleType(name))
         module.__path__ = []
+    # 这些属性是挂在真实模块对象上的，恢复 sys.modules 不足以还原，需要逐个记下原值
+    attached = (
+        ("tool", "log"),
+        ("tool", "thread"),
+        ("tool.window_recorder", "recorder_writer"),
+        ("tool.window_recorder", "video_remux"),
+        ("tool.utils", "game_window"),
+    )
+    previous_attrs = {}
+    for module_name, attr in attached:
+        module = sys.modules.get(module_name)
+        if module is not None:
+            previous_attrs[(module_name, attr)] = getattr(module, attr, None)
+
     sys.modules["tool"].log = stubs["logger"]
     sys.modules["tool"].thread = stubs["thread"]
     sys.modules["tool.window_recorder"].recorder_writer = stubs["writer"]
@@ -96,6 +126,22 @@ def load_recorder_module(stubs):
                 sys.modules.pop(name, None)
             else:
                 sys.modules[name] = previous
+        # 还原被原地改掉的 __path__
+        for module, previous_path in saved_paths.values():
+            if previous_path is missing:
+                if hasattr(module, "__path__"):
+                    del module.__path__
+            else:
+                module.__path__ = previous_path
+        for (module_name, attr), previous in previous_attrs.items():
+            module = sys.modules.get(module_name)
+            if module is None:
+                continue
+            if previous is None:
+                if hasattr(module, attr):
+                    delattr(module, attr)
+            else:
+                setattr(module, attr, previous)
 
     return recorder_module
 
@@ -373,9 +419,12 @@ class WindowRecorderTests(unittest.TestCase):
 
         intervals = []
 
-        # 替换 sleep 以便观测节流间隔，同时保持循环快速推进
+        # 替换 sleep 以便观测节流间隔，同时保持循环快速推进；
+        # monotonic 仍需真实实现（录制循环用它统计已录时长）
+        real_time = time
         fake_time = types.ModuleType("time")
         fake_time.sleep = lambda seconds: intervals.append(seconds)
+        fake_time.monotonic = real_time.monotonic
         self.stubs["time"] = fake_time
         module = load_recorder_module(self.stubs)
 
@@ -451,6 +500,70 @@ class WindowRecorderTests(unittest.TestCase):
 
         self.recorder.stop_recording()
 
+        self.assertEqual(self.remux_calls, [])
+
+    def test_recording_stops_when_owning_task_ends(self):
+        """任务结束（正常退出或异常终止）时，录制必须跟着停止。
+
+        否则录制线程会作为孤儿一直写盘，表现为「任务早就停了，录像文件却一直在长大」。
+        """
+        import av
+        import numpy as np
+
+        self.stubs["writer"].RecorderWriter = RealRecorderWriter
+
+        inline_thread = type("InlineThread", (), {
+            "__init__": lambda self, target, **kwargs: setattr(self, "target", target),
+            "start": lambda self: self.target(),
+            "is_alive": lambda self: False,
+            "join": lambda self, timeout=None: None,
+        })
+        self.stubs["thread"].ThreadWithException = inline_thread
+        module = load_recorder_module(self.stubs)
+
+        recorder = module.WindowRecorder(
+            output_path=self.output_path,
+            window_title="崩坏：星穹铁道",
+            window_class_name="UnityWndClass",
+            fps=30,
+        )
+        # 任务从一开始是活的，取到 6 帧后结束
+        alive = {"value": True}
+        task_thread = types.SimpleNamespace(is_alive=lambda: alive["value"])
+        grabs = []
+
+        def grab(bbox=None):
+            grabs.append(bbox)
+            if len(grabs) >= 6:
+                alive["value"] = False
+            return Image.fromarray(
+                np.zeros((bbox[3] - bbox[1], bbox[2] - bbox[0], 3), dtype=np.uint8),
+                mode="RGB")
+
+        self.stubs["image_grab"].grab = grab
+        recorder.task_owner = task_thread
+
+        recorder.start_recording(1)
+        recorder.stop_recording()
+
+        # 任务结束后只允许再多取一帧（死亡与检查之间的那一帧）
+        self.assertLessEqual(len(grabs), 7, f"任务结束后仍在继续取帧: {len(grabs)} 次")
+        self.assertFalse(recorder.recording)
+        self.assertTrue(os.path.exists(recorder.output_file))
+        with av.open(recorder.output_file) as container:
+            self.assertGreater(sum(1 for _ in container.decode(video=0)), 0)
+
+    def test_stuck_thread_still_releases_writer(self):
+        """线程卡住时也必须释放写入器——那是唯一能止住文件增长的动作。"""
+        self.write_recording(thread_alive=True)
+        self.assertIsNotNone(self.recorder.out)
+
+        self.recorder.stop_recording()
+
+        # 不再持有写入器，也不去处置仍在写入的文件
+        self.assertIsNone(self.recorder.out)
+        self.assertEqual(self.writer.stop_calls, 1)
+        self.assertTrue(os.path.exists(self.output_file))
         self.assertEqual(self.remux_calls, [])
 
     def write_recording(self, thread_alive=False):

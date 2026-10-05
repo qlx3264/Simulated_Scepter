@@ -14,6 +14,8 @@ from tool.window_recorder.video_remux import (
     TEMP_SUFFIX,
     convert_in_background,
     convert_to_standard_mp4,
+    convert_with_tail_trimmed,
+    needs_conversion,
 )
 
 TEMP_PREFIX = ".remux-test-"
@@ -196,6 +198,84 @@ class VideoRemuxTests(unittest.TestCase):
 
         self.assertEqual(results, [False])
 
+
+    def test_needs_conversion_detects_fragmented_only(self):
+        # 分片格式需要封装；封装成标准 mp4 之后不再需要
+        path = self.make_recording("detect.mp4")
+        self.assertTrue(needs_conversion(path))
+
+        self.assertTrue(convert_to_standard_mp4(path))
+
+        self.assertFalse(needs_conversion(path))
+
+    def test_needs_conversion_ignores_non_video(self):
+        path = self.new_path("notvideo.mp4")
+        with open(path, "wb") as file:
+            file.write(b"not a video at all")
+        self.assertFalse(needs_conversion(path))
+
+    def test_strict_trim_writes_target_and_keeps_source(self):
+        # UI 的严格模式：输出到「原文件名-严格模式.mp4」，原文件保留
+        path = self.make_recording("strict-src.mp4", frames=FPS * 6)
+        target = self.new_path("strict-out.mp4")
+        self.addCleanup(lambda: os.path.exists(target) and os.remove(target))
+
+        self.assertTrue(convert_with_tail_trimmed(path, target, del_frames=False))
+
+        self.assertTrue(os.path.exists(path))
+        self.assertTrue(needs_conversion(path))
+        self.assertTrue(os.path.exists(target))
+        self.assertNotIn("moof", top_level_boxes(target))
+        self.assertGreater(decode_count(target), 0)
+        self.assertFalse(os.path.exists(target + TEMP_SUFFIX))
+
+    def test_strict_trim_removes_undecodable_tail(self):
+        # 严格模式的意义：末尾坏帧被丢弃，产物解码干净
+        path = self.make_recording("strict-broken.mp4", frames=FPS * 6)
+        full = os.path.getsize(path)
+        with open(path, "r+b") as file:
+            file.truncate(int(full * 0.55))
+        target = self.new_path("strict-broken-out.mp4")
+        self.addCleanup(lambda: os.path.exists(target) and os.remove(target))
+
+        self.assertTrue(convert_with_tail_trimmed(path, target, del_frames=False))
+
+        # 产物应能完整解码；若整段都解不出来则视为失败
+        with av.open(target) as container:
+            self.assertGreater(sum(1 for _ in container.decode(video=0)), 0)
+        self.assertTrue(os.path.exists(path))
+
+    def test_rescue_mode_writes_target_and_keeps_source(self):
+        # UI 的抢救模式：接受尾部损坏，输出到新文件，原文件保留
+        path = self.make_recording("rescue-src.mp4", frames=FPS * 6)
+        full = os.path.getsize(path)
+        with open(path, "r+b") as file:
+            file.truncate(int(full * 0.55))
+        target = self.new_path("rescue-out.mp4")
+        self.addCleanup(lambda: os.path.exists(target) and os.remove(target))
+
+        converted = convert_to_standard_mp4(
+            path, check_source=False, check_output=False, target=target)
+
+        self.assertTrue(os.path.exists(path))
+        if converted:
+            self.assertTrue(os.path.exists(target))
+            self.assertNotIn("moof", top_level_boxes(target))
+        else:
+            self.assertFalse(os.path.exists(target))
+
+    def test_rescue_mode_never_touches_source(self):
+        # 即便转换成功，原文件也必须原样保留（UI 要求不删除原文件）
+        path = self.make_recording("rescue-keep.mp4")
+        size_before = os.path.getsize(path)
+        target = self.new_path("rescue-keep-out.mp4")
+        self.addCleanup(lambda: os.path.exists(target) and os.remove(target))
+
+        self.assertTrue(convert_to_standard_mp4(
+            path, check_source=False, check_output=False, target=target))
+
+        self.assertEqual(os.path.getsize(path), size_before)
+        self.assertTrue(needs_conversion(path))
 
     def test_concurrent_conversion_of_same_file_is_serialized(self):
         # 两次任务结束间隔很短时，上一次转封装可能还没结束。同一路径并发转换会

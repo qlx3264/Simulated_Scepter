@@ -15,6 +15,8 @@ from tool.window_recorder.recorder_writer import RecorderWriter
 from tool.window_recorder.video_remux import (
     convert_in_background,
     convert_to_standard_mp4,
+    convert_with_tail_trimmed,
+    needs_conversion,
 )
 from tool.window_recorder.window_recorder import WindowRecorder
 
@@ -23,4 +25,6 @@ __all__ = [
     "WindowRecorder",
     "convert_in_background",
     "convert_to_standard_mp4",
+    "convert_with_tail_trimmed",
+    "needs_conversion",
 ]
