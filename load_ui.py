@@ -50,25 +50,7 @@ class QMainWindowLoadUI(QtWidgets.QMainWindow):
         self.skin_set()
         self.font_set()
 
-        self.run_diver_btn.setVisible(False)
         self.tabWidget.setTabVisible(self.tabWidget.indexOf(self.Tab6), False)
-        self.label_7.setVisible(False)
-        self.Diver_debug_checkbox.setVisible(False)
-        self.Simul_debug_checkbox.setVisible(False)
-        self.debug_checkbox2.setVisible(False)
-        self.Diver_speed_checkbox.setVisible(False)
-        self.Diver_weekly_checkbox.setVisible(False)
-        self.Diver_cpu_checkbox.setVisible(False)
-        self.label_10.setVisible(False)
-        self.Diver_difficulty_combo.setVisible(False)
-        self.label_11.setVisible(False)
-        self.Diver_team_combo.setVisible(False)
-        self.label_12.setVisible(False)
-        self.Diver_save_cnt_combo.setVisible(False)
-        self.label_17.setVisible(False)
-        self.Diver_timezone_combo.setVisible(False)
-        self.label_18.setVisible(False)
-        self.Diver_max_run_input.setVisible(False)
 
         self.Button_MostMinimized.clicked.connect(self.minimize_to_tray)
 
@@ -146,6 +128,10 @@ class QMainWindowLoadUI(QtWidgets.QMainWindow):
         self.Button_Exit.setIcon(create_qt_icon(q_color=q_color, mode="x"))
         self.Button_Minimized.setIcon(create_qt_icon(q_color=q_color, mode="-"))
         self.Button_MostMinimized.setIcon(create_qt_icon(q_color=q_color, mode="v"))
+        for button in (self.simul_settings_btn, self.iron_blood_settings_btn,
+                       self.any_fate_settings_btn, self.currency_settings_btn,
+                       self.engine_settings_btn):
+            button.setIcon(create_qt_icon(q_color=q_color, mode="gear"))
 
 
     def set_image_resource(self):

@@ -6,24 +6,20 @@ import sys
 import time
 
 import keyboard
-from PyQt5.QtGui import QFont, QKeySequence
+from PyQt5.QtGui import QFont
 
 from route import PATHS
 from tool import EXTRA
 from tool.action_script import run_script as run_action_script
-from tool.countdown_config import (
-    DECISION_MODES, MC_SETTING_FIELDS, load_finger_snap_settings,
-    save_finger_snap_settings,
-)
 from tool.cleanup import (
     CATEGORIES,
     CATEGORY_BUTTONS,
-    MODES,
     MODE_NAMES,
-    TRIGGERS,
+    MODES,
     TRIGGER_NAMES,
-    UNITS,
+    TRIGGERS,
     UNIT_NAMES,
+    UNITS,
     CleanupConfig,
     CleanupItem,
     cleanup_manual,
@@ -34,31 +30,25 @@ from tool.cleanup import (
     validate_config,
     write_config,
 )
-from tool.currency.settings import (
-    EXIT_PLANES,
-    load_currency_settings,
-    load_default_priority,
-    save_currency_settings,
-)
 from tool.GLOBAL import set_global_stop_flag
+from tool.gui.advanced_features import show_unlock_dialog
+from tool.gui.engine_settings import create_settings_dialog
 from tool.log import CUS_LOGGER, log_emitter
+from tool.settings import load_settings, update_settings
 from tool.thread import ThreadWithException
 from tool.utils.image_tool import find_image_by_name, load_all_images_from_directory
 
 load_all_images_from_directory()
 import faulthandler
 
-from PyQt5.QtCore import Qt, QSize, pyqtSignal, pyqtSlot, QEvent, QTimer
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot
 from PyQt5.QtWidgets import (
     QApplication,
-    QAbstractItemView,
     QComboBox,
     QDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QListWidget,
-    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QSizePolicy,
@@ -82,163 +72,6 @@ HOTKEY_DEBOUNCE_SECONDS = 1.0
 # 程序启动时触发的清理延迟执行的毫秒数，让主界面先完成显示。
 CLEANUP_STARTUP_DELAY_MS = 1500
 
-
-class CurrencyPriorityListWidget(QListWidget):
-    def __init__(self):
-        super().__init__()
-        self.drop_indicator = None
-        self.drop_row = None
-
-    def dragMoveEvent(self, event):
-        source = event.source()
-        source_item = None
-
-        if isinstance(source, CurrencyPriorityListWidget):
-            source_item = source.currentItem()
-
-        target_item = self.itemAt(event.pos())
-
-        # 鼠标位于被拖动的 item 上时
-        if target_item is source_item and target_item is not None:
-            rect = self.visualItemRect(target_item)
-            row = self.row(target_item)
-
-            if event.pos().x() < rect.center().x():
-                self.drop_indicator = (
-                    rect.left(),
-                    rect.top(),
-                    rect.bottom(),
-                )
-                self.drop_row = row
-            else:
-                self.drop_indicator = (
-                    rect.right(),
-                    rect.top(),
-                    rect.bottom(),
-                )
-                self.drop_row = row + 1
-
-        # 鼠标位于其他 item 上时
-        elif target_item is not None:
-            rect = self.visualItemRect(target_item)
-            row = self.row(target_item)
-
-            if event.pos().x() < rect.center().x():
-                self.drop_indicator = (
-                    rect.left(),
-                    rect.top(),
-                    rect.bottom(),
-                )
-                self.drop_row = row
-            else:
-                self.drop_indicator = (
-                    rect.right(),
-                    rect.top(),
-                    rect.bottom(),
-                )
-                self.drop_row = row + 1
-
-        # 鼠标位于列表空白区域
-        elif self.count():
-            last_item = self.item(self.count() - 1)
-            rect = self.visualItemRect(last_item)
-
-            self.drop_indicator = (
-                rect.right(),
-                rect.top(),
-                rect.bottom(),
-            )
-            self.drop_row = self.count()
-
-        else:
-            self.drop_indicator = None
-            self.drop_row = 0
-
-        self.viewport().update()
-
-        event.setDropAction(Qt.CopyAction)
-        event.accept()
-
-    def dragLeaveEvent(self, event):
-        self.drop_indicator = None
-        self.drop_row = None
-        self.viewport().update()
-        super().dragLeaveEvent(event)
-
-    def dropEvent(self, event):
-        source = event.source()
-
-        if not isinstance(source, CurrencyPriorityListWidget):
-            event.ignore()
-            return
-
-        source_item = source.currentItem()
-
-        if source_item is None or self.drop_row is None:
-            event.ignore()
-            return
-
-        source_row = source.row(source_item)
-        target_row = self.drop_row
-
-        # 如果来自同一个列表，需要修正删除原 item 后的索引
-        if source is self and source_row < target_row:
-            target_row -= 1
-
-        # 已经在目标位置，不做任何操作
-        if source is self and source_row == target_row:
-            self.drop_indicator = None
-            self.drop_row = None
-            self.viewport().update()
-
-            event.setDropAction(Qt.CopyAction)
-            event.accept()
-            return
-
-        # 完全由我们自己移动 item
-        item = source.takeItem(source_row)
-
-        if item is not None:
-            target_row = max(0, min(target_row, self.count()))
-            self.insertItem(target_row, item)
-            self.setCurrentItem(item)
-
-        self.drop_indicator = None
-        self.drop_row = None
-        self.viewport().update()
-
-        # 防止 Qt 再次执行 MoveAction
-        event.setDropAction(Qt.CopyAction)
-        event.accept()
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-
-        if self.drop_indicator is None:
-            return
-
-        x, top, bottom = self.drop_indicator
-
-        from PyQt5.QtGui import QPainter, QPen
-
-        painter = QPainter(self.viewport())
-        painter.setPen(QPen(Qt.black, 2))
-        painter.drawLine(x, top, x, bottom)
-
-class Priority0ListWidget(QListWidget):
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-
-        viewport = self.viewport()
-        assert viewport is not None
-
-        width = viewport.width()
-        self.setGridSize(QSize(width, 32))
-
-        if self.count():
-            item = self.item(0)
-            assert item is not None
-            item.setSizeHint(QSize(width, 32))
 
 class CleanupSettingsSection(QWidget):
     """自动清理设置区，负责显示三个清理对象的配置并收集用户改动。
@@ -419,212 +252,6 @@ class CleanupSettingsSection(QWidget):
         label.setText(last_cleanup_text(cleaned_at))
 
 
-class CurrencyPriorityDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-
-        self.setWindowTitle("自定义投资环境优先级")
-        self.setWindowFlags(
-            self.windowFlags() & ~Qt.WindowContextHelpButtonHint
-        )
-        self.resize(1050, 850)
-
-        self.priority_lists = []
-
-        main_layout = QVBoxLayout(self)
-
-        sections = [
-            ("必选环境", "prior_envir"),
-        ]
-
-        for title, key in sections:
-            label = QLabel(title)
-            label.setAlignment(Qt.AlignCenter)
-            main_layout.addWidget(label)
-
-            list_widget = self.create_priority_list()
-            list_widget.priority_key = key
-            self.priority_lists.append(list_widget)
-            main_layout.addWidget(list_widget)
-
-        priority_0_label = QLabel("优先级0")
-        priority_0_label.setAlignment(Qt.AlignCenter)
-        main_layout.addWidget(priority_0_label)
-
-        priority_0_list = self.create_priority_0_list()
-        main_layout.addWidget(priority_0_list)
-
-        sections = [
-            ("优先级1环境", "envir_1"),
-            ("优先级2环境", "envir_2"),
-            ("优先级3环境", "envir_3"),
-            ("优先级4环境", "envir_4"),
-        ]
-
-        for title, key in sections:
-            label = QLabel(title)
-            label.setAlignment(Qt.AlignCenter)
-            main_layout.addWidget(label)
-
-            list_widget = self.create_priority_list()
-            list_widget.priority_key = key
-            self.priority_lists.append(list_widget)
-            main_layout.addWidget(list_widget)
-
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-
-        self.restore_default_button = QPushButton("恢复默认")
-        self.save_button = QPushButton("保存")
-
-        button_layout.addWidget(self.restore_default_button)
-        button_layout.addWidget(self.save_button)
-
-        button_layout.addStretch()
-        main_layout.addLayout(button_layout)
-
-        self.restore_default_button.clicked.connect(
-            self.restore_default
-        )
-        self.save_button.clicked.connect(
-            self.save_current
-        )
-
-        self.load_current()
-
-    @staticmethod
-    def create_priority_list():
-        list_widget = CurrencyPriorityListWidget()
-
-        list_widget.setViewMode(QListWidget.IconMode)
-        list_widget.setFlow(QListWidget.LeftToRight)
-        list_widget.setWrapping(True)
-        list_widget.setResizeMode(QListWidget.Adjust)
-
-        list_widget.setDragEnabled(True)
-        list_widget.setAcceptDrops(True)
-        list_widget.setDropIndicatorShown(False)
-        list_widget.setDragDropMode(QAbstractItemView.DragDrop)
-        list_widget.setDefaultDropAction(Qt.MoveAction)
-
-        list_widget.setSelectionMode(
-            QAbstractItemView.SingleSelection
-        )
-        list_widget.setEditTriggers(
-            QAbstractItemView.NoEditTriggers
-        )
-
-        list_widget.setSpacing(5)
-        list_widget.setGridSize(QSize(175, 38))
-
-        list_widget.setMinimumHeight(75)
-        list_widget.setMaximumHeight(150)
-
-        return list_widget
-
-    @staticmethod
-    def create_priority_0_list():
-        list_widget = Priority0ListWidget()
-
-        list_widget.setViewMode(QListWidget.IconMode)
-        list_widget.setFlow(QListWidget.LeftToRight)
-        list_widget.setWrapping(False)
-        list_widget.setResizeMode(QListWidget.Adjust)
-
-        list_widget.setDragEnabled(False)
-        list_widget.setAcceptDrops(False)
-        list_widget.setDropIndicatorShown(False)
-        list_widget.setMovement(QListWidget.Static)
-
-        list_widget.setSelectionMode(
-            QAbstractItemView.NoSelection
-        )
-        list_widget.setEditTriggers(
-            QAbstractItemView.NoEditTriggers
-        )
-
-        list_widget.setSpacing(0)
-        list_widget.setGridSize(QSize(175, 32))
-        list_widget.setFixedHeight(42)
-
-        item = QListWidgetItem("水梦梦天下第一可爱！")
-        item.setSizeHint(QSize(0, 32))
-        item.setTextAlignment(Qt.AlignCenter)
-        item.setFlags(item.flags() & ~Qt.ItemIsEnabled)
-
-        list_widget.addItem(item)
-
-        return list_widget
-
-    def load_current(self):
-        currency_settings = load_currency_settings()
-        priority = currency_settings["priority"]
-        self.populate_lists(priority)
-
-    def populate_lists(self, data):
-        for list_widget in self.priority_lists:
-            list_widget.clear()
-
-            for text in data.get(list_widget.priority_key, []):
-                item = QListWidgetItem(text)
-                item.setSizeHint(QSize(165, 32))
-                list_widget.addItem(item)
-
-    def collect_current(self):
-        data = {}
-
-        for list_widget in self.priority_lists:
-            data[list_widget.priority_key] = [
-                list_widget.item(index).text()
-                for index in range(list_widget.count())
-            ]
-
-        return data
-
-    def save_current(self):
-        data = self.collect_current()
-
-        try:
-            currency_settings = load_currency_settings()
-            currency_settings["priority"] = data
-            save_currency_settings(currency_settings)
-        except OSError as error:
-            QMessageBox.critical(
-                self,
-                "错误",
-                f"投资环境优先级保存失败：{error}",
-            )
-            return
-
-        QMessageBox.information(
-            self,
-            "提示",
-            "投资环境优先级已保存",
-        )
-
-    def restore_default(self):
-        default_priority = load_default_priority()
-        self.populate_lists(default_priority)
-
-        try:
-            currency_settings = load_currency_settings()
-            currency_settings["priority"] = default_priority
-            save_currency_settings(currency_settings)
-        except OSError as error:
-            QMessageBox.critical(
-                self,
-                "错误",
-                f"恢复默认失败：{error}",
-            )
-            return
-
-        QMessageBox.information(
-            self,
-            "提示",
-            "投资环境优先级已恢复默认",
-        )
-
-
 class MainWindow(QMainWindowLog):
     calibration_finished = pyqtSignal(object)
     hotkey_pressed = pyqtSignal(str)
@@ -761,208 +388,63 @@ class MainWindow(QMainWindowLog):
 
 
     def init_ui(self):
-        # 检查模型文件是否存在
-        self.check_model_file()
-
-        # 连接按钮信号
         self.run_simul_btn.clicked.connect(self.run_simul)
-        self.run_diver_btn.clicked.connect(self.run_diver)
         self.iron_blood_btn.clicked.connect(self.run_iron_blood)
         self.any_fate_btn.clicked.connect(self.run_any_fate)
-        self.finger_snap_btn.clicked.connect(self.run_finger_snap)
         self.currency_war_btn.clicked.connect(self.run_currency_war)
         self.init_script_controls()
+        for button, engine in (
+            (self.simul_settings_btn, "Simulated"),
+            (self.iron_blood_settings_btn, "IronBlood"),
+            (self.any_fate_settings_btn, "AnyFate"),
+            (self.currency_settings_btn, "Currency"),
+        ):
+            button.clicked.connect(lambda checked=False, name=engine: self.open_engine_settings(name))
+        self.engine_settings_btn.clicked.connect(
+            lambda: self.open_engine_settings(self.engine_combo.currentText()))
         self.calibrate_btn.clicked.connect(self.calibrate)
         self.test_btn.clicked.connect(self.test)
         self.print_btn.clicked.connect(self.test_2)
         self.stop_btn.clicked.connect(self.stop_task)
-
-        # 初始化模拟宇宙配置界面
-        self.Simul_bonus_checkbox.setChecked(bool(config_simul.bonus))
-        self.Simul_debug_checkbox.setChecked(bool(config_simul.debug_mode))
-        self.Simul_speed_checkbox.setChecked(bool(config_simul.speed_mode))
-        self.Simul_slow_checkbox.setChecked(bool(config_simul.slow_mode))
-        self.Simul_difficulty_combo.addItems(["1", "2", "3", "4", "5"])
-        self.Simul_difficulty_combo.setCurrentText(str(config_simul.difficult))
-        self.Simul_fate_combo.addItems([
-            "存护", "记忆", "虚无", "丰饶", "巡猎", "毁灭", "欢愉", "繁育", "智识"
-        ])
-        self.Simul_fate_combo.setCurrentText(config_simul.fate)
-        self.Simul_timezone_combo.addItems(["Default", "Asia", "America", "Europe"])
-        self.Simul_timezone_combo.setCurrentText(config_simul.timezone)
-        self.Simul_max_run_input = QLineEdit(str(config_simul.max_run))
-
-        # 初始化差分宇宙配置界面
-        self.Diver_debug_checkbox.setChecked(bool(config_diver.debug_mode))
-        self.Diver_speed_checkbox.setChecked(bool(config_diver.speed_mode))
-        self.Diver_weekly_checkbox.setChecked(bool(config_diver.weekly_mode))
-        self.Diver_cpu_checkbox.setChecked(bool(config_diver.cpu_mode))
-        self.Diver_difficulty_combo.addItems(["1", "2", "3", "4", "5"])
-        self.Diver_difficulty_combo.setCurrentText(str(config_diver.difficult))
-        self.Diver_team_combo.addItems(["追击", "dot", "终结技", "击破", "盾反"])
-        self.Diver_save_cnt_combo.addItems(["0", "1", "2", "3", "4"])
-        self.Diver_save_cnt_combo.setCurrentText(str(config_diver.save_cnt))
-        self.Diver_timezone_combo.addItems(["Default", "Asia", "America", "Europe"])
-        self.Diver_timezone_combo.setCurrentText(config_diver.timezone)
-        self.Diver_max_run_input = QLineEdit(str(config_diver.max_run))
-
-        # 初始化货币战争配置界面
-        currency_settings = load_currency_settings()
-
-        for exit_plane in EXIT_PLANES:
-            self.Currency_exit_plane_combo.addItem(
-                f"第 {exit_plane} 位面",
-                exit_plane,
-            )
-
-        exit_plane_index = self.Currency_exit_plane_combo.findData(
-            currency_settings["exit_after_plane"]
-        )
-        self.Currency_exit_plane_combo.setCurrentIndex(exit_plane_index)
-
-        self.Currency_exit_if_no_prior_checkbox.setChecked(
-            currency_settings["exit_if_no_prior"]
-        )
-
-        self.Currency_prior_exit_plane_combo.addItem("不调整", None)
-        for exit_plane in EXIT_PLANES:
-            self.Currency_prior_exit_plane_combo.addItem(
-                f"第 {exit_plane} 位面",
-                exit_plane,
-            )
-
-        prior_exit_plane = currency_settings["prior_exit_plane"]
-        if prior_exit_plane is None:
-            self.Currency_prior_exit_plane_combo.setCurrentIndex(0)
-        else:
-            prior_exit_plane_index = self.Currency_prior_exit_plane_combo.findData(
-                prior_exit_plane
-            )
-            self.Currency_prior_exit_plane_combo.setCurrentIndex(prior_exit_plane_index)
-
-        SILVER_WOLF_SWITCH = (1, 2, 3, 4)
-        for silver_wolf_switch in SILVER_WOLF_SWITCH:
-            self.silver_wolf_switch_combo.addItem(
-                f"{silver_wolf_switch}号位",
-                silver_wolf_switch,
-            )
-
-        # 连接配置保存按钮
-        self.config_save_btn.clicked.connect(self.save_config)
-        self.Currency_save_btn.clicked.connect(self.save_currency_config)
-        self.Currency_priority_settings_btn.clicked.connect(self.open_currency_priority_settings)
-        self.debug_save_btn.clicked.connect(self.save_debug_config)
-        self.Iron_blood_save_btn.clicked.connect(self.save_iron_config)
+        self.general_settings_save_btn.clicked.connect(self.save_general_config)
         self.hotkey_save_btn.clicked.connect(self.save_hotkey_config)
-        self.Iron_blood_manual_settings_btn.clicked.connect(lambda: self.advanced_settings_stack.setCurrentWidget(self.iron_blood_manual_page))
-        self.Iron_blood_manual_back_btn.clicked.connect(lambda: self.advanced_settings_stack.setCurrentWidget(self.advanced_settings_main_page))
         self.record_stats_btn.clicked.connect(self.open_record_stats)
-        self.Any_fate_save_btn.clicked.connect(self.save_any_fate_config)
-        self.Finger_snap_save_btn.clicked.connect(self.save_finger_snap_config)
-        self.Aboutupdatelock.clicked.connect(self.show_unlock_dialog)
+        self.Aboutupdatelock.clicked.connect(lambda: show_unlock_dialog(self))
 
-        settings_path = os.path.join(PATHS["config"], "settings.json")
-        example_path = os.path.join(PATHS["example"], "settings_example.json")
-        if not os.path.exists(settings_path) and os.path.exists(example_path):
-            shutil.copy2(example_path, settings_path)
-        with EXTRA.FILE_LOCK:
-            with open(settings_path, encoding="UTF-8") as file:
-                data = json.load(file)
-
-        # 兼容旧版银狼秘技存储格式
-        settings_changed = False
-        silver_wolf_switch = data.get("silver_wolf_switch")
-        if silver_wolf_switch is None:
-            silver_wolf_switch = 1
-            data["silver_wolf_switch"] = silver_wolf_switch
-            settings_changed = True
-        elif isinstance(silver_wolf_switch, str):
-            silver_wolf_switch = {"一号位":1,"二号位":2,"三号位":3,"四号位":4}.get(silver_wolf_switch, 1)
-            data["silver_wolf_switch"] = silver_wolf_switch
-            settings_changed = True
-
-        # 如果配置发生变化，则写回 settings.json
-        if settings_changed:
-            with EXTRA.FILE_LOCK:
-                with open(settings_path, mode="w", encoding="UTF-8") as file:
-                    json.dump(data, file, ensure_ascii=False, indent=4)
-
+        self.opt = data = load_settings()
         self.recording_checkBox.setChecked(data.get("recording_state", False))
-        self.early_stop_checkbox.setChecked(data.get("early_stop", False))
-        self.Iron_blood_first_plane_input.setText(str(data.get("first_plane", 14)))
-        self.Iron_blood_second_plane_input.setText(str(data.get("second_plane", 31)))
-        self.Iron_blood_battle_weight_input.setText(str(data.get("battle_weight", 1.2)))
-        self.Iron_blood_first_plane_min_weight_input.setText(str(data.get("first_plane_min_weight", 8.0)))
-        self.Iron_blood_third_plane_pause_input.setText(str(data.get("third_plane_pause_count", 0)))
-        self.Iron_blood_boss_before_pause_input.setText(str(data.get("boss_before_pause_count", 0)))
         self.recording_checkBox2.setChecked(data.get("recording_iron_blood", False))
         self.recording_time_input.setText(str(data.get("del_record_time", 14)))
-        self.Iron_blood_max_run_input.setText(str(int(data.get("max_run_time", 0))))
-        self.Iron_blood_interact_time_input.setText(str(data.get("max_interact_time", 40)))
-        self.pig_switch_2_role.setChecked(data.get("pig_switch_2_role", False))
-        self.silver_wolf_enable.setChecked(data.get("silver_wolf_enable", False))
-        silver_wolf_switch_index = self.silver_wolf_switch_combo.findData(data["silver_wolf_switch"])
-        if silver_wolf_switch_index >= 0:
-            self.silver_wolf_switch_combo.setCurrentIndex(silver_wolf_switch_index)
-        self.auto_attack_breakable.setChecked(data.get("auto_attack_breakable", False))
-        self.debug_checkbox2.setChecked(data.get("debug", False))
         self.record_event_map_checkbox.setChecked(data.get("record_event_map", False))
         self.recording_keep_long_run_checkbox.setChecked(data.get("recording_keep_long_run", False))
         self.recording_keep_long_run_threshold_input.setText(str(data.get("recording_keep_long_run_threshold", 1.2)))
         self.recording_label_checkbox.setChecked(data.get("record_add_label", True))
+        self.check_model_file()
 
-
-        # 初始化寰宇蝗灾命途演算倾向配置界面
-        self.Any_fate_combo.addItems([
-            "存护", "记忆", "虚无", "丰饶", "巡猎", "毁灭", "欢愉", "繁育", "智识"
-        ])
-        self.Any_fate_combo.setCurrentText(data.get("any_fate", "巡猎"))
-
-        finger_snap = load_finger_snap_settings()
-        for field in MC_SETTING_FIELDS:
-            getattr(self, f"Finger_snap_{field}_input").setText(str(finger_snap[field]))
-        for plane, target in enumerate(finger_snap["plane_targets"], 1):
-            getattr(self, f"Finger_snap_plane{plane}_target_input").setText(str(target))
-        for mode, label in DECISION_MODES.items():
-            self.Finger_snap_decision_mode_combo.addItem(label, mode)
-        self.Finger_snap_decision_mode_combo.setCurrentIndex(
-            self.Finger_snap_decision_mode_combo.findData(finger_snap["decision_mode"]))
-        self.Finger_snap_dp_early_stop_checkbox.setChecked(finger_snap["dp_early_stop"])
-        self.Finger_snap_win_rate_dp_early_stop_checkbox.setChecked(
-            finger_snap["win_rate_dp_early_stop"])
-        self.Finger_snap_mc_dp_early_stop_checkbox.setChecked(
-            finger_snap["mc_dp_early_stop"])
-        self.Finger_snap_first_plane_threshold_input.setText(
-            str(finger_snap.get("first_plane_threshold", 0.0)))
-        self.Finger_snap_record_keep_count_input.setText(
-            str(finger_snap.get("record_keep_count", 31)))
-
-        # 初始化自动清理设置区（构造时已按配置刷新显示）
         self.cleanup_section = CleanupSettingsSection(self.advanced_settings_main_page)
         self.cleanup_section.cleanup_requested.connect(self.cleanup_category)
         self.Cleanup_save_btn.clicked.connect(self.save_cleanup_config)
-
-        # 初始化快捷键配置输入框
-        hotkey_config = data.get("hotkeys", {})
-        self.stop_hotkey_input.setText(hotkey_config.get("stop", "f5"))
-        self.test_hotkey_input.setText(hotkey_config.get("test", "f6"))
-        self.print_hotkey_input.setText(hotkey_config.get("print", "f7"))
-
-        # 更新按钮文本显示当前快捷键
-        self.update_button_hotkey_text(hotkey_config)
-
-        # 由 eventFilter 在编辑动作生效前拦截；提示状态持久化在 settings.json
-        self._battle_weight_warning_shown = data.get("battle_weight_warning_shown", False)
-
-        # 设置控件的启用/禁用状态
+        hotkeys = data.get("hotkeys", {})
+        self.stop_hotkey_input.setText(hotkeys.get("stop", "f5"))
+        self.test_hotkey_input.setText(hotkeys.get("test", "f6"))
+        self.print_hotkey_input.setText(hotkeys.get("print", "f7"))
+        self.update_button_hotkey_text(hotkeys)
         self.update_dependent_controls_state()
-
-        # 连接信号以实现动态更新
         self.connect_dependency_signals()
-
-        assert self.restore_action is not None
         self.restore_action.triggered.connect(self.run_iron_blood)
 
+    def open_engine_settings(self, engine):
+        """主窗口只选择配置入口，控件和保存逻辑由各独立模块管理。"""
+        try:
+            dialog = create_settings_dialog(engine, self)
+        except (OSError, ValueError) as error:
+            QMessageBox.critical(self, "配置加载失败", f"无法打开内核配置：{error}")
+            return
+        try:
+            if dialog.exec_() == QDialog.Accepted:
+                self.opt = load_settings()
+        finally:
+            dialog.deleteLater()
 
 
     def load_hotkey_config(self):
@@ -1005,22 +487,7 @@ class MainWindow(QMainWindowLog):
                 self.registered_hotkeys.append(key.lower())
 
     def update_settings(self, updates):
-        settings_path = os.path.join(PATHS["config"], "settings.json")
-        example_path = os.path.join(PATHS["example"], "settings_example.json")
-
-        if not os.path.exists(settings_path) and os.path.exists(example_path):
-            shutil.copy2(example_path, settings_path)
-
-        with EXTRA.FILE_LOCK:
-            with open(settings_path, encoding="UTF-8") as file:
-                data = json.load(file)
-
-            data.update(updates)
-
-            with open(settings_path, mode="w", encoding="UTF-8") as file:
-                json.dump(data, file, ensure_ascii=False, indent=4)
-
-        self.opt = data
+        self.opt = update_settings(updates)
 
     def _on_hotkey_pressed(self, event, action):
         """
@@ -1042,6 +509,8 @@ class MainWindow(QMainWindowLog):
         """
         快捷键信号的槽函数（运行在主线程）
         """
+        if action in {"test", "print"} and not bool(self.opt.get("debug", False)):
+            return
         if action == "stop":
             if self.is_task_running():
                 self.stop_btn.click()
@@ -1100,109 +569,31 @@ class MainWindow(QMainWindowLog):
                 self.registered_hotkeys.append(key.lower())
 
     def update_dependent_controls_state(self):
-        early_stop_enabled = self.early_stop_checkbox.isChecked()
-        self.Iron_blood_first_plane_input.setEnabled(early_stop_enabled)
-        self.Iron_blood_second_plane_input.setEnabled(early_stop_enabled)
-        self.Iron_blood_battle_weight_input.setEnabled(early_stop_enabled)
-        self.Iron_blood_first_plane_min_weight_input.setEnabled(early_stop_enabled)
-        self.Iron_blood_third_plane_pause_input.setEnabled(early_stop_enabled)
-        self.Iron_blood_boss_before_pause_input.setEnabled(early_stop_enabled)
-        recording_enabled = self.recording_checkBox2.isChecked()
+        debug_enabled = bool(self.opt.get("debug", False))
+        recording_enabled = self.recording_checkBox2.isEnabled() and self.recording_checkBox2.isChecked()
         self.recording_time_input.setEnabled(recording_enabled)
-        self.silver_wolf_switch_combo.setEnabled(
-            self.pig_switch_2_role.isChecked() or self.silver_wolf_enable.isChecked()
-        )
-        debug_enabled = self.debug_checkbox2.isChecked()
-        debug_and_recording = debug_enabled and recording_enabled
+        for widget in (
+            self.run_simul_btn, self.iron_blood_btn, self.any_fate_btn, self.currency_war_btn,
+            self.simul_settings_btn, self.iron_blood_settings_btn,
+            self.any_fate_settings_btn, self.currency_settings_btn,
+        ):
+            widget.setVisible(not debug_enabled)
+        for widget in (
+            self.engine_label, self.engine_combo, self.engine_settings_btn,
+            self.script_label, self.script_combo, self.run_script_btn,
+            self.test_btn, self.print_btn, self.PrintEdit, self.PrintPhoto, self.PrintText,
+            self.label_test_hotkey, self.test_hotkey_input, self.label_print_hotkey, self.print_hotkey_input,
+        ):
+            widget.setVisible(debug_enabled)
         self.debug_group.setVisible(debug_enabled)
-        self.recording_keep_long_run_checkbox.setEnabled(debug_and_recording)
-        self.recording_keep_long_run_threshold_input.setEnabled(debug_and_recording)
-        self.recording_label_checkbox.setEnabled(debug_and_recording)
-        finger_snap_visible = debug_enabled or (0 <= time.localtime().tm_hour < 6)
-        self.finger_snap_btn.setVisible(finger_snap_visible)
-        self.Finger_snap_group.setVisible(finger_snap_visible)
+        for widget in (self.recording_keep_long_run_checkbox,
+                       self.recording_keep_long_run_threshold_input, self.recording_label_checkbox):
+            widget.setEnabled(debug_enabled and recording_enabled)
 
 
     def connect_dependency_signals(self):
-        self.debug_checkbox2.stateChanged.connect(lambda: self.update_dependent_controls_state())
-        self.recording_checkBox2.stateChanged.connect(lambda: self.update_dependent_controls_state())
-        self.early_stop_checkbox.stateChanged.connect(lambda: self.update_dependent_controls_state())
-        self.pig_switch_2_role.stateChanged.connect(lambda: self.update_dependent_controls_state())
-        self.silver_wolf_enable.stateChanged.connect(lambda: self.update_dependent_controls_state())
+        self.recording_checkBox2.toggled.connect(self.update_dependent_controls_state)
 
-    def eventFilter(self, obj, event):
-        """
-        在战斗格权重首次被编辑前拦截本次操作
-        """
-        if (obj is self.Iron_blood_battle_weight_input
-            and not getattr(self, "_battle_weight_warning_shown", True)
-            and self.is_battle_weight_edit_event(event)):
-            self.show_battle_weight_warning()
-            return True
-        return super().eventFilter(obj, event)
-
-    @staticmethod
-    def is_battle_weight_edit_event(event):
-        """
-        识别会修改 QLineEdit 内容的常见用户操作
-        """
-        if event.type() in (QEvent.InputMethod, QEvent.Drop, QEvent.ContextMenu):
-            return True
-        if event.type() != QEvent.KeyPress:
-            return False
-
-        if event.key() in (Qt.Key_Backspace, Qt.Key_Delete):
-            return True
-        if event.matches(QKeySequence.Cut) or event.matches(QKeySequence.Paste):
-            return True
-        if event.matches(QKeySequence.Undo) or event.matches(QKeySequence.Redo):
-            return True
-
-        modifier_keys = Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier
-        return bool(event.text()) and not (event.modifiers() & modifier_keys)
-
-    def show_battle_weight_warning(self):
-        """
-        显示首次编辑确认提示
-        """
-        if self._battle_weight_warning_shown:
-            return
-        self._battle_weight_warning_shown = True
-        self.save_battle_weight_warning_state()
-        msg = QMessageBox(self)
-        msg.setIcon(QMessageBox.Warning)
-        msg.setWindowTitle("警告（本窗口仅会弹出一次）")
-        msg.setText("修改权重前请先阅读以下内容：\n\n"
-                    "1、权重原理：\n"
-                    "        在铁血战士程序中，“权重”表示某一类型的格子内遇到的战斗数量期望。不同类型的格子拥有不同的权重，例如战斗格默认为1.2（85%概率刷出单怪、10%概率刷出双怪、5%概率刷出三怪），精英格为1（必定单怪），交易格为0（必定无怪）等等，详见“常见问题与更新日志”。权杖会根据权重选择最优路径、骰子最佳替换节点。\n\n"
-                    "2、修改战斗格权重的影响：\n"
-                    "        本质是为了多战收益而增大断战风险。作者认为，提高战斗格的权重不能提高战斗数的分布，因为大数定律确保了这个数一定收敛于期望附近，改激进并不会对一局产生有益的帮助，只能有助于更早的重开。\n\n"
-                    "3、其他因素：\n"
-                    "        在没有骰子替换战斗的前提下，这个模型基本没有问题。但是，某个位置的期望还应该叠加上这条路径上自然产生的替换战斗的差分的期望。本模型尚未考虑该因素。\n\n"
-                    "        若尝试修改此项，需同时修改下方的“第一面最低期望权重”以匹配。计算方法：新权重 = 原权重 + 一面平均战斗格数量 × 战斗格权重变化量。可以尝试多种组合，比较轮回结果的进二面+三面概率，选择适合自己的最佳组合。")
-        ok_button = msg.button(QMessageBox.Ok)
-        if ok_button is not None:
-            ok_button.setText("我已知悉")
-        msg.setWindowFlags(Qt.Dialog | Qt.CustomizeWindowHint | Qt.WindowTitleHint)
-        msg.setEscapeButton(None)
-        msg.exec_()
-
-    def save_battle_weight_warning_state(self):
-        """
-        将已提示状态写入现有配置，使其跨重启生效
-        """
-        settings_path = os.path.join(PATHS["config"], "settings.json")
-        try:
-            with EXTRA.FILE_LOCK:
-                with open(settings_path, encoding="UTF-8") as file:
-                    data = json.load(file)
-                data["battle_weight_warning_shown"] = True
-                with open(settings_path, mode="w", encoding="UTF-8") as file:
-                    json.dump(data, file, ensure_ascii=False, indent=4)
-            self.opt = data
-        except (OSError, json.JSONDecodeError):
-            # 配置写入失败时仍避免在当前会话内重复阻断用户操作
-            pass
 
     def closeEvent(self, event):
         """
@@ -1258,17 +649,42 @@ class MainWindow(QMainWindowLog):
             QMessageBox.warning(self, "警告", str(e))
 
     def init_script_controls(self):
-        """初始化自由脚本的内核选项与运行入口。"""
+        """初始化自由脚本入口，并恢复上次选择的脚本与内核。"""
         for name, engine in (
             ("Simulated", SimulatedUniverse),
             ("Divergent", DivergentUniverse),
             ("AnyFate", AnyFateUniverse),
             ("IronBlood", IronBloodUniverse),
             ("Currency", CurrencyWar),
+            ("FingerSnap", FingerSnap),
         ):
             self.engine_combo.addItem(name, engine)
         self.run_script_btn.clicked.connect(self.run_script)
         self.refresh_scripts()
+
+        engine_index = self.engine_combo.findText(self.opt.get("script_engine", ""))
+        if engine_index >= 0:
+            self.engine_combo.setCurrentIndex(engine_index)
+        script_path = os.path.join(PATHS["root"], "actions", self.opt.get("script_file", ""))
+        script_index = self.script_combo.findData(script_path)
+        if script_index >= 0:
+            self.script_combo.setCurrentIndex(script_index)
+
+        # 完成恢复后才监听变更，避免初始化时覆盖已有选择。
+        self.engine_combo.currentIndexChanged.connect(self.save_script_selection)
+        self.script_combo.currentIndexChanged.connect(self.save_script_selection)
+
+    def save_script_selection(self):
+        """保存下拉框选择；脚本仅存文件名，允许项目目录迁移。"""
+        updates = {"script_engine": self.engine_combo.currentText()}
+        script_path = self.script_combo.currentData()
+        if script_path is not None:
+            updates["script_file"] = os.path.basename(script_path)
+        try:
+            self.update_settings(updates)
+        except (OSError, ValueError) as error:
+            CUS_LOGGER.error("保存脚本选项失败：%s", error)
+            QMessageBox.warning(self, "提示", f"保存脚本选项失败：{error}")
 
     def refresh_scripts(self):
         """列出 actions 中的 JSON 动作脚本，排除角色别名等数据文件。"""
@@ -1355,23 +771,6 @@ class MainWindow(QMainWindowLog):
         except Exception as e:
             QMessageBox.critical(self, "错误", str(e))
 
-    def run_diver(self):
-
-        def task():
-            su = DivergentUniverse(
-                int(config_diver.debug_mode),
-                int(config_diver.max_run),
-                int(config_diver.speed_mode)
-            )
-            self.current_task = su
-            su.start()
-
-        try:
-            self.start_task(task)
-        except RuntimeError as r:
-            QMessageBox.warning(self, "警告", str(r))
-        except Exception as e:
-            QMessageBox.critical(self, "错误", str(e))
 
     def run_iron_blood(self):
         def task():
@@ -1389,29 +788,6 @@ class MainWindow(QMainWindowLog):
     def run_any_fate(self):
         def task():
             su = AnyFateUniverse()
-            self.current_task = su
-            su.start()
-
-        try:
-            self.start_task(task)
-        except RuntimeError as r:
-            QMessageBox.warning(self, "警告", str(r))
-        except Exception as e:
-            QMessageBox.critical(self, "错误", str(e))
-
-    def run_finger_snap(self):
-        can_run = (
-            self.opt.get("debug", True)
-            and self.opt.get("recording_iron_blood", True)
-            and self.opt.get("record_add_label", True)
-        )
-        if not can_run:
-            QMessageBox.information(
-                self, "提示", "非开发人员，当前无测试资格，暂不支持运行")
-            return
-
-        def task():
-            su = FingerSnap()
             self.current_task = su
             su.start()
 
@@ -1457,88 +833,9 @@ class MainWindow(QMainWindowLog):
             QMessageBox.warning(self, "失败", "校准失败，请重试。")
 
 
-    def save_config(self):
-        # 保存模拟宇宙配置
-        config_simul.bonus = int(self.Simul_bonus_checkbox.isChecked())
-        config_simul.debug_mode = int(self.Simul_debug_checkbox.isChecked())
-        config_simul.speed_mode = int(self.Simul_speed_checkbox.isChecked())
-        config_simul.slow_mode = int(self.Simul_slow_checkbox.isChecked())
-        config_simul.difficult = self.Simul_difficulty_combo.currentText()
-        config_simul.fate = self.Simul_fate_combo.currentText()
-        config_simul.timezone = self.Simul_timezone_combo.currentText()
-        try:
-            config_simul.max_run = int(self.Simul_max_run_input.text())
-        except ValueError:
-            pass
-
-        # 保存差分宇宙配置
-        config_diver.debug_mode = int(self.Diver_debug_checkbox.isChecked())
-        config_diver.speed_mode = int(self.Diver_speed_checkbox.isChecked())
-        config_diver.weekly_mode = int(self.Diver_weekly_checkbox.isChecked())
-        config_diver.cpu_mode = int(self.Diver_cpu_checkbox.isChecked())
-        config_diver.difficult = self.Diver_difficulty_combo.currentText()
-        config_diver.team = self.Diver_team_combo.currentText()
-        config_diver.timezone = self.Diver_timezone_combo.currentText()
-        config_diver.save_cnt = int(self.Diver_save_cnt_combo.currentText())
-        try:
-            config_diver.max_run = int(self.Diver_max_run_input.text())
-        except ValueError:
-            pass
-
-        # 保存配置到文件
-        config_simul.save()
-        config_diver.save()
-
-        QMessageBox.information(self, "提示", "模拟宇宙和差分宇宙配置已保存")
-
-    def save_currency_config(self):
-        try:
-            save_currency_settings(
-                {
-                    "exit_after_plane":
-                        self.Currency_exit_plane_combo.currentData(),
-                    "exit_if_no_prior":
-                        self.Currency_exit_if_no_prior_checkbox.isChecked(),
-                    "prior_exit_plane":
-                        self.Currency_prior_exit_plane_combo.currentData(),
-                }
-            )
-        except OSError as error:
-            QMessageBox.critical(
-                self,
-                "错误",
-                f"货币战争配置保存失败：{error}",
-            )
-            return
-        QMessageBox.information(self, "提示", "货币战争配置已保存")
-
-    def open_currency_priority_settings(self):
-        dialog = CurrencyPriorityDialog(self)
-        dialog.exec_()
-
     def open_record_stats(self):
         os.startfile(os.path.join(PATHS["html"], "record_stats.html"))
 
-    def save_iron_config(self):
-        self.update_settings({
-            "early_stop": self.early_stop_checkbox.isChecked(),
-            "first_plane": int(self.Iron_blood_first_plane_input.text()),
-            "second_plane": int(self.Iron_blood_second_plane_input.text()),
-            "battle_weight": float(self.Iron_blood_battle_weight_input.text()),
-            "first_plane_min_weight": float(self.Iron_blood_first_plane_min_weight_input.text()),
-            "third_plane_pause_count": int(self.Iron_blood_third_plane_pause_input.text()),
-            "boss_before_pause_count": int(self.Iron_blood_boss_before_pause_input.text()),
-            "recording_iron_blood": self.recording_checkBox2.isChecked(),
-            "del_record_time": int(self.recording_time_input.text()),
-            "max_run_time": int(self.Iron_blood_max_run_input.text()),
-            "max_interact_time": int(self.Iron_blood_interact_time_input.text()),
-            "pig_switch_2_role": self.pig_switch_2_role.isChecked(),
-            "silver_wolf_enable": self.silver_wolf_enable.isChecked(),
-            "silver_wolf_switch": self.silver_wolf_switch_combo.currentData(),
-            "auto_attack_breakable": self.auto_attack_breakable.isChecked(),
-        })
-
-        QMessageBox.information(self, "提示", "铁血战士配置已保存")
 
     def save_hotkey_config(self):
         hotkey_config = {
@@ -1557,67 +854,22 @@ class MainWindow(QMainWindowLog):
 
         QMessageBox.information(self, "提示", "快捷键配置已保存")
 
-    def save_debug_config(self):
-        self.update_settings({
-            "debug": self.debug_checkbox2.isChecked(),
-            "record_event_map": self.record_event_map_checkbox.isChecked(),
-            "recording_keep_long_run": self.recording_keep_long_run_checkbox.isChecked(),
-            "recording_keep_long_run_threshold": float(self.recording_keep_long_run_threshold_input.text()),
-            "record_add_label": self.recording_label_checkbox.isChecked(),
-        })
-
-        QMessageBox.information(self, "提示", "调试模式配置已保存")
-
-    def save_any_fate_config(self):
-        settings_path = os.path.join(PATHS["config"], "settings.json")
-        example_path = os.path.join(PATHS["example"], "settings_example.json")
-        if not os.path.exists(settings_path) and os.path.exists(example_path):
-            shutil.copy2(example_path, settings_path)
-        with EXTRA.FILE_LOCK:
-            with open(settings_path, encoding="UTF-8") as file:
-                data = json.load(file)
-        data["any_fate"] = self.Any_fate_combo.currentText()
-        with EXTRA.FILE_LOCK:
-            with open(settings_path, mode="w", encoding="UTF-8") as file:
-                json.dump(data, file, ensure_ascii=False, indent=4)
-        self.opt = data
-        QMessageBox.information(self, "提示", "寰宇蝗灾命途演算倾向已保存")
-    def save_finger_snap_config(self):
+    def save_general_config(self):
         try:
-            values = {
-                "control_rollouts": int(self.Finger_snap_control_rollouts_input.text()),
-                "evaluation_rollouts": int(self.Finger_snap_evaluation_rollouts_input.text()),
-                "min_visits": int(self.Finger_snap_min_visits_input.text()),
-                "epsilon_start": float(self.Finger_snap_epsilon_start_input.text()),
-                "epsilon_end": float(self.Finger_snap_epsilon_end_input.text()),
-                "seed": int(self.Finger_snap_seed_input.text()),
-                "win_rate_noise_floor_percent": float(
-                    self.Finger_snap_win_rate_noise_floor_percent_input.text()),
-                "path_reward_bonus": float(self.Finger_snap_path_reward_bonus_input.text()),
-                "path_event_bonus": float(self.Finger_snap_path_event_bonus_input.text()),
-                "path_trade_bonus": float(self.Finger_snap_path_trade_bonus_input.text()),
-                "path_adventure_bonus": float(self.Finger_snap_path_adventure_bonus_input.text()),
-                "path_bugevent_bonus": float(self.Finger_snap_path_bugevent_bonus_input.text()),
-                "decision_mode": self.Finger_snap_decision_mode_combo.currentData(),
-                "dp_early_stop": self.Finger_snap_dp_early_stop_checkbox.isChecked(),
-                "win_rate_dp_early_stop": (
-                    self.Finger_snap_win_rate_dp_early_stop_checkbox.isChecked()),
-                "mc_dp_early_stop": (
-                    self.Finger_snap_mc_dp_early_stop_checkbox.isChecked()),
-                "plane_targets": [int(getattr(
-                    self, f"Finger_snap_plane{plane}_target_input").text())
-                    for plane in range(1, 4)],
-                "first_plane_threshold": float(
-                    self.Finger_snap_first_plane_threshold_input.text()),
-                "record_keep_count": int(
-                    self.Finger_snap_record_keep_count_input.text()),
-            }
-            save_finger_snap_settings(values)
-        except (TypeError, ValueError) as error:
-            QMessageBox.warning(self, "参数错误", f"弹指一挥参数无法保存：{error}")
+            self.update_settings({
+                "recording_state": self.recording_checkBox.isChecked(),
+                "recording_iron_blood": self.recording_checkBox2.isChecked(),
+                "del_record_time": int(self.recording_time_input.text()),
+                "record_event_map": self.record_event_map_checkbox.isChecked(),
+                "recording_keep_long_run": self.recording_keep_long_run_checkbox.isChecked(),
+                "recording_keep_long_run_threshold": float(self.recording_keep_long_run_threshold_input.text()),
+                "record_add_label": self.recording_label_checkbox.isChecked(),
+            })
+        except (ValueError, OSError) as error:
+            QMessageBox.warning(self, "保存失败", f"通用设置无法保存：{error}")
             return
-        QMessageBox.information(
-            self, "提示", "弹指一挥配置已独立保存；下次启动弹指任务时生效。")
+        QMessageBox.information(self, "提示", "通用设置已保存")
+
 
     def save_cleanup_config(self):
         """校验并保存自动清理设置，参数非法时拒绝写入配置文件。"""
@@ -1859,146 +1111,6 @@ class MainWindow(QMainWindowLog):
 **使用本软件即表示您已阅读并同意以上条款。**
 """
 
-    def show_unlock_dialog(self):
-        """
-        显示高级用户功能解锁说明弹窗
-        """
-        dialog = QDialog(self)
-        dialog.setWindowTitle("高级用户功能解锁说明")
-        dialog.setModal(True)
-        dialog.resize(700, 550)
-
-        # 设置窗口标志，确保弹窗置顶
-        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowStaysOnTopHint)
-
-        layout = QVBoxLayout(dialog)
-
-        # 标题
-        title_label = QLabel("🔓 高级用户功能解锁")
-        title_font = QFont()
-        title_font.setPointSize(16)
-        title_font.setBold(True)
-        title_label.setFont(title_font)
-        title_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(title_label)
-
-        # 分隔线
-        line1 = QLabel("─" * 50)
-        line1.setAlignment(Qt.AlignCenter)
-        layout.addWidget(line1)
-
-        # 说明内容文本框（带滚动条）
-        text_browser = QTextBrowser()
-        text_browser.setOpenExternalLinks(True)  # 允许点击链接
-
-        unlock_content = """
-# 如何解锁高级用户功能？
-
-## 📌 解锁方式
-
-为了获得高级用户功能的访问权限，您需要完成以下步骤：
-
-### 方式一：GitHub 免费 Star 支持（推荐）
-
-1. **访问本项目 GitHub 仓库**
-   - 项目地址：[https://github.com/syfoud/Simulated_Scepter](https://github.com/syfoud/Simulated_Scepter)
-
-2. **点击 Star 按钮**
-   - 在页面右上角找到 ⭐ Star 按钮
-   - 点击即可为项目点亮 Star
-
-3. **截图保存**
-   - 截取包含您的 GitHub 用户名（鼠标点击右上角头像即可显示）和 Star 状态的完整页面
-   - 确保截图中能清晰看到您已 Star 该项目
-
-### 方式二：赞助开发者
-
-如果您希望进一步支持项目开发，可以选择赞助：
-
-- **赞助方式**：请联系开发者获取赞助渠道（readme.md中有）
-- **赞助金额**：随意，一杯咖啡即可 ☕
-- **赞助福利**：优先技术支持 + 高级功能解锁
-
----
-
-## 📸 联系开发者或管理者
-
-完成上述任一方式后，请按以下步骤操作：
-
-### 步骤 1：准备截图
-- GitHub Star 截图 **或** 赞助凭证截图
-- 确保截图清晰可见
-
-### 步骤 2：加入 QQ 群（哪个群没满加哪个）
-- **QQ 一群**：1072802257
-- **QQ 二群**：870863632
-
-### 步骤 3：提交申请
-- 私聊联系开发者（通常在忙）或任意一位群管理员
-- 发送您的截图
-- 说明申请解锁高级功能
-
-### 步骤 4：使用密钥
-- 下载群文件加密压缩包（*群文件\模拟权杖本体&进阶功能&文档指引*目录下的**cipher(进阶功能扩展包).7z**）
-- 使用开发者或任意一位群管理员告知您的密钥解压
-- 将解压出的onnx文件放置于**程序主目录/resource/models/**目录下方
-- 重新启动本软件
----
-"""
-
-        text_browser.setMarkdown(unlock_content)
-        layout.addWidget(text_browser)
-
-        # 按钮区域
-        button_layout = QHBoxLayout()
-
-        github_btn = QPushButton("前往 GitHub")
-        close_btn = QPushButton("关闭")
-
-        # 设置按钮样式
-        github_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #24292e;
-                color: white;
-                padding: 10px 20px;
-                border-radius: 5px;
-                font-weight: bold;
-                font-size: 12px;
-            }
-            QPushButton:hover {
-                background-color: #1b1f23;
-            }
-        """)
-
-
-        close_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #6c757d;
-                color: white;
-                padding: 10px 20px;
-                border-radius: 5px;
-                font-size: 12px;
-            }
-            QPushButton:hover {
-                background-color: #5a6268;
-            }
-        """)
-
-        button_layout.addWidget(github_btn)
-        button_layout.addWidget(close_btn)
-        layout.addLayout(button_layout)
-
-        # 按钮事件处理
-        def open_github():
-            import webbrowser
-            webbrowser.open("https://github.com/syfoud/Simulated_Scepter")  # 请替换为实际的 GitHub 地址
-
-
-        github_btn.clicked.connect(open_github)
-        close_btn.clicked.connect(dialog.close)
-
-        # 显示弹窗
-        dialog.exec_()
 def main(show):
     def is_admin():
         try:

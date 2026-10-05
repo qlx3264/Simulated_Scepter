@@ -42,7 +42,7 @@ AIM_ENEMY_DIM_CENTER_RED_MIN = 135
 AIM_ENEMY_DIM_CENTER_RED_STD_MAX = 2.0
 AIM_ENEMY_DIM_OUTER_LUMA_STD_MAX = 16.5
 AIM_ENEMY_DIM_FAR_RED_STD_MIN = 10.5
-mask_interact = find_image_in_folder('gray_image/', 'MASK_MAP_INTERACT.jpg')
+mask_interact = find_image_in_folder('gray_image/', 'MASK_MAP_INTERACT')
 circles_enemy = {
     radius: create_circle(radius - 1, radius)
     for radius in set(
@@ -55,7 +55,7 @@ _dim_axis = np.arange(-AIM_ENEMY_DIM_PATCH_RADIUS,
 _dim_x, _dim_y = np.meshgrid(_dim_axis, _dim_axis)
 _dim_distance = np.sqrt(_dim_x * _dim_x + _dim_y * _dim_y)
 circle_item = create_circle(*radius_item)
-event_mask = (find_image_in_folder("gray_image/",'MASK_MAP_INTERACT_BLACK.jpg') > 70)[:497]
+event_mask = (find_image_in_folder("gray_image/",'MASK_MAP_INTERACT_BLACK') > 70)[:497]
 
 
 def _best_enemy_ring_response(
