@@ -769,7 +769,6 @@ class MainWindow(QMainWindowLog):
         self.run_diver_btn.clicked.connect(self.run_diver)
         self.iron_blood_btn.clicked.connect(self.run_iron_blood)
         self.any_fate_btn.clicked.connect(self.run_any_fate)
-        self.finger_snap_btn.clicked.connect(self.run_finger_snap)
         self.currency_war_btn.clicked.connect(self.run_currency_war)
         self.init_script_controls()
         self.calibrate_btn.clicked.connect(self.calibrate)
@@ -1042,6 +1041,8 @@ class MainWindow(QMainWindowLog):
         """
         快捷键信号的槽函数（运行在主线程）
         """
+        if action in {"test", "print"} and not self.debug_checkbox2.isChecked():
+            return
         if action == "stop":
             if self.is_task_running():
                 self.stop_btn.click()
@@ -1107,6 +1108,16 @@ class MainWindow(QMainWindowLog):
         self.Iron_blood_first_plane_min_weight_input.setEnabled(early_stop_enabled)
         self.Iron_blood_third_plane_pause_input.setEnabled(early_stop_enabled)
         self.Iron_blood_boss_before_pause_input.setEnabled(early_stop_enabled)
+        for widget in (
+            self.Finger_snap_dp_early_stop_checkbox,
+            self.Finger_snap_win_rate_dp_early_stop_checkbox,
+            self.Finger_snap_mc_dp_early_stop_checkbox,
+            self.Finger_snap_plane1_target_input,
+            self.Finger_snap_plane2_target_input,
+            self.Finger_snap_plane3_target_input,
+            self.Finger_snap_record_keep_count_input,
+        ):
+            widget.setEnabled(early_stop_enabled)
         recording_enabled = self.recording_checkBox2.isChecked()
         self.recording_time_input.setEnabled(recording_enabled)
         self.silver_wolf_switch_combo.setEnabled(
@@ -1114,13 +1125,24 @@ class MainWindow(QMainWindowLog):
         )
         debug_enabled = self.debug_checkbox2.isChecked()
         debug_and_recording = debug_enabled and recording_enabled
+        for widget in (
+            self.run_simul_btn, self.iron_blood_btn,
+            self.any_fate_btn, self.currency_war_btn,
+        ):
+            widget.setVisible(not debug_enabled)
+        for widget in (
+            self.engine_combo, self.script_combo, self.run_script_btn,
+            self.test_btn, self.print_btn, self.PrintEdit,
+            self.PrintPhoto, self.PrintText,
+            self.label_test_hotkey, self.test_hotkey_input,
+            self.label_print_hotkey, self.print_hotkey_input,
+        ):
+            widget.setVisible(debug_enabled)
         self.debug_group.setVisible(debug_enabled)
         self.recording_keep_long_run_checkbox.setEnabled(debug_and_recording)
         self.recording_keep_long_run_threshold_input.setEnabled(debug_and_recording)
         self.recording_label_checkbox.setEnabled(debug_and_recording)
-        finger_snap_visible = debug_enabled or (0 <= time.localtime().tm_hour < 6)
-        self.finger_snap_btn.setVisible(finger_snap_visible)
-        self.Finger_snap_group.setVisible(finger_snap_visible)
+        self.Finger_snap_group.setVisible(debug_enabled or (0 <= time.localtime().tm_hour < 6))
 
 
     def connect_dependency_signals(self):
@@ -1258,17 +1280,42 @@ class MainWindow(QMainWindowLog):
             QMessageBox.warning(self, "警告", str(e))
 
     def init_script_controls(self):
-        """初始化自由脚本的内核选项与运行入口。"""
+        """初始化自由脚本入口，并恢复上次选择的脚本与内核。"""
         for name, engine in (
             ("Simulated", SimulatedUniverse),
             ("Divergent", DivergentUniverse),
             ("AnyFate", AnyFateUniverse),
             ("IronBlood", IronBloodUniverse),
             ("Currency", CurrencyWar),
+            ("FingerSnap", FingerSnap),
         ):
             self.engine_combo.addItem(name, engine)
         self.run_script_btn.clicked.connect(self.run_script)
         self.refresh_scripts()
+
+        engine_index = self.engine_combo.findText(self.opt.get("script_engine", ""))
+        if engine_index >= 0:
+            self.engine_combo.setCurrentIndex(engine_index)
+        script_path = os.path.join(PATHS["root"], "actions", self.opt.get("script_file", ""))
+        script_index = self.script_combo.findData(script_path)
+        if script_index >= 0:
+            self.script_combo.setCurrentIndex(script_index)
+
+        # 完成恢复后才监听变更，避免初始化时覆盖已有选择。
+        self.engine_combo.currentIndexChanged.connect(self.save_script_selection)
+        self.script_combo.currentIndexChanged.connect(self.save_script_selection)
+
+    def save_script_selection(self):
+        """保存下拉框选择；脚本仅存文件名，允许项目目录迁移。"""
+        updates = {"script_engine": self.engine_combo.currentText()}
+        script_path = self.script_combo.currentData()
+        if script_path is not None:
+            updates["script_file"] = os.path.basename(script_path)
+        try:
+            self.update_settings(updates)
+        except (OSError, ValueError) as error:
+            CUS_LOGGER.error("保存脚本选项失败：%s", error)
+            QMessageBox.warning(self, "提示", f"保存脚本选项失败：{error}")
 
     def refresh_scripts(self):
         """列出 actions 中的 JSON 动作脚本，排除角色别名等数据文件。"""
@@ -1389,29 +1436,6 @@ class MainWindow(QMainWindowLog):
     def run_any_fate(self):
         def task():
             su = AnyFateUniverse()
-            self.current_task = su
-            su.start()
-
-        try:
-            self.start_task(task)
-        except RuntimeError as r:
-            QMessageBox.warning(self, "警告", str(r))
-        except Exception as e:
-            QMessageBox.critical(self, "错误", str(e))
-
-    def run_finger_snap(self):
-        can_run = (
-            self.opt.get("debug", True)
-            and self.opt.get("recording_iron_blood", True)
-            and self.opt.get("record_add_label", True)
-        )
-        if not can_run:
-            QMessageBox.information(
-                self, "提示", "非开发人员，当前无测试资格，暂不支持运行")
-            return
-
-        def task():
-            su = FingerSnap()
             self.current_task = su
             su.start()
 

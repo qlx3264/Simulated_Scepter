@@ -436,7 +436,7 @@ border:none</string>
               </layout>
              </item>
              <item>
-              <layout class="QVBoxLayout" name="Lay_Tab1_Right" stretch="0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0">
+              <layout class="QVBoxLayout" name="Lay_Tab1_Right">
                <property name="spacing">
                 <number>6</number>
                </property>
@@ -660,37 +660,11 @@ border:none</string>
                 </widget>
                </item>
                <item>
-                <spacer name="verticalSpacer_2">
-                 <property name="orientation">
-                  <enum>Qt::Vertical</enum>
-                 </property>
-                 <property name="sizeHint" stdset="0">
-                  <size>
-                   <width>20</width>
-                   <height>40</height>
-                  </size>
-                 </property>
-                </spacer>
-               </item>
-               <item>
                 <widget class="Line" name="line_99">
                  <property name="orientation">
                   <enum>Qt::Horizontal</enum>
                  </property>
                 </widget>
-               </item>
-               <item>
-                <spacer name="verticalSpacer">
-                 <property name="orientation">
-                  <enum>Qt::Vertical</enum>
-                 </property>
-                 <property name="sizeHint" stdset="0">
-                  <size>
-                   <width>20</width>
-                   <height>40</height>
-                  </size>
-                 </property>
-                </spacer>
                </item>
                <item>
                 <layout class="QHBoxLayout" name="horizontalLayout_2">
@@ -738,13 +712,6 @@ border:none</string>
                 </widget>
                </item>
                <item>
-                <widget class="QPushButton" name="finger_snap_btn">
-                 <property name="text">
-                  <string>弹指一挥（灰度测试）</string>
-                 </property>
-                </widget>
-               </item>
-               <item>
                 <widget class="QPushButton" name="currency_war_btn">
                  <property name="text">
                   <string>货币战争自动收集</string>
@@ -752,9 +719,16 @@ border:none</string>
                 </widget>
                </item>
                <item>
-                <layout class="QHBoxLayout" name="script_layout" stretch="0,1,0">
+                <!-- 下拉框共享可用宽度，不让内容尺寸提示撑宽操作列。 -->
+                <layout class="QHBoxLayout" name="script_layout" stretch="1,1,0">
                  <item>
                   <widget class="QComboBox" name="engine_combo">
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Ignored" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
                    <property name="toolTip">
                     <string>选择脚本使用的运行内核</string>
                    </property>
@@ -762,6 +736,12 @@ border:none</string>
                  </item>
                  <item>
                   <widget class="QComboBox" name="script_combo">
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Ignored" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
                    <property name="toolTip">
                     <string>选择 actions 文件夹中的 JSON 动作脚本</string>
                    </property>
@@ -824,6 +804,22 @@ border:none</string>
                   </widget>
                  </item>
                 </layout>
+               </item>
+               <item>
+                <spacer name="verticalSpacer">
+                 <property name="orientation">
+                  <enum>Qt::Vertical</enum>
+                 </property>
+                 <property name="sizeType">
+                  <enum>QSizePolicy::Expanding</enum>
+                 </property>
+                 <property name="sizeHint" stdset="0">
+                  <size>
+                   <width>20</width>
+                   <height>0</height>
+                  </size>
+                 </property>
+                </spacer>
                </item>
               </layout>
              </item>
