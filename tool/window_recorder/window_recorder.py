@@ -1,8 +1,8 @@
 import ctypes
 import datetime
 import os
-import time
 import threading
+import time
 
 # 导入必要的 Windows API 函数
 from ctypes import windll
@@ -24,6 +24,8 @@ from tool.utils.game_window import (
     get_window_kind,
     is_usable_game_window,
 )
+from tool.window_recorder.recorder_writer import RecorderWriter
+from tool.window_recorder.video_remux import convert_in_background
 
 
 class WindowRecorder:
@@ -155,13 +157,18 @@ class WindowRecorder:
         """开始录制指定窗口"""
         CUS_LOGGER.debug(f"启动录制第{count}次")
         with self.state_lock:
-            if self.recording or (self.recording_thread and self.recording_thread.is_alive()):
-                CUS_LOGGER.debug("上一次录制尚未结束，跳过本次启动")
+            if self.recording:
+                CUS_LOGGER.info("Already recording")
                 return
-            if self.stop_event.is_set():
-                CUS_LOGGER.info("启动录制前已收到停止请求，取消本次录制")
+            if self.recording_thread and self.recording_thread.is_alive():
+                # 上一次会话的线程还活着：它仍持有写入器，此时启动新会话会让旧线程
+                # 退出时误释放新会话的写入器，因此拒绝。
+                CUS_LOGGER.debug("上一次录制的线程尚未结束，跳过本次启动")
                 return
-            # 上一次录制已结束，此处清理的是它遗留的停止请求；本次启动是新的录制会话。
+            # 走到这里说明上一次会话已经结束。若仍有停止意图，那它只可能来自
+            # 「停止该会话」的请求（restart_recording 正是"停止→再启动"的写法），
+            # 属于那个已结束的会话，应当随本次启动一并清掉；否则配对的启动会被
+            # 自己拒绝，此后本次运行再也不录制。
             self.stop_event.clear()
         timestamp=datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         self.output_file = os.path.join(self.output_path, f"第{count}次轮回-{timestamp}.mp4")
@@ -254,18 +261,7 @@ class WindowRecorder:
 
         # 设置视频写入器
         CUS_LOGGER.info(f"初始化视频写入器，尺寸: {actual_width}x{actual_height}")
-        self.out = cv2.VideoWriter(
-            self.output_file,
-            cv2.VideoWriter_fourcc(*'mp4v'),
-            self.fps,
-            (actual_width, actual_height)
-        )
-
-        if not self.out.isOpened():
-            CUS_LOGGER.error("无法初始化视频写入器")
-            self.out.release()
-            self.out = None
-            raise RuntimeError("无法初始化视频写入器")
+        self.out = RecorderWriter(self.output_file, actual_width, actual_height, self.fps)
 
         # 初始化期间可能已经收到停止请求，此时不要启动录制线程，并丢弃刚创建的空文件
         with self.state_lock:
@@ -279,39 +275,6 @@ class WindowRecorder:
             # 启动录制线程
             self.recording_thread = ThreadWithException(target=self._record_window, daemon=True,name="视频录制")
             self.recording_thread.start()
-
-    def _is_playable(self):
-        """判断录制文件是否带有 moov 索引。
-
-        录制中途进程被强制结束时索引尚未写盘，这种文件体积正常却无法播放。
-
-        Returns:
-            文件存在且能找到 moov box 时为 True。
-        """
-        if not os.path.exists(self.output_file):
-            return False
-
-        with open(self.output_file, "rb") as file:
-            offset = 0
-            file.seek(0, os.SEEK_END)
-            file_size = file.tell()
-
-            while offset + 8 <= file_size:
-                file.seek(offset)
-                header = file.read(8)
-                if len(header) < 8:
-                    break
-                box_size = int.from_bytes(header[:4], "big")
-                if header[4:8] == b"moov":
-                    return True
-                if box_size == 1:  # 64 位长度，写在 box 类型之后的 8 字节
-                    offset += 16
-                elif box_size == 0:  # 延伸到文件末尾
-                    break
-                else:
-                    offset += box_size
-
-        return False
 
     def _remove_output(self):
         """删除当前录制文件，无文件时按已删除处理。"""
@@ -327,7 +290,7 @@ class WindowRecorder:
     def _abort_start(self):
         """释放因停止请求而取消的启动所创建的空视频文件。"""
         if self.out:
-            self.out.release()
+            self.out.stop()
             self.out = None
 
         self._remove_output()
@@ -536,7 +499,7 @@ class WindowRecorder:
         finally:
             # 释放资源
             if self.out:
-                self.out.release()
+                self.out.stop()
                 self.out = None
             self.recording = False
             CUS_LOGGER.info("视频写入器已释放")
@@ -552,25 +515,35 @@ class WindowRecorder:
             delete_video (bool): 是否删除录制的视频文件，默认为 False
             battle_count (int, optional): 战斗次数；保留录制且不为 None 时，用于更新视频文件名
         """
-        # 无论录制线程是否已经启动，都记录停止请求
-        self.stop_event.set()
-
         with self.state_lock:
             if not self.recording:
-                # 该请求没有正在运行的录制可停止，保留到下一次启动时被响应
-                CUS_LOGGER.debug("录制尚未正式启动，已记录停止请求")
+                # 没有正在运行的录制可停：只记录，不留停止意图。
+                # 若在这里留下停止意图，随后配对的 start_recording 会把自己拒绝掉
+                # （restart_recording 正是"停止→再启动"的写法），此后本次运行再也
+                # 不会录制。停止意图只应属于真正被停止的那个会话。
+                CUS_LOGGER.debug("录制尚未正式启动，无需停止")
                 return
 
+            self.stop_event.set()
             self.recording = False
 
-        # 等待录制线程完全退出，避免 FFmpeg DLL 资源竞争；
-        # 线程仍未退出时下面会跳过清理，不能去动一个正在写入的文件。
+        # 等待录制线程完全退出，避免编码器资源竞争；
+        # 线程仍未退出时下面会跳过清理，不能去动一个仍在写入的文件。
         if not self._stop_recording_thread():
             CUS_LOGGER.debug(f"录制线程未退出，暂不处置录制文件：{self.output_file}")
             return
 
-        # 调用方要求删除或已损坏文件都直接删除
-        if delete_video or not self._is_playable():
+        # 分片 MP4 的 moov 写在文件开头，进程被强制结束时已写入的分片仍可播放，
+        # 因此不再按索引判定有效性。也只有写入线程真的失败（文件里没有可用内容）
+        # 才删除；线程未能结束不代表内容不可用，那种文件必须保留。
+        write_failed = False
+        if self.out:
+            write_failed = self.out.failed
+            if not self.out.stop():
+                CUS_LOGGER.warning(f"写入器未正常收尾，保留已写入的分片：{self.output_file}")
+            self.out = None
+
+        if delete_video or write_failed:
             self._abort_start()
             return
 
@@ -583,6 +556,11 @@ class WindowRecorder:
                 self.output_file = new_path
             except Exception as e:
                 CUS_LOGGER.warning(f"更新视频文件名失败：{e}")
+
+        # 录制文件是分片 MP4：崩溃可播，但分片结构让部分播放器（如 Windows 自带）
+        # 建不出进度索引。这里在后台转封装成标准 MP4 恢复可跳转，不阻塞主任务。
+        # 走到这里说明写入器已正常收尾，文件结构完整、不含损坏帧，因此无需校验。
+        convert_in_background(self.output_file, check_output=False)
         CUS_LOGGER.debug(f"停止录制{self.output_file}")
 
     def _stop_recording_thread(self):
@@ -610,8 +588,7 @@ class WindowRecorder:
             return True
 
         CUS_LOGGER.error(
-            "录制线程未在规定时间内结束，它可能阻塞在无法中断的截图或写盘调用中；"
-            "本次跳过文件清理与重命名，避免处置一个仍在写入的录制文件"
+            "录制线程未在规定时间内结束，本次跳过文件清理与重命名"
         )
         return False
 
