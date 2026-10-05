@@ -177,14 +177,18 @@ class CountdownProductionTests(unittest.TestCase):
         self.assertTrue(all(key in settings for key in EARLY_STOP_FIELDS.values()))
         self.assertIn(DECISION_WIN_RATE_DP, DECISION_MODES)
 
-    def test_finger_snap_controls_live_in_advanced_settings_tab(self):
+    def test_finger_snap_controls_live_in_independent_kernel_settings(self):
         root = ElementTree.parse(
             Path(__file__).parents[1] / "resource" / "ui" / "UI.ui").getroot()
         tabs = next(widget for widget in root.iter("widget")
                     if widget.get("name") == "tabWidget").findall("widget")
         self.assertNotIn("FingerSnapTab", [tab.get("name") for tab in tabs])
         iron_tab = next(tab for tab in tabs if tab.get("name") == "AbyssTab")
-        controls = {widget.get("name") for widget in iron_tab.iter("widget")}
+        self.assertFalse(any(widget.get("name", "").startswith("Finger_snap_")
+                             for widget in iron_tab.iter("widget")))
+        settings = ElementTree.parse(
+            Path(__file__).parents[1] / "resource/ui/FingerSnapSettings.ui").getroot()
+        controls = {widget.get("name") for widget in settings.iter("widget")}
         self.assertTrue({"Finger_snap_group",
                          "Finger_snap_win_rate_noise_floor_percent_input",
                          "Finger_snap_dp_early_stop_checkbox",
