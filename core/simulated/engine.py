@@ -32,7 +32,7 @@ from tool.window_recorder import WindowRecorder
 
 
 class SimulatedUniverse(UniverseUtils):
-    def __init__(self, find, debug, speed, consumable, slow, nums=-1, bonus=False):
+    def __init__(self, find, debug, speed, consumable, slow, nums=-1, bonus=False, task_owner=None):
         """
         初始化模拟宇宙类实例
 
@@ -141,7 +141,7 @@ class SimulatedUniverse(UniverseUtils):
             self.event_prior = yaml.safe_load(f)["prior"]["事件"]
         self.record = data.get("recording_state", True)
 
-        self.recorder = WindowRecorder(output_path=PATHS["video"], fps=30, window_title="崩坏：星穹铁道",window_class_name="UnityWndClass",see_time=True, offsets=[10, 50, 10, 10], overlay_map=self._show_map, simul_instance=self)
+        self.recorder = WindowRecorder(output_path=PATHS["video"], fps=30, window_title="崩坏：星穹铁道",window_class_name="UnityWndClass",see_time=True, offsets=[10, 50, 10, 10], overlay_map=self._show_map, simul_instance=self, task_owner=task_owner)
         self.cut_video=True
     def route(self):
         self.init_map()

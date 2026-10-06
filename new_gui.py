@@ -42,6 +42,11 @@ from tool.settings import load_settings, update_settings
 from tool.thread import ThreadWithException
 from tool.utils.game_window import find_game_window
 from tool.utils.image_tool import find_image_by_name, load_all_images_from_directory
+from tool.window_recorder.video_remux import (
+    convert_to_standard_mp4,
+    convert_with_tail_trimmed,
+    needs_conversion,
+)
 
 load_all_images_from_directory()
 import faulthandler
@@ -260,6 +265,9 @@ class MainWindow(QMainWindowLog):
         # 任务管理相关属性
         self.current_task = None
         self.task_thread = None
+        self._task_thread = None
+        # 异常视频封装的后台线程，避免重复触发
+        self._video_convert_thread = None
         self.scheduler = None
         self.editor_tasks = {}
         self.script_tool_result.connect(lambda session, _result: self.editor_tasks.pop(session, None))
@@ -283,6 +291,7 @@ class MainWindow(QMainWindowLog):
         log_emitter.kill_num_signal.connect(self.set_kill_num)
         log_emitter.fps_update_signal.connect(self.set_FPS)
         log_emitter.cleanup_finished_signal.connect(self.refresh_cleanup_state)
+        log_emitter.video_convert_finished_signal.connect(self.on_video_convert_finished)
 
         # 检查是否首次启动并显示用户协议
         self.check_first_launch()
@@ -291,6 +300,19 @@ class MainWindow(QMainWindowLog):
 
         # 程序启动后先让界面完成显示，再按配置执行程序启动时触发的清理
         QTimer.singleShot(CLEANUP_STARTUP_DELAY_MS, lambda: self.cleanup_at("program_start"))
+
+    def create_task_engine(self, kernel_id, *, script=False):
+        """创建内核实例，并把它绑到本次任务线程上。
+
+        录制线程每轮检查所属任务线程是否还活着，任务结束就停止录制；
+        不绑定的话录制线程会变成孤儿，任务早就停了录像却一直在写。
+        """
+        engine = self.registry.create_engine(kernel_id, script=script)
+        task_thread = getattr(self, "_task_thread", None) or getattr(self, "task_thread", None)
+        # 没有录制能力的内核（例如通用脚本内核）没有 recorder；取不到任务线程时也不绑定
+        if task_thread is not None and getattr(engine, "recorder", None) is not None:
+            engine.recorder.task_owner = task_thread
+        return engine
 
     def start_task(self, task_func):
         """
@@ -311,8 +333,12 @@ class MainWindow(QMainWindowLog):
             self.scheduler.release_active()
 
         set_global_stop_flag(False)
-        self.task_thread = ThreadWithException(target=task_func, name="主任务线程")
-        self.task_thread.start()
+        # 捕获本次任务的线程对象本身：录制要绑的是「这一个」任务线程，
+        # 而不是 self.task_thread 这个会被下一次任务覆盖的属性。
+        task_thread = ThreadWithException(target=task_func, name="主任务线程")
+        self.task_thread = task_thread
+        self._task_thread = task_thread
+        task_thread.start()
         # 更新任务状态标签为"运行中"
         self.Label_RunningState.setText("任务序列线程状态: 运行中")
 
@@ -417,6 +443,10 @@ class MainWindow(QMainWindowLog):
         self.hotkey_save_btn.clicked.connect(self.save_hotkey_config)
         self.record_stats_btn.clicked.connect(self.open_record_stats)
         self.Aboutupdatelock.clicked.connect(lambda: show_unlock_dialog(self))
+        self.video_convert_btn.clicked.connect(self.start_video_convert)
+        self.video_convert_mode_combo.addItem("严格模式：自动删除末尾的不正常帧", "strict")
+        self.video_convert_mode_combo.addItem(
+            "抢救模式：尽可能保留更多帧，结尾有概率出现异常帧", "rescue")
 
         self.opt = data = load_settings()
         self.recording_checkBox.setChecked(data.get("recording_state", False))
@@ -595,7 +625,8 @@ class MainWindow(QMainWindowLog):
             widget.setVisible(debug_enabled)
         self.debug_group.setVisible(debug_enabled)
         for widget in (self.recording_keep_long_run_checkbox,
-                       self.recording_keep_long_run_threshold_input, self.recording_label_checkbox):
+                       self.recording_keep_long_run_threshold_input,
+                       self.recording_label_checkbox):
             widget.setEnabled(debug_enabled and recording_enabled)
 
 
@@ -617,7 +648,7 @@ class MainWindow(QMainWindowLog):
             return
 
         def task():
-            self.current_task = self.registry.create_engine(kernel_id)
+            self.current_task = self.create_task_engine(kernel_id)
             self.current_task.save_screen()
 
         try:
@@ -633,7 +664,7 @@ class MainWindow(QMainWindowLog):
         photo, text_only = self.PrintPhoto.isChecked(), self.PrintText.isChecked()
 
         def task():
-            self.current_task = su = self.registry.create_engine(kernel_id)
+            self.current_task = su = self.create_task_engine(kernel_id)
             if photo:
                 su.click_target(find_image_by_name(print_text), 0.9, True)
             elif text_only:
@@ -754,7 +785,7 @@ class MainWindow(QMainWindowLog):
         stop_key = self.load_hotkey_config()["stop"].upper()
 
         def task():
-            self.current_task = su = self.registry.create_engine(kernel_id, script=True)
+            self.current_task = su = self.create_task_engine(kernel_id, script=True)
             CUS_LOGGER.info("使用%s内核运行脚本：%s；点击“停止任务”或按 %s 可终止。",
                             engine_name, os.path.basename(path), stop_key)
             run_action_script(su, path)
@@ -841,7 +872,7 @@ class MainWindow(QMainWindowLog):
 
     def run_kernel(self, kernel_id):
         def task():
-            self.current_task = self.registry.create_engine(kernel_id)
+            self.current_task = self.create_task_engine(kernel_id)
             self.current_task.start()
 
         try:
@@ -857,7 +888,7 @@ class MainWindow(QMainWindowLog):
 
         def task():
             try:
-                self.current_task = self.registry.create_engine(spec.id)
+                self.current_task = self.create_task_engine(spec.id)
                 res = align_angle_main(su=self.current_task)
                 self.calibration_finished.emit(res)
             except Exception as e:
@@ -879,6 +910,67 @@ class MainWindow(QMainWindowLog):
 
     def open_record_stats(self):
         os.startfile(os.path.join(PATHS["html"], "record_stats.html"))
+
+    def start_video_convert(self):
+        """把 video 目录下尚未封装的录像按所选模式封装。
+
+        转换在后台线程逐个进行，界面保持可用；结束后由信号回到主线程恢复按钮并提示结果。
+        严格模式会先丢弃末尾无法解码的帧，抢救模式则尽可能保留更多帧。
+        """
+        if self._video_convert_thread is not None and self._video_convert_thread.is_alive():
+            return
+
+        video_dir = PATHS["video"]
+        if not os.path.isdir(video_dir):
+            QMessageBox.information(self, "异常视频封装", "未检测到需要封装的视频")
+            return
+
+        # 只处理仍是分片格式的录像：标准 mp4 已经可以正常跳转
+        pending = [os.path.join(video_dir, name)
+                   for name in sorted(os.listdir(video_dir))
+                   if needs_conversion(os.path.join(video_dir, name))]
+        if not pending:
+            QMessageBox.information(self, "异常视频封装", "未检测到需要封装的视频")
+            return
+
+        mode = self.video_convert_mode_combo.currentData()
+        self.video_convert_btn.setEnabled(False)
+        self.video_convert_btn.setText("转换中...")
+        self._video_convert_thread = ThreadWithException(
+            target=self._run_video_convert, kwargs={"paths": pending, "mode": mode},
+            name="异常视频封装", is_print=False)
+        self._video_convert_thread.start()
+
+    def _run_video_convert(self, paths, mode):
+        """后台线程：逐个封装，不删除原文件。"""
+        succeeded = failed = 0
+        for source in paths:
+            # 输出用「原文件名」+ 模式后缀，原文件保持不变
+            suffix = "-严格模式" if mode == "strict" else "-抢救模式"
+            base, ext = os.path.splitext(source)
+            target = f"{base}{suffix}{ext}"
+            try:
+                if mode == "strict":
+                    ok = convert_with_tail_trimmed(source, target, del_frames=False)
+                else:
+                    ok = convert_to_standard_mp4(
+                        source, check_source=False, check_output=False, target=target)
+            except Exception as error:
+                CUS_LOGGER.error(f"封装录像失败：{source}（{error}）")
+                ok = False
+            if ok:
+                succeeded += 1
+            else:
+                failed += 1
+        log_emitter.video_convert_finished_signal.emit(succeeded, failed)
+
+    def on_video_convert_finished(self, succeeded, failed):
+        """转换结束：恢复按钮并提示结果。"""
+        self.video_convert_btn.setText("转换")
+        self.video_convert_btn.setEnabled(True)
+        QMessageBox.information(
+            self, "异常视频封装",
+            f"转换成功：{succeeded}个文件，转换失败：{failed}个文件")
 
 
     def save_hotkey_config(self):
