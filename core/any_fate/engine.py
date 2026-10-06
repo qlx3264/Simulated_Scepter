@@ -926,8 +926,10 @@ class AnyFateUniverse(SimulatedUniverse):
             elif '齿星系' in strange or '分裂咕咕钟' in strange or '血锦之纪' in strange or '星际大乐透' in strange or '机械齿轮' in strange:
                 black_index_list.append(i)
                 if '机械齿轮' in strange:
-                    black_first=i
+                    black_first = i
                 elif '星际大乐透' in strange and black_first==-1:
+                    black_first = i
+                elif '分裂咕咕钟' in strange and black_first==-1:
                     black_first = i
         if strange_index!=-1:
             CUS_LOGGER.debug(f"优先选择第{strange_index}个奇物")
