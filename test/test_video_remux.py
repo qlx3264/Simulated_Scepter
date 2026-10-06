@@ -230,20 +230,32 @@ class VideoRemuxTests(unittest.TestCase):
         self.assertFalse(os.path.exists(target + TEMP_SUFFIX))
 
     def test_strict_trim_removes_undecodable_tail(self):
-        # 严格模式的意义：末尾坏帧被丢弃，产物解码干净
+        # 严格模式的意义：末尾坏帧被丢弃，产物解码干净。
+        # 写入器按背压可能丢帧，帧数太少时截断后可能整段都解不出来——
+        # 那属于合法失败（保留原文件），因此两种结果都接受，但各自的约束都要满足。
         path = self.make_recording("strict-broken.mp4", frames=FPS * 6)
         full = os.path.getsize(path)
         with open(path, "r+b") as file:
             file.truncate(int(full * 0.55))
         target = self.new_path("strict-broken-out.mp4")
         self.addCleanup(lambda: os.path.exists(target) and os.remove(target))
+        source_before = os.path.getsize(path)
 
-        self.assertTrue(convert_with_tail_trimmed(path, target, del_frames=False))
+        converted = convert_with_tail_trimmed(path, target, del_frames=False)
 
-        # 产物应能完整解码；若整段都解不出来则视为失败
-        with av.open(target) as container:
-            self.assertGreater(sum(1 for _ in container.decode(video=0)), 0)
+        # 源文件始终保留且内容不变
         self.assertTrue(os.path.exists(path))
+        self.assertEqual(os.path.getsize(path), source_before)
+
+        if converted:
+            self.assertTrue(os.path.exists(target))
+            self.assertNotIn("moof", top_level_boxes(target))
+            with av.open(target) as container:
+                self.assertGreater(sum(1 for _ in container.decode(video=0)), 0)
+        else:
+            # 失败时不能留下半成品
+            self.assertFalse(os.path.exists(target))
+            self.assertFalse(os.path.exists(target + TEMP_SUFFIX))
 
     def test_rescue_mode_writes_target_and_keeps_source(self):
         # UI 的抢救模式：接受尾部损坏，输出到新文件，原文件保留

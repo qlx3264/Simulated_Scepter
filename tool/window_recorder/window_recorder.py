@@ -29,7 +29,7 @@ from tool.window_recorder.video_remux import convert_in_background
 
 
 class WindowRecorder:
-    def __init__(self, output_path=PATHS["video"], handle=None, fps=30.0, window_title=None, window_class_name=None, see_time=False, is_show=False, offsets=None, overlay_map=False, map_alpha=0.7, simul_instance=None):
+    def __init__(self, output_path=PATHS["video"], handle=None, fps=30.0, window_title=None, window_class_name=None, see_time=False, is_show=False, offsets=None, overlay_map=False, map_alpha=0.7, simul_instance=None, task_owner=None):
         self.output_path = output_path
         self.fps = fps
         self.window_title = window_title
@@ -63,7 +63,8 @@ class WindowRecorder:
         self.state_lock = threading.Lock()
         # 录制所服务的任务线程。录制线程每轮检查它是否还活着，任务一结束就停止录制，
         # 避免录制线程成为孤儿、任务早就停了录像却一直在长大。
-        self.task_owner = None
+        # 可以在构造时传入，也可以在创建内核后由 GUI 统一绑定（见 create_task_engine）。
+        self.task_owner = task_owner
 
     def capture_window_background(self, hwnd):
         """使用 PrintWindow API 后台截图指定窗口"""
@@ -612,7 +613,7 @@ class WindowRecorder:
             return True
 
         CUS_LOGGER.error(
-            "录制线程未在规定时间内结束，本次跳过文件清理与重命名"
+            "录制线程未在规定时间内结束，本次不处置录制文件（由停止流程先行止住写入）"
         )
         return False
 

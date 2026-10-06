@@ -8,6 +8,7 @@ import time
 import keyboard
 from PyQt5.QtGui import QFont
 
+from tool.registry import KernelRegistry
 from route import PATHS
 from tool import EXTRA
 from tool.action_script import run_script as run_action_script
@@ -32,7 +33,6 @@ from tool.cleanup import (
 )
 from tool.GLOBAL import set_global_stop_flag
 from tool.gui.advanced_features import show_unlock_dialog
-from tool.gui.engine_settings import create_settings_dialog
 from tool.log import CUS_LOGGER, log_emitter
 from tool.settings import load_settings, update_settings
 from tool.thread import ThreadWithException
@@ -58,20 +58,13 @@ from PyQt5.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QTextBrowser,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from align_angle import main as align_angle_main
-from any_fate import AnyFateUniverse
-from currencywar import CurrencyWar
-from diver import DivergentUniverse
-from finger_snap import FingerSnap
-from iron_blood import IronBloodUniverse
 from logger_printer import QMainWindowLog
-from simul import SimulatedUniverse
-from tool.diver.config import config as config_diver
-from tool.simul.config import config as config_simul
 
 HOTKEY_DEBOUNCE_SECONDS = 1.0
 # 程序启动时触发的清理延迟执行的毫秒数，让主界面先完成显示。
@@ -297,6 +290,19 @@ class MainWindow(QMainWindowLog):
         # 程序启动后先让界面完成显示，再按配置执行程序启动时触发的清理
         QTimer.singleShot(CLEANUP_STARTUP_DELAY_MS, lambda: self.cleanup_at("program_start"))
 
+    def create_task_engine(self, kernel_id, *, script=False):
+        """创建内核实例，并把它绑到本次任务线程上。
+
+        录制线程每轮检查所属任务线程是否还活着，任务结束就停止录制；
+        不绑定的话录制线程会变成孤儿，任务早就停了录像却一直在写。
+        """
+        engine = self.registry.create_engine(kernel_id, script=script)
+        task_thread = getattr(self, "_task_thread", None) or getattr(self, "task_thread", None)
+        # 没有录制能力的内核（例如通用脚本内核）没有 recorder；取不到任务线程时也不绑定
+        if task_thread is not None and getattr(engine, "recorder", None) is not None:
+            engine.recorder.task_owner = task_thread
+        return engine
+
     def start_task(self, task_func):
         """
         启动一个新任务
@@ -401,20 +407,13 @@ class MainWindow(QMainWindowLog):
 
 
     def init_ui(self):
-        self.run_simul_btn.clicked.connect(self.run_simul)
-        self.iron_blood_btn.clicked.connect(self.run_iron_blood)
-        self.any_fate_btn.clicked.connect(self.run_any_fate)
-        self.currency_war_btn.clicked.connect(self.run_currency_war)
+        self.registry = KernelRegistry()
+        for module, error in self.registry.errors.items():
+            CUS_LOGGER.error("内核 %s 不可用：%s", module, error)
+        self.init_kernel_buttons()
         self.init_script_controls()
-        for button, engine in (
-            (self.simul_settings_btn, "Simulated"),
-            (self.iron_blood_settings_btn, "IronBlood"),
-            (self.any_fate_settings_btn, "AnyFate"),
-            (self.currency_settings_btn, "Currency"),
-        ):
-            button.clicked.connect(lambda checked=False, name=engine: self.open_engine_settings(name))
         self.engine_settings_btn.clicked.connect(
-            lambda: self.open_engine_settings(self.engine_combo.currentText()))
+            lambda: self.open_engine_settings(self.engine_combo.currentData()))
         self.calibrate_btn.clicked.connect(self.calibrate)
         self.test_btn.clicked.connect(self.test)
         self.print_btn.clicked.connect(self.test_2)
@@ -448,13 +447,19 @@ class MainWindow(QMainWindowLog):
         self.update_button_hotkey_text(hotkeys)
         self.update_dependent_controls_state()
         self.connect_dependency_signals()
-        self.restore_action.triggered.connect(self.run_iron_blood)
+        tray = next((spec for spec in self.registry.runnable() if spec.tray), None)
+        if tray is None:
+            tray = next((spec for spec in self.registry.runnable() if spec.button), None)
+        self.restore_action.setEnabled(tray is not None)
+        if tray is not None:
+            self.restore_action.triggered.connect(lambda: self.run_kernel(tray.id))
 
     def open_engine_settings(self, engine):
         """主窗口只选择配置入口，控件和保存逻辑由各独立模块管理。"""
         try:
-            dialog = create_settings_dialog(engine, self)
-        except (OSError, ValueError) as error:
+            dialog = self.registry.create_settings(engine, self)
+        except Exception as error:
+            CUS_LOGGER.error("配置加载失败：%s", error, exc_info=True)
             QMessageBox.critical(self, "配置加载失败", f"无法打开内核配置：{error}")
             return
         try:
@@ -589,12 +594,7 @@ class MainWindow(QMainWindowLog):
         debug_enabled = bool(self.opt.get("debug", False))
         recording_enabled = self.recording_checkBox2.isEnabled() and self.recording_checkBox2.isChecked()
         self.recording_time_input.setEnabled(recording_enabled)
-        for widget in (
-            self.run_simul_btn, self.iron_blood_btn, self.any_fate_btn, self.currency_war_btn,
-            self.simul_settings_btn, self.iron_blood_settings_btn,
-            self.any_fate_settings_btn, self.currency_settings_btn,
-        ):
-            widget.setVisible(not debug_enabled)
+        self.kernel_buttons.setVisible(not debug_enabled)
         for widget in (
             self.engine_label, self.engine_combo, self.engine_settings_btn,
             self.script_label, self.script_combo, self.run_script_btn,
@@ -621,85 +621,95 @@ class MainWindow(QMainWindowLog):
         super().closeEvent(event)
 
     def test(self):
+        kernel_id = self.engine_combo.currentData()
+        if kernel_id is None:
+            return
+
         def task():
-            su = SimulatedUniverse(
-                1,
-                int(config_simul.debug_mode),
-                int(config_simul.speed_mode),
-                int(config_simul.use_consumable),
-                int(config_simul.slow_mode),
-                int(config_simul.max_run),
-                bonus=config_simul.bonus
-            )
-            self.current_task = su
-            su.recorder.task_owner = self._task_thread
-            # 等待游戏窗口(可被中断)
-            su.save_screen()
+            self.current_task = self.create_task_engine(kernel_id)
+            self.current_task.save_screen()
 
         try:
             self.start_task(task)
-        except RuntimeError as e:
-            QMessageBox.warning(self, "警告", str(e))
+        except RuntimeError as error:
+            QMessageBox.warning(self, "警告", str(error))
 
     def test_2(self):
+        kernel_id = self.engine_combo.currentData()
+        if kernel_id is None:
+            return
+        print_text = self.PrintEdit.text()
+        photo, text_only = self.PrintPhoto.isChecked(), self.PrintText.isChecked()
 
         def task():
-            su = SimulatedUniverse(
-                1,
-                int(config_simul.debug_mode),
-                int(config_simul.speed_mode),
-                int(config_simul.use_consumable),
-                int(config_simul.slow_mode),
-                int(config_simul.max_run),
-                bonus=config_simul.bonus
-            )
-            self.current_task = su
-            su.recorder.task_owner = self._task_thread
-            print_text = self.PrintEdit.text()
-            if self.PrintPhoto.isChecked():
-                su.click_target(find_image_by_name(print_text), 0.9, True, use_binary=False)
-            elif self.PrintText.isChecked():
-                su.click_text(print_text,click=False,find_all=True)
+            self.current_task = su = self.create_task_engine(kernel_id)
+            if photo:
+                su.click_target(find_image_by_name(print_text), 0.9, True)
+            elif text_only:
+                su.click_text(print_text, click=False, find_all=True)
             else:
-                su.click_text(print_text,click=True)
+                su.click_text(print_text, click=True)
 
         try:
             self.start_task(task)
-        except RuntimeError as e:
-            QMessageBox.warning(self, "警告", str(e))
+        except RuntimeError as error:
+            QMessageBox.warning(self, "警告", str(error))
+
+    def init_kernel_buttons(self):
+        """普通运行按钮及齿轮由模块声明，主 UI 仅提供容器。"""
+        self.kernel_rows = {}
+        for spec in sorted(self.registry.runnable(), key=lambda spec: spec.button_order):
+            if not spec.button:
+                continue
+            row = QWidget(self.kernel_buttons)
+            layout = QHBoxLayout(row)
+            layout.setContentsMargins(0, 0, 0, 0)
+            button = QPushButton(spec.button, row)
+            button.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+            button.setToolTip(spec.description)
+            gear = QToolButton(row)
+            gear.setProperty("kernelSettings", True)
+            gear.setToolTip(f"{spec.description}配置")
+            gear.setFixedWidth(30)
+            gear.setMinimumHeight(24)
+            button.clicked.connect(lambda checked=False, key=spec.id: self.run_kernel(key))
+            gear.clicked.connect(lambda checked=False, key=spec.id: self.open_engine_settings(key))
+            layout.addWidget(button, 1)
+            layout.addWidget(gear)
+            self.kernel_button_layout.addWidget(row)
+            self.kernel_rows[spec.id] = (button, gear)
+        self.set_exit_and_minimized_btn_icon()
 
     def init_script_controls(self):
-        """初始化自由脚本入口，并恢复上次选择的脚本与内核。"""
-        for name, engine in (
-            ("Simulated", SimulatedUniverse),
-            ("Divergent", DivergentUniverse),
-            ("AnyFate", AnyFateUniverse),
-            ("IronBlood", IronBloodUniverse),
-            ("Currency", CurrencyWar),
-            ("FingerSnap", FingerSnap),
-        ):
-            self.engine_combo.addItem(name, engine)
+        """恢复模块 ID 和可迁移的脚本路径，发现阶段不导入运行代码。"""
+        for spec in self.registry.runnable():
+            self.engine_combo.addItem(spec.name, spec.id)
+            self.engine_combo.setItemData(self.engine_combo.count() - 1, spec.description, Qt.ToolTipRole)
+        available = self.engine_combo.count() > 0
+        for widget in (self.engine_combo, self.engine_settings_btn, self.test_btn, self.print_btn):
+            widget.setEnabled(available)
+        self.calibrate_btn.setEnabled(any(spec.calibration for spec in self.registry.runnable()))
         self.run_script_btn.clicked.connect(self.run_script)
         self.refresh_scripts()
-
-        engine_index = self.engine_combo.findText(self.opt.get("script_engine", ""))
+        engine_index = self.engine_combo.findData(self.opt.get("script_engine", ""))
         if engine_index >= 0:
             self.engine_combo.setCurrentIndex(engine_index)
-        script_path = os.path.join(PATHS["root"], "actions", self.opt.get("script_file", ""))
-        script_index = self.script_combo.findData(script_path)
-        if script_index >= 0:
-            self.script_combo.setCurrentIndex(script_index)
-
-        # 完成恢复后才监听变更，避免初始化时覆盖已有选择。
+        saved = self.opt.get("script_file", "")
+        for index in range(self.script_combo.count()):
+            script = self.script_combo.itemData(index)
+            if script and (os.path.relpath(script, PATHS["root"]).replace(os.sep, "/") == saved
+                           or os.path.basename(script) == saved):
+                self.script_combo.setCurrentIndex(index)
+                break
         self.engine_combo.currentIndexChanged.connect(self.save_script_selection)
         self.script_combo.currentIndexChanged.connect(self.save_script_selection)
 
     def save_script_selection(self):
         """保存下拉框选择；脚本仅存文件名，允许项目目录迁移。"""
-        updates = {"script_engine": self.engine_combo.currentText()}
+        updates = {"script_engine": self.engine_combo.currentData()}
         script_path = self.script_combo.currentData()
         if script_path is not None:
-            updates["script_file"] = os.path.basename(script_path)
+            updates["script_file"] = os.path.relpath(script_path, PATHS["root"]).replace(os.sep, "/")
         try:
             self.update_settings(updates)
         except (OSError, ValueError) as error:
@@ -707,10 +717,13 @@ class MainWindow(QMainWindowLog):
             QMessageBox.warning(self, "提示", f"保存脚本选项失败：{error}")
 
     def refresh_scripts(self):
-        """列出 actions 中的 JSON 动作脚本，排除角色别名等数据文件。"""
+        """列出用户脚本和可用模块自带脚本，排除角色别名等数据文件。"""
         self.script_combo.clear()
-        folder = os.path.join(PATHS["root"], "actions")
-        if os.path.isdir(folder):
+        folders = [os.path.join(PATHS["root"], "actions")]
+        folders.extend(str(spec.folder / "actions") for spec in self.registry.runnable())
+        for folder in folders:
+            if not os.path.isdir(folder):
+                continue
             for name in sorted(os.listdir(folder)):
                 path = os.path.join(folder, name)
                 if not name.lower().endswith(".json") or not os.path.isfile(path):
@@ -727,39 +740,19 @@ class MainWindow(QMainWindowLog):
         if not available:
             self.script_combo.addItem("actions 中没有可用脚本")
         self.script_combo.setEnabled(available)
-        self.run_script_btn.setEnabled(available)
+        self.run_script_btn.setEnabled(available and self.engine_combo.count() > 0)
 
     def run_script(self):
-        """在现有任务线程中运行选中的动作脚本。"""
         script_path = self.script_combo.currentData()
-        if script_path is None:
-            QMessageBox.warning(self, "提示", "请先在 actions 文件夹中添加 JSON 动作脚本。")
+        kernel_id = self.engine_combo.currentData()
+        if script_path is None or kernel_id is None:
+            QMessageBox.warning(self, "提示", "请选择可用的内核和 JSON 动作脚本。")
             return
-        engine_class = self.engine_combo.currentData()
         engine_name = self.engine_combo.currentText()
         stop_key = self.load_hotkey_config()["stop"].upper()
 
-        # 在主线程确定脚本与内核，运行期间切换下拉框不会改变当前任务。
         def task():
-            if engine_class is SimulatedUniverse:
-                su = engine_class(
-                    1,
-                    int(config_simul.debug_mode),
-                    int(config_simul.speed_mode),
-                    int(config_simul.use_consumable),
-                    int(config_simul.slow_mode),
-                    bonus=config_simul.bonus,
-                )
-            elif engine_class is DivergentUniverse:
-                su = engine_class(
-                    int(config_diver.debug_mode),
-                    int(config_diver.max_run),
-                    int(config_diver.speed_mode),
-                )
-            else:
-                su = engine_class()
-            self.current_task = su
-            su.recorder.task_owner = self._task_thread
+            self.current_task = su = self.create_task_engine(kernel_id, script=True)
             CUS_LOGGER.info("使用%s内核运行脚本：%s；点击“停止任务”或按 %s 可终止。",
                             engine_name, os.path.basename(script_path), stop_key)
             run_action_script(su, script_path)
@@ -768,78 +761,27 @@ class MainWindow(QMainWindowLog):
             self.start_task(task)
         except RuntimeError as error:
             QMessageBox.warning(self, "警告", str(error))
-        except Exception as error:
-            QMessageBox.critical(self, "错误", str(error))
 
-    def run_simul(self):
+    def run_kernel(self, kernel_id):
         def task():
-            su = SimulatedUniverse(
-                1,
-                int(config_simul.debug_mode),
-                int(config_simul.speed_mode),
-                int(config_simul.use_consumable),
-                int(config_simul.slow_mode),
-                int(config_simul.max_run),
-                bonus=config_simul.bonus
-            )
-            self.current_task = su
-            su.recorder.task_owner = self._task_thread
-            su.start()
+            self.current_task = self.create_task_engine(kernel_id)
+            self.current_task.start()
 
         try:
             self.start_task(task)
-        except RuntimeError as r:
-            QMessageBox.warning(self, "警告", str(r))
-        except Exception as e:
-            QMessageBox.critical(self, "错误", str(e))
+        except RuntimeError as error:
+            QMessageBox.warning(self, "警告", str(error))
 
-
-    def run_iron_blood(self):
-        def task():
-            su = IronBloodUniverse()
-            self.current_task = su
-            su.recorder.task_owner = self._task_thread
-            su.start()
-
-        try:
-            self.start_task(task)
-        except RuntimeError as r:
-            QMessageBox.warning(self, "警告", str(r))
-        except Exception as e:
-            QMessageBox.critical(self, "错误", str(e))
-
-    def run_any_fate(self):
-        def task():
-            su = AnyFateUniverse()
-            self.current_task = su
-            su.recorder.task_owner = self._task_thread
-            su.start()
-
-        try:
-            self.start_task(task)
-        except RuntimeError as r:
-            QMessageBox.warning(self, "警告", str(r))
-        except Exception as e:
-            QMessageBox.critical(self, "错误", str(e))
-
-    def run_currency_war (self):
-        def task ():
-            su = CurrencyWar()
-            self.current_task = su
-            su.recorder.task_owner = self._task_thread
-            su.start()
-
-        try:
-            self.start_task(task)
-        except RuntimeError as r:
-            QMessageBox.warning(self, "警告", str(r))
-        except Exception as e:
-            QMessageBox.critical(self, "错误", str(e))
 
     def calibrate(self):
+        spec = next((spec for spec in self.registry.runnable() if spec.calibration), None)
+        if spec is None:
+            return
+
         def task():
             try:
-                res = align_angle_main()
+                self.current_task = self.create_task_engine(spec.id)
+                res = align_angle_main(su=self.current_task)
                 self.calibration_finished.emit(res)
             except Exception as e:
                 self.calibration_finished.emit(e)

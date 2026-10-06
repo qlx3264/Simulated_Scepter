@@ -536,6 +536,10 @@ jobs:
 
           Copy-Item "dist/SimSce/*" $releaseDir -Recurse -Force
           Copy-Item "actions" $releaseDir -Recurse -Force
+          robocopy "core" "$releaseDir/core" /E /NP /NDL /NFL /XD __pycache__ /XF settings.json settings.yml
+          if ($LASTEXITCODE -ge 8) {
+            throw "Copying core modules failed: $LASTEXITCODE"
+          }
           Copy-Item "config" $releaseDir -Recurse -Force
           Copy-Item "doc" $releaseDir -Recurse -Force
           Copy-Item "resource" $releaseDir -Recurse -Force
@@ -544,6 +548,7 @@ jobs:
           Copy-Item "README.md" $releaseDir -Force
           Copy-Item "README_CHT.md" $releaseDir -Force
           Copy-Item "README_ENG.md" $releaseDir -Force
+          exit 0
 
       - name: Create ZIP
         shell: powershell
