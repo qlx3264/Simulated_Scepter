@@ -923,7 +923,7 @@ class AnyFateUniverse(SimulatedUniverse):
                 if value < 1:
                     strange_index = i
                     value = 1
-            elif '分裂咕咕钟' in strange or '血锦之纪' in strange or '星际大乐透' in strange or '机械齿轮' in strange:
+            elif '齿星系' in strange or '分裂咕咕钟' in strange or '血锦之纪' in strange or '星际大乐透' in strange or '机械齿轮' in strange:
                 black_index_list.append(i)
                 if '机械齿轮' in strange:
                     black_first=i
@@ -1058,7 +1058,7 @@ class AnyFateUniverse(SimulatedUniverse):
                 strange_index_list.append(i)
             elif '普通八卦' in strange or '万识囊' in strange or '混沌特效' in strange or '羊皮卷' in strange:
                 strange_index_list.append(i)
-            elif '分裂咕咕钟' in strange or '血锦之纪' in strange or '星际大乐透' in strange or '机械齿轮' in strange:
+            elif '齿星系' in strange or '分裂咕咕钟' in strange or '血锦之纪' in strange or '星际大乐透' in strange or '机械齿轮' in strange:
                 black_index_list.append(i)
         for i in strange_index_list:
             key_mouse_manager.click(*self.calc_point((0.5000, 0.7333), res[0][i]))
