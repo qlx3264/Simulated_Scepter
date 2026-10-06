@@ -14,11 +14,6 @@ def load_settings():
         if not path.exists():
             shutil.copy2(Path(PATHS["example"]) / "settings_example.json", path)
         data = json.loads(path.read_text(encoding="utf-8"))
-        # 旧版以中文存角色位；迁移归配置读写层，运行前不再依赖主窗口的配置控件。
-        slot = data.get("silver_wolf_switch")
-        if slot is None or isinstance(slot, str):
-            data["silver_wolf_switch"] = {"一号位": 1, "二号位": 2, "三号位": 3, "四号位": 4}.get(slot, 1)
-            path.write_text(json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8")
         return data
 
 

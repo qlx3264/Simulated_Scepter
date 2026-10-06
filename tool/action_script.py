@@ -1,8 +1,6 @@
 """使用选定内核循环执行 JSON 动作脚本。"""
 
-from diver import DivergentUniverse
-from tool.diver.keyops import KeyController
-from tool.GLOBAL import get_global_stop_flag, key_mouse_manager
+from tool.GLOBAL import get_global_stop_flag
 from tool.public_ocr import load_actions
 
 
@@ -21,10 +19,8 @@ def run_script(engine, json_path):
         return
     engine._stop = False
     try:
-        # 差分内核的动作会使用辅助按键控制器，其线程需要在解除停止状态后创建。
-        if isinstance(engine, DivergentUniverse):
-            engine.keys = KeyController(engine)
-        key_mouse_manager.start()
+        # 内核自己准备输入资源；主程序无需认识内核类或辅助控制器。
+        engine.prepare_script()
         while not engine._stop and not get_global_stop_flag():
             engine.ts.forward(engine.get_screen())
             if engine._stop or get_global_stop_flag():

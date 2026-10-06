@@ -161,20 +161,8 @@ def match_multiple_targets(processed_image, mode=1, threshold=0.5, color_image=N
 
     return results
 
-def get_battle_weight(default=1.2):
-    '''
-    用于读取配置文件中的战斗格权重，默认值为1.2
-    '''
-    settings_path = os.path.join(PATHS["config"], "settings.json")
-    try:
-        with open(settings_path, "r", encoding="UTF-8") as f:
-            data = json.load(f)
-        return float(data.get("battle_weight", default))
-    except Exception:
-        return float(default)
-
 def build_rightward_graph(matches, start=None, max_gap=90.0, max_overlap=40.0, max_dy=120.0,
-                          plane=1, chaoyan_seen=False):
+                          plane=1, chaoyan_seen=False, battle_weight=1.2):
     """构建一个只能向右走（右 / 右上 / 右下）的有向图并返回节点与边。
 
     Args:
@@ -185,6 +173,7 @@ def build_rightward_graph(matches, start=None, max_gap=90.0, max_overlap=40.0, m
         max_dy: 最大允许的垂直偏移（像素）
         plane: 当前位面(1/2/3)，事件遇战概率随位面不同
         chaoyan_seen: 本轮是否已进过「超验之镜」（事件/奖励共用、不可重复），影响事件与奖励遇战权重
+        battle_weight: 当前内核配置的战斗格期望，调用方负责读取配置。
     Returns:
         nodes: 节点字典列表，包含键：idx,name,cx,cy,w,h,weight,orig
         edges: 字典 idx -> 子节点 idx 列表
@@ -201,7 +190,6 @@ def build_rightward_graph(matches, start=None, max_gap=90.0, max_overlap=40.0, m
     event_weight = ({1: 0.31, 2: 0.34, 3: 0.36} if chaoyan_seen
                     else {1: 0.33, 2: 0.36, 3: 0.36}).get(plane, 0.36)
     reward_weight = 0.2 if chaoyan_seen else 0.4
-    battle_weight = get_battle_weight(1.2) # 读取配置中的战斗格权重
     weight_map = {
         'event': event_weight, 'wait': 0, 'trade': 0, 'trade2': 0, 'adventure': 0,
         'reward': reward_weight, 'reward2': reward_weight, 'battle': battle_weight, 'elite': 1,
