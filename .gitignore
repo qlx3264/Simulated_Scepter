@@ -40,6 +40,8 @@ config/config/info_old.yml
 config/config/settings.json
 config/config/currency_config.yml
 config/config/cleanup_config.yml
+core/*/config/settings.json
+core/*/config/settings.yml
 version.txt
 *.exe
 test.py

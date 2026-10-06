@@ -128,10 +128,9 @@ class QMainWindowLoadUI(QtWidgets.QMainWindow):
         self.Button_Exit.setIcon(create_qt_icon(q_color=q_color, mode="x"))
         self.Button_Minimized.setIcon(create_qt_icon(q_color=q_color, mode="-"))
         self.Button_MostMinimized.setIcon(create_qt_icon(q_color=q_color, mode="v"))
-        for button in (self.simul_settings_btn, self.iron_blood_settings_btn,
-                       self.any_fate_settings_btn, self.currency_settings_btn,
-                       self.engine_settings_btn):
-            button.setIcon(create_qt_icon(q_color=q_color, mode="gear"))
+        for button in self.findChildren(QtWidgets.QToolButton):
+            if button is self.engine_settings_btn or button.property("kernelSettings"):
+                button.setIcon(create_qt_icon(q_color=q_color, mode="gear"))
 
 
     def set_image_resource(self):

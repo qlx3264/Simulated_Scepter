@@ -20,6 +20,7 @@ def build_paths(root):
     # 定义一个辅助函数来构建路径
     return {
         "root": root,
+        "core": os.path.join(root, "core"),
         # 配置、备份、示例配置文件
         "config": os.path.join(root, "config", "config"),
         "backup": os.path.join(root, "config", "backup"),

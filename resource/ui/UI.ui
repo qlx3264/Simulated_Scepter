@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version='1.0' encoding='utf-8'?>
 <ui version="4.0">
  <class>MainWindow</class>
  <widget class="QMainWindow" name="MainWindow">
@@ -133,10 +133,10 @@
              </size>
             </property>
             <property name="styleSheet">
-             <string notr="true"/>
+             <string notr="true" />
             </property>
             <property name="text">
-             <string/>
+             <string />
             </property>
             <property name="scaledContents">
              <bool>false</bool>
@@ -174,7 +174,7 @@
              </size>
             </property>
             <property name="styleSheet">
-             <string notr="true"/>
+             <string notr="true" />
             </property>
             <property name="text">
              <string>版本号</string>
@@ -252,7 +252,7 @@
 border:none</string>
             </property>
             <property name="text">
-             <string/>
+             <string />
             </property>
            </widget>
           </item>
@@ -278,7 +278,7 @@ border:none</string>
 border:none</string>
             </property>
             <property name="text">
-             <string/>
+             <string />
             </property>
            </widget>
           </item>
@@ -304,7 +304,7 @@ border:none</string>
 border:none</string>
             </property>
             <property name="text">
-             <string/>
+             <string />
             </property>
            </widget>
           </item>
@@ -326,7 +326,7 @@ border:none</string>
           </size>
          </property>
          <property name="toolTip">
-          <string/>
+          <string />
          </property>
          <property name="autoFillBackground">
           <bool>false</bool>
@@ -554,7 +554,7 @@ border:none</string>
                       <bool>false</bool>
                      </property>
                      <property name="text">
-                      <string/>
+                      <string />
                      </property>
                     </widget>
                    </item>
@@ -667,148 +667,22 @@ border:none</string>
                 </widget>
                </item>
                <item>
-                <layout class="QHBoxLayout" name="run_simul_btn_row" stretch="1,0">
-                 <item>
-                  <widget class="QPushButton" name="run_simul_btn">
-                   <property name="sizePolicy">
-                    <sizepolicy hsizetype="Ignored" vsizetype="Fixed">
-                     <horstretch>0</horstretch>
-                     <verstretch>0</verstretch>
-                    </sizepolicy>
-                   </property>
-                   <property name="text">
-                    <string>运行模拟宇宙</string>
-                   </property>
-                  </widget>
-                 </item>
-                 <item>
-                  <widget class="QToolButton" name="simul_settings_btn">
-                   <property name="toolTip">
-                    <string>模拟宇宙配置</string>
-                   </property>
-                   <property name="minimumSize">
-                    <size>
-                     <width>30</width>
-                     <height>24</height>
-                    </size>
-                   </property>
-                   <property name="maximumSize">
-                    <size>
-                     <width>30</width>
-                     <height>16777215</height>
-                    </size>
-                   </property>
-                  </widget>
-                 </item>
-                </layout>
-               </item>
-               <item>
-                <layout class="QHBoxLayout" name="iron_blood_btn_row" stretch="1,0">
-                 <item>
-                  <widget class="QPushButton" name="iron_blood_btn">
-                   <property name="text">
-                    <string>擢升铁血战士</string>
-                   </property>
-                   <property name="sizePolicy">
-                    <sizepolicy hsizetype="Ignored" vsizetype="Fixed">
-                     <horstretch>0</horstretch>
-                     <verstretch>0</verstretch>
-                    </sizepolicy>
-                   </property>
-                  </widget>
-                 </item>
-                 <item>
-                  <widget class="QToolButton" name="iron_blood_settings_btn">
-                   <property name="toolTip">
-                    <string>铁血战士配置</string>
-                   </property>
-                   <property name="minimumSize">
-                    <size>
-                     <width>30</width>
-                     <height>24</height>
-                    </size>
-                   </property>
-                   <property name="maximumSize">
-                    <size>
-                     <width>30</width>
-                     <height>16777215</height>
-                    </size>
-                   </property>
-                  </widget>
-                 </item>
-                </layout>
-               </item>
-               <item>
-                <layout class="QHBoxLayout" name="any_fate_btn_row" stretch="1,0">
-                 <item>
-                  <widget class="QPushButton" name="any_fate_btn">
-                   <property name="text">
-                    <string>一般寰宇命途演算（毁灭原动力）</string>
-                   </property>
-                   <property name="sizePolicy">
-                    <sizepolicy hsizetype="Ignored" vsizetype="Fixed">
-                     <horstretch>0</horstretch>
-                     <verstretch>0</verstretch>
-                    </sizepolicy>
-                   </property>
-                  </widget>
-                 </item>
-                 <item>
-                  <widget class="QToolButton" name="any_fate_settings_btn">
-                   <property name="toolTip">
-                    <string>寰宇命途配置</string>
-                   </property>
-                   <property name="minimumSize">
-                    <size>
-                     <width>30</width>
-                     <height>24</height>
-                    </size>
-                   </property>
-                   <property name="maximumSize">
-                    <size>
-                     <width>30</width>
-                     <height>16777215</height>
-                    </size>
-                   </property>
-                  </widget>
-                 </item>
-                </layout>
-               </item>
-               <item>
-                <layout class="QHBoxLayout" name="currency_war_btn_row" stretch="1,0">
-                 <item>
-                  <widget class="QPushButton" name="currency_war_btn">
-                   <property name="text">
-                    <string>货币战争自动收集</string>
-                   </property>
-                   <property name="sizePolicy">
-                    <sizepolicy hsizetype="Ignored" vsizetype="Fixed">
-                     <horstretch>0</horstretch>
-                     <verstretch>0</verstretch>
-                    </sizepolicy>
-                   </property>
-                  </widget>
-                 </item>
-                 <item>
-                  <widget class="QToolButton" name="currency_settings_btn">
-                   <property name="toolTip">
-                    <string>货币战争配置</string>
-                   </property>
-                   <property name="minimumSize">
-                    <size>
-                     <width>30</width>
-                     <height>24</height>
-                    </size>
-                   </property>
-                   <property name="maximumSize">
-                    <size>
-                     <width>30</width>
-                     <height>16777215</height>
-                    </size>
-                   </property>
-                  </widget>
-                 </item>
-                </layout>
+                <widget class="QWidget" name="kernel_buttons">
+                 <layout class="QVBoxLayout" name="kernel_button_layout">
+                  <property name="leftMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="topMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="rightMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="bottomMargin">
+                   <number>0</number>
+                  </property>
+                 </layout>
+                </widget>
                </item>
                <item>
                 <layout class="QHBoxLayout" name="engine_layout" stretch="0,1,0">
@@ -913,7 +787,7 @@ border:none</string>
                 </widget>
                </item>
                <item>
-                <widget class="QLineEdit" name="PrintEdit"/>
+                <widget class="QLineEdit" name="PrintEdit" />
                </item>
                <item>
                 <layout class="QHBoxLayout" name="horizontalLayout_15">
@@ -955,9 +829,6 @@ border:none</string>
            </item>
           </layout>
          </widget>
-
-
-
          <widget class="QWidget" name="AbyssTab">
           <attribute name="title">
            <string>进阶设置</string>
@@ -1008,7 +879,6 @@ border:none</string>
                   </rect>
                  </property>
                  <layout class="QVBoxLayout" name="verticalLayout_13">
-
                   <item>
                    <layout class="QVBoxLayout" name="verticalLayout_14">
                     <item>
@@ -1037,7 +907,7 @@ border:none</string>
                      </widget>
                     </item>
                     <item>
-                     <widget class="QLineEdit" name="recording_time_input"/>
+                     <widget class="QLineEdit" name="recording_time_input" />
                     </item>
                    </layout>
                   </item>
@@ -1084,7 +954,7 @@ border:none</string>
                        </widget>
                       </item>
                       <item>
-                       <widget class="QLineEdit" name="stop_hotkey_input"/>
+                       <widget class="QLineEdit" name="stop_hotkey_input" />
                       </item>
                      </layout>
                     </item>
@@ -1098,7 +968,7 @@ border:none</string>
                        </widget>
                       </item>
                       <item>
-                       <widget class="QLineEdit" name="test_hotkey_input"/>
+                       <widget class="QLineEdit" name="test_hotkey_input" />
                       </item>
                      </layout>
                     </item>
@@ -1112,7 +982,7 @@ border:none</string>
                        </widget>
                       </item>
                       <item>
-                       <widget class="QLineEdit" name="print_hotkey_input"/>
+                       <widget class="QLineEdit" name="print_hotkey_input" />
                       </item>
                      </layout>
                     </item>
@@ -1202,7 +1072,7 @@ border:none</string>
                          </widget>
                         </item>
                         <item>
-                         <widget class="QComboBox" name="Cleanup_video_trigger_combo"/>
+                         <widget class="QComboBox" name="Cleanup_video_trigger_combo" />
                         </item>
                         <item>
                          <widget class="QLineEdit" name="Cleanup_video_value_input">
@@ -1254,7 +1124,7 @@ border:none</string>
                          </widget>
                         </item>
                         <item>
-                         <widget class="QComboBox" name="Cleanup_log_trigger_combo"/>
+                         <widget class="QComboBox" name="Cleanup_log_trigger_combo" />
                         </item>
                         <item>
                          <widget class="QLineEdit" name="Cleanup_log_value_input">
@@ -1306,7 +1176,7 @@ border:none</string>
                          </widget>
                         </item>
                         <item>
-                         <widget class="QComboBox" name="Cleanup_temp_trigger_combo"/>
+                         <widget class="QComboBox" name="Cleanup_temp_trigger_combo" />
                         </item>
                         <item>
                          <widget class="QLineEdit" name="Cleanup_temp_value_input">
@@ -1389,7 +1259,7 @@ border:none</string>
                         </widget>
                        </item>
                        <item>
-                        <widget class="QLineEdit" name="recording_keep_long_run_threshold_input"/>
+                        <widget class="QLineEdit" name="recording_keep_long_run_threshold_input" />
                        </item>
                       </layout>
                      </item>
@@ -1426,10 +1296,9 @@ border:none</string>
            </item>
           </layout>
          </widget>
-
          <widget class="QWidget" name="Tab5">
           <property name="styleSheet">
-           <string notr="true"/>
+           <string notr="true" />
           </property>
           <attribute name="title">
            <string>皮肤选择</string>
@@ -1572,7 +1441,7 @@ border:none</string>
                  <item>
                   <widget class="QLabel" name="SkinWidget_Label">
                    <property name="styleSheet">
-                    <string notr="true">font: 30pt &quot;ShouShuti&quot;;</string>
+                    <string notr="true">font: 30pt "ShouShuti";</string>
                    </property>
                    <property name="text">
                     <string>未完待续...</string>
@@ -1802,7 +1671,7 @@ border:none</string>
              <item>
               <widget class="QLabel" name="label_2">
                <property name="text">
-                <string/>
+                <string />
                </property>
               </widget>
              </item>
@@ -1845,9 +1714,9 @@ border:none</string>
              </item>
             </layout>
            </item>
-         </layout>
+          </layout>
+         </widget>
         </widget>
-       </widget>
        </item>
       </layout>
       <zorder>tabWidget</zorder>
@@ -1866,7 +1735,7 @@ border:none</string>
   </action>
  </widget>
  <resources>
-  <include location="background.qrc"/>
+  <include location="background.qrc" />
  </resources>
  <connections>
   <connection>
