@@ -1,10 +1,13 @@
 """隔离游戏与桌面依赖，验证自然结束时的资源释放。"""
 
 import ast
+import os
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
+
+from route import PATHS
 
 
 def load_task(filename, class_name, methods, namespace):
@@ -34,6 +37,8 @@ class TaskCompletionTests(unittest.TestCase):
             "CUS_LOGGER": Mock(),
             "key_mouse_manager": self.manager,
             "time": SimpleNamespace(sleep=Mock(), time=lambda: 0),
+            "os": os,
+            "PATHS": PATHS,
         }
 
     def drain_queue(self):

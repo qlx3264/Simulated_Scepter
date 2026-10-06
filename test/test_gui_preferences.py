@@ -13,7 +13,7 @@ from unittest.mock import Mock, patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt5 import uic
-from PyQt5.QtCore import Qt, pyqtSlot
+from PyQt5.QtCore import QSignalBlocker, Qt, pyqtSlot
 from PyQt5.QtGui import QFont, QFontDatabase
 from PyQt5.QtWidgets import (
     QApplication,
@@ -30,6 +30,7 @@ from route import PATHS
 from test.core_fixture import copy_core
 from test.test_task_completion import load_task
 from tool.registry import KernelRegistry
+from tool.script_files import discover_scripts, read_script, script_key, script_path
 from tool.settings import load_settings, update_settings
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -55,7 +56,7 @@ class GuiPreferencesTests(unittest.TestCase):
             "debug": False, "hotkeys": {"stop": "f8"}, "other": {"keep": True},
         }), encoding="utf-8")
         for name in ("a.json", "中文脚本.json"):
-            (self.actions / name).write_text('[{"name": "确认"}]', encoding="utf-8")
+            (self.actions / name).write_text('[{"name": "确认", "trigger": {"state_only": true}, "actions": [{"sleep": 1}]}]', encoding="utf-8")
         self.core = copy_core(self.root / "core")
         # 本组测试只用用户脚本；模块自带脚本在注册表和原生主窗口测试中覆盖。
         for script in self.core.glob("*/actions/*.json"):
@@ -63,24 +64,25 @@ class GuiPreferencesTests(unittest.TestCase):
         self.logger = Mock()
         self.dialogs = Mock()
         self.script_runner = Mock()
-        self.enterContext(patch.dict(PATHS, {"config": str(self.config), "example": str(self.root / "example"), "core": str(self.core), "backup": str(self.root / "backup")}))
+        self.enterContext(patch.dict(PATHS, {"root": str(self.root), "config": str(self.config), "example": str(self.root / "example"), "core": str(self.core), "backup": str(self.root / "backup")}))
         self.gui = self.make_gui()
 
     def make_gui(self):
         window = uic.loadUi(str(ROOT / "resource/ui/UI.ui"), QMainWindow())
         self.addCleanup(window.close)
         gui = load_task("new_gui.py", "MainWindow", {
-            "init_kernel_buttons", "init_script_controls", "save_script_selection", "refresh_scripts", "run_script",
-            "create_task_engine",
+            "init_kernel_buttons", "init_script_controls", "save_script_selection", "refresh_scripts", "run_script", "launch_script",
             "update_settings", "update_dependent_controls_state",
             "connect_dependency_signals", "handle_key_pressed",
         }, {
             "os": os, "json": json, "shutil": shutil, "pyqtSlot": pyqtSlot,
             "time": SimpleNamespace(localtime=lambda: SimpleNamespace(tm_hour=12)),
-            "Qt": Qt, "QWidget": QWidget, "QHBoxLayout": QHBoxLayout,
+            "Qt": Qt, "QSignalBlocker": QSignalBlocker, "QWidget": QWidget, "QHBoxLayout": QHBoxLayout,
             "QPushButton": QPushButton, "QSizePolicy": QSizePolicy, "QToolButton": QToolButton,
             "CUS_LOGGER": self.logger, "QMessageBox": self.dialogs,
             "run_action_script": self.script_runner,
+            "discover_scripts": discover_scripts, "read_script": read_script,
+            "script_key": script_key, "script_path": script_path,
             "update_settings": update_settings,
             "EXTRA": SimpleNamespace(FILE_LOCK=threading.Lock()),
             "PATHS": {"root": str(self.root), "config": str(self.config),

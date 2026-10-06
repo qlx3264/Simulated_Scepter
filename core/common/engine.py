@@ -8,7 +8,7 @@ import numpy as np
 from tool.GLOBAL import factor, key_mouse_manager
 from tool.log import CUS_LOGGER, log_emitter
 from tool.public_ocr import load_actions, merge_text
-from tool.utils.image_tool import find_image_by_name, find_image_in_folder
+from tool.utils.image_tool import find_image_by_name
 
 
 class StateKernel:
@@ -198,11 +198,7 @@ class StateKernel:
             self.get_screen()
         if threshold is None:
             threshold = self.threshold
-        if "/" in path:
-            path = path.split("/")
-            target = find_image_in_folder(path[0], path[1])
-        else:
-            target = find_image_by_name(path)
+        target = find_image_by_name(path)
         mapping = getattr(self.config, 'mapping', None)
         if path == "f" and mapping and mapping[0] != 'f':
             target = self.gen_hotkey_img(mapping[0])
