@@ -31,17 +31,22 @@ from tool.cleanup import (
     validate_config,
     write_config,
 )
-from tool.GLOBAL import set_global_stop_flag
+from tool.GLOBAL import get_global_stop_flag, set_global_stop_flag
 from tool.gui.advanced_features import show_unlock_dialog
+from tool.gui.schedule_dialog import ScheduleDialog, ScheduleTimer
+from tool.gui.script_editor import ScriptEditor
 from tool.log import CUS_LOGGER, log_emitter
+from tool.script_files import discover_scripts, read_script, script_key, script_path
+from tool.script_tools import capture_sample, debug_events
 from tool.settings import load_settings, update_settings
 from tool.thread import ThreadWithException
+from tool.utils.game_window import find_game_window
 from tool.utils.image_tool import find_image_by_name, load_all_images_from_directory
 
 load_all_images_from_directory()
 import faulthandler
 
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot
+from PyQt5.QtCore import QSignalBlocker, Qt, QTimer, pyqtSignal, pyqtSlot
 from PyQt5.QtWidgets import (
     QApplication,
     QComboBox,
@@ -248,12 +253,16 @@ class CleanupSettingsSection(QWidget):
 class MainWindow(QMainWindowLog):
     calibration_finished = pyqtSignal(object)
     hotkey_pressed = pyqtSignal(str)
+    script_tool_result = pyqtSignal(str, object)
 
     def __init__(self):
         super().__init__()
         # 任务管理相关属性
         self.current_task = None
         self.task_thread = None
+        self.scheduler = None
+        self.editor_tasks = {}
+        self.script_tool_result.connect(lambda session, _result: self.editor_tasks.pop(session, None))
         self._task_monitor_timer = QTimer(self)
         self._task_monitor_timer.setInterval(100)
         self._task_monitor_timer.timeout.connect(self._check_task_thread)
@@ -278,6 +287,8 @@ class MainWindow(QMainWindowLog):
         # 检查是否首次启动并显示用户协议
         self.check_first_launch()
 
+        self.scheduler = ScheduleTimer(self.registry, self.launch_script, self.is_task_running, self.stop_task, self)
+
         # 程序启动后先让界面完成显示，再按配置执行程序启动时触发的清理
         QTimer.singleShot(CLEANUP_STARTUP_DELAY_MS, lambda: self.cleanup_at("program_start"))
 
@@ -285,11 +296,19 @@ class MainWindow(QMainWindowLog):
         """
         启动一个新任务
         """
+        if self.scheduler is not None and not self.scheduler.dispatching and (self.is_task_running() or self.scheduler.has_pending()):
+            self.scheduler.queue_task(lambda: self.start_task(task_func), task_func)
+            self.scheduler.poll()
+            return
+
         if self.task_thread is not None:
             if self.task_thread.is_alive():
                 raise RuntimeError("上一个任务仍在停止，请稍候")
             self.task_thread = None
             self.current_task = None
+
+        if self.scheduler is not None:
+            self.scheduler.release_active()
 
         set_global_stop_flag(False)
         self.task_thread = ThreadWithException(target=task_func, name="主任务线程")
@@ -386,6 +405,8 @@ class MainWindow(QMainWindowLog):
             CUS_LOGGER.error("内核 %s 不可用：%s", module, error)
         self.init_kernel_buttons()
         self.init_script_controls()
+        self.script_editor_btn.clicked.connect(self.open_script_editor)
+        self.schedule_btn.clicked.connect(self.open_schedule)
         self.engine_settings_btn.clicked.connect(
             lambda: self.open_engine_settings(self.engine_combo.currentData()))
         self.calibrate_btn.clicked.connect(self.calibrate)
@@ -586,6 +607,7 @@ class MainWindow(QMainWindowLog):
         """
         窗口关闭事件，清理键盘监听器
         """
+        self.scheduler.timer.stop()
         keyboard.unhook_all()
         super().closeEvent(event)
 
@@ -666,7 +688,7 @@ class MainWindow(QMainWindowLog):
         saved = self.opt.get("script_file", "")
         for index in range(self.script_combo.count()):
             script = self.script_combo.itemData(index)
-            if script and (os.path.relpath(script, PATHS["root"]).replace(os.sep, "/") == saved
+            if script and (script_key(script) == saved
                            or os.path.basename(script) == saved):
                 self.script_combo.setCurrentIndex(index)
                 break
@@ -674,40 +696,40 @@ class MainWindow(QMainWindowLog):
         self.script_combo.currentIndexChanged.connect(self.save_script_selection)
 
     def save_script_selection(self):
-        """保存下拉框选择；脚本仅存文件名，允许项目目录迁移。"""
+        """保存内核 ID 及脚本路径，项目内脚本随项目目录迁移。"""
         updates = {"script_engine": self.engine_combo.currentData()}
         script_path = self.script_combo.currentData()
         if script_path is not None:
-            updates["script_file"] = os.path.relpath(script_path, PATHS["root"]).replace(os.sep, "/")
+            updates["script_file"] = script_key(script_path)
         try:
             self.update_settings(updates)
         except (OSError, ValueError) as error:
             CUS_LOGGER.error("保存脚本选项失败：%s", error)
             QMessageBox.warning(self, "提示", f"保存脚本选项失败：{error}")
 
-    def refresh_scripts(self):
+    def refresh_scripts(self, selected=None):
         """列出用户脚本和可用模块自带脚本，排除角色别名等数据文件。"""
-        self.script_combo.clear()
-        folders = [os.path.join(PATHS["root"], "actions")]
-        folders.extend(str(spec.folder / "actions") for spec in self.registry.runnable())
-        for folder in folders:
-            if not os.path.isdir(folder):
-                continue
-            for name in sorted(os.listdir(folder)):
-                path = os.path.join(folder, name)
-                if not name.lower().endswith(".json") or not os.path.isfile(path):
-                    continue
-                try:
-                    with open(path, encoding="utf-8") as file:
-                        actions = json.load(file)
-                except (OSError, ValueError) as error:
-                    CUS_LOGGER.warning("无法读取脚本 %s，将跳过此文件：%s", name, error)
-                    continue
-                if isinstance(actions, list) and actions:
-                    self.script_combo.addItem(os.path.splitext(name)[0], path)
-        available = self.script_combo.count() > 0
-        if not available:
-            self.script_combo.addItem("actions 中没有可用脚本")
+        chosen = selected or self.script_combo.currentData()
+        paths = discover_scripts(self.registry)
+        saved = self.opt.get("script_file", "")
+        candidate = script_path(chosen or saved) if chosen or saved else None
+        if candidate is not None and candidate not in paths:
+            try:
+                read_script(candidate)
+                paths.append(candidate)
+            except (OSError, ValueError):
+                candidate = None
+        with QSignalBlocker(self.script_combo):
+            self.script_combo.clear()
+            for path in paths:
+                self.script_combo.addItem(path.stem, str(path))
+                self.script_combo.setItemData(self.script_combo.count() - 1, script_key(path), Qt.ToolTipRole)
+            index = self.script_combo.findData(str(candidate)) if candidate else -1
+            if index >= 0:
+                self.script_combo.setCurrentIndex(index)
+            available = bool(paths)
+            if not available:
+                self.script_combo.addItem("actions 中没有可用脚本")
         self.script_combo.setEnabled(available)
         self.run_script_btn.setEnabled(available and self.engine_combo.count() > 0)
 
@@ -717,19 +739,105 @@ class MainWindow(QMainWindowLog):
         if script_path is None or kernel_id is None:
             QMessageBox.warning(self, "提示", "请选择可用的内核和 JSON 动作脚本。")
             return
-        engine_name = self.engine_combo.currentText()
+        try:
+            self.launch_script(kernel_id, script_path)
+        except (OSError, ValueError, RuntimeError) as error:
+            QMessageBox.warning(self, "脚本无法启动", str(error))
+
+    def launch_script(self, kernel_id, path):
+        """手动与计划任务共用入口；计划参数不修改当前下拉框选择。"""
+        spec = self.registry.specs.get(kernel_id)
+        if spec is None or not spec.factory:
+            raise ValueError("所选内核不可用")
+        read_script(path)
+        engine_name = spec.name
         stop_key = self.load_hotkey_config()["stop"].upper()
 
         def task():
             self.current_task = su = self.registry.create_engine(kernel_id, script=True)
             CUS_LOGGER.info("使用%s内核运行脚本：%s；点击“停止任务”或按 %s 可终止。",
-                            engine_name, os.path.basename(script_path), stop_key)
-            run_action_script(su, script_path)
+                            engine_name, os.path.basename(path), stop_key)
+            run_action_script(su, path)
 
+        self.start_task(task)
+
+    def open_script_editor(self):
+        dialog = ScriptEditor(self.registry, self.script_combo.currentData(), self)
+        dialog.script_saved.connect(self.script_saved)
+        dialog.debug_kernel_combo.setCurrentIndex(dialog.debug_kernel_combo.findData(self.engine_combo.currentData()))
+        dialog.sample_requested.connect(self.capture_script_sample)
+        dialog.debug_requested.connect(self.debug_script_events)
+        dialog.stop_requested.connect(self.stop_editor_task)
+        self.script_tool_result.connect(dialog.receive_result)
+        try:
+            dialog.exec_()
+        finally:
+            dialog.deleteLater()
+
+    def capture_script_sample(self, session, kernel, recognize):
+        self.run_editor_task(session, kernel, lambda engine: {"sample": capture_sample(engine, recognize)},
+                             "识别文字取样" if recognize else "框选图片取样")
+
+    def debug_script_events(self, session, kernel, events, direct):
+        self.run_editor_task(session, kernel, lambda engine: {"message": debug_events(engine, events, direct)},
+                             "直接执行动作" if direct else "按触发条件调试")
+
+    def run_editor_task(self, session, kernel, operation, description):
+        def task():
+            engine = None
+            result = {"message": "操作已停止"}
+            try:
+                if find_game_window() is None:
+                    raise RuntimeError("未找到游戏窗口，请启动游戏后重新截取或调试")
+                self.current_task = engine = self.registry.create_engine(kernel, script=True)
+                if not engine._stop and not get_global_stop_flag():
+                    CUS_LOGGER.info("脚本编辑器开始%s，使用 %s 内核；按 %s 可停止。",
+                                    description, kernel, self.load_hotkey_config()["stop"].upper())
+                    result = operation(engine)
+                    if get_global_stop_flag():
+                        result = {"message": "操作已停止"}
+            except InterruptedError:
+                result = {"message": "操作已停止"}
+            except Exception as error:
+                result = {"error": str(error)}
+                CUS_LOGGER.error("脚本编辑器操作失败：%s", error, exc_info=True)
+            finally:
+                if engine is not None and not engine._stop:
+                    try:
+                        engine.stop()
+                    except Exception as error:
+                        result = {"error": f"运行资源释放失败：{error}"}
+                        CUS_LOGGER.error("脚本编辑器的运行资源释放失败：%s", error, exc_info=True)
+                self.script_tool_result.emit(session, result)
+
+        self.editor_tasks[session] = task
         try:
             self.start_task(task)
         except RuntimeError as error:
-            QMessageBox.warning(self, "警告", str(error))
+            self.script_tool_result.emit(session, {"error": str(error)})
+
+    def stop_editor_task(self, session):
+        task = self.editor_tasks.get(session)
+        if task is None:
+            return
+        if self.scheduler.cancel_task(task):
+            self.script_tool_result.emit(session, {"message": "排队任务已取消"})
+        elif self.task_thread is not None and self.task_thread.target is task:
+            try:
+                self.stop_task()
+            except Exception as error:
+                CUS_LOGGER.error("编辑器任务的停止请求未完成，继续等待线程退出：%s", error, exc_info=True)
+
+    def script_saved(self, path):
+        self.refresh_scripts(path)
+        self.save_script_selection()
+
+    def open_schedule(self):
+        dialog = ScheduleDialog(self.scheduler, self.registry, self)
+        try:
+            dialog.exec_()
+        finally:
+            dialog.deleteLater()
 
     def run_kernel(self, kernel_id):
         def task():
