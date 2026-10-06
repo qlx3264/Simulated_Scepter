@@ -31,7 +31,7 @@ class QMainWindowLoadUI(QtWidgets.QMainWindow):
 
         self.setWindowTitle("ω- u13.exe - 本软件免费且开源")
 
-        self.setWindowIcon(QIcon(os.path.join(PATHS["logo"] + "圆角-FetDeathWing-256x-AllSize.ico")))
+        self.setWindowIcon(QIcon(os.path.join(PATHS["logo"], "圆角-FetDeathWing-256x-AllSize.ico")))
 
         self.Title_Version.setText(EXTRA.VERSION)
 
@@ -217,7 +217,7 @@ class QMainWindowLoadUI(QtWidgets.QMainWindow):
 
     def init_tray_icon(self):
         self.tray_icon = QSystemTrayIcon(self)
-        self.tray_icon.setIcon(QIcon(os.path.join(PATHS["logo"] + "圆角-FetDeathWing-256x-AllSize.ico")))
+        self.tray_icon.setIcon(self.windowIcon())
         self.tray_icon.setToolTip("ω- u13.exe - 正在后台运行")
 
         tray_menu = QMenu()
