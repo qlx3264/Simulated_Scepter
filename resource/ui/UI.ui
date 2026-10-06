@@ -780,6 +780,22 @@ border:none</string>
                 </widget>
                </item>
                <item>
+                <layout class="QHBoxLayout" name="script_tools_row">
+                 <item>
+                  <widget class="QPushButton" name="script_editor_btn">
+                   <property name="sizePolicy"><sizepolicy hsizetype="Ignored" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+                   <property name="text"><string>脚本编辑器</string></property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="schedule_btn">
+                   <property name="sizePolicy"><sizepolicy hsizetype="Ignored" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+                   <property name="text"><string>定时计划</string></property>
+                  </widget>
+                 </item>
+                </layout>
+               </item>
+               <item>
                 <widget class="QPushButton" name="print_btn">
                  <property name="text">
                   <string>打印坐标 F7</string>

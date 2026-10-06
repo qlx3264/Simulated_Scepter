@@ -67,13 +67,23 @@ class ScriptKernel(StateKernel):
         super().prepare_script()
 
     def start(self, json_path=None):
-        from tool.action_script import run_script
-
-        if json_path is None:
-            json_path = getattr(self, "default_json_path", None)
-        if json_path is None:
+        if json_path is not None:
+            from tool.action_script import run_script
+            return run_script(self, json_path)
+        if not getattr(self, "default_json", None):
             raise ValueError("通用内核需要选择 JSON 动作脚本。")
-        run_script(self, json_path)
+        if self._stop or get_global_stop_flag():
+            return
+        try:
+            self.prepare_script()
+            while not self._stop and not get_global_stop_flag():
+                self.ts.forward(self.get_screen())
+                if self._stop or get_global_stop_flag():
+                    break
+                self.run_static()
+        finally:
+            if not self._stop:
+                self.stop()
 
     def stop(self, *_, **__):
         self._stop = True

@@ -78,14 +78,15 @@ class StateKernelTests(unittest.TestCase):
     def test_script_stops_and_releases_resources_on_success_or_failure(self):
         for failure in (False, True):
             with self.subTest(failure=failure):
-                engine = Mock(_stop=True)
+                engine = Mock(_stop=False)
 
                 def step():
                     if failure:
                         raise RuntimeError("识别失败")
-                    engine._stop = True
+                    self.assertEqual(engine.default_json, {"动作": []})
+                    self.assertEqual(engine.default_json_path, "script.json")
 
-                engine.run_static.side_effect = step
+                engine.start.side_effect = step
                 with patch("tool.action_script.load_actions", return_value={"动作": []}), \
                         patch("tool.action_script.get_global_stop_flag", return_value=False):
                     if failure:
@@ -94,16 +95,37 @@ class StateKernelTests(unittest.TestCase):
                         engine.stop.assert_called_once()
                     else:
                         run_script(engine, "script.json")
-                    engine.prepare_script.assert_called_once()
+                        engine.stop.assert_called_once()
+                    engine.start.assert_called_once()
+                    engine.prepare_script.assert_not_called()
+                    engine.run_static.assert_not_called()
 
     def test_script_initialization_failure_still_releases_resources(self):
-        engine = Mock(_stop=True)
-        engine.prepare_script.side_effect = OSError("输入资源初始化失败")
+        engine = Mock(_stop=False)
+        engine.start.side_effect = OSError("输入资源初始化失败")
         with patch("tool.action_script.load_actions", return_value={"动作": []}), \
                 patch("tool.action_script.get_global_stop_flag", return_value=False):
             with self.assertRaises(OSError):
                 run_script(engine, "script.json")
         engine.stop.assert_called_once()
+
+    def test_cancelled_script_does_not_start_or_reset_stop_request(self):
+        engine = Mock(_stop=True)
+        with patch("tool.action_script.load_actions", return_value={"动作": []}), \
+                patch("tool.action_script.get_global_stop_flag", return_value=True):
+            run_script(engine, "script.json")
+        engine.start.assert_not_called()
+        self.assertTrue(engine._stop)
+
+    def test_script_load_failure_releases_initialized_engine_without_starting(self):
+        for result, error in ((None, OSError("读取失败")), ({}, None)):
+            with self.subTest(result=result, error=error):
+                engine = Mock(_stop=False)
+                with patch("tool.action_script.load_actions", return_value=result, side_effect=error):
+                    with self.assertRaises((OSError, ValueError)):
+                        run_script(engine, "script.json")
+                engine.start.assert_not_called()
+                engine.stop.assert_called_once()
 
 
 if __name__ == "__main__":
