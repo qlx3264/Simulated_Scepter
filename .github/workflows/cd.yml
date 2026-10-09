@@ -40,7 +40,7 @@ jobs:
     steps:
       - name: Determine release version
         id: version
-        shell: powershell
+        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
