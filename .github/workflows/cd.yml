@@ -146,14 +146,15 @@ jobs:
             param(
               [int[]]$AlreadyNoted = @(),
               [DateTimeOffset]$SinceDate,
-              [string]$VersionLabel
+              [string]$VersionLabel,
+              [bool]$GroupByCategory = $false
             )
 
             $mergedPrsJson = gh pr list `
               --repo $env:REPOSITORY `
               --state merged `
               --limit 1000 `
-              --json number,title,author,mergedAt,url,headRefName
+              --json number,title,author,mergedAt,url,headRefName,labels
 
             if ([string]::IsNullOrWhiteSpace($mergedPrsJson)) {
               return ""
@@ -173,6 +174,7 @@ jobs:
                   # 版本号回写用的 PR（分支名 version-change-vX.Y.Z）是打包流程自己产生的，
                   # 与本次发布的内容无关，不能出现在 Release Notes 里
                   $_.headRefName -notmatch '^version-change-v' -and
+                  -not ($_.labels.name -match '^(?i:chore|build|构建与工具链|chore & build / 构建与工具链)$') -and
                   ([DateTimeOffset]::Parse($_.mergedAt) -gt $SinceDate)
                 } |
                 Sort-Object {
@@ -184,21 +186,56 @@ jobs:
               return ""
             }
 
-            # Notes 直接逐条列出 PR（标题 / 链接 / 作者）
-            $notesLines = @()
+            $noteEntries = @()
 
             foreach ($pr in $changedPrs) {
+              $labelNames = @($pr.labels | ForEach-Object { $_.name })
+              $category = "其他"
+
+              if ($labelNames -match '^(?i:bug|bug fix|fix|bug 修复|bug fix / bug 修复)$' -or $pr.title -match '(?i)\bfix(?:es|ed)?\b') {
+                $category = "BUG 修复"
+              }
+              elseif ($pr.title -match '(?i)\bperf(?:ormance)?\b' -or $labelNames -match '^(?i:performance|perf|性能优化|performance / 性能优化)$') {
+                $category = "改进"
+              }
+              elseif ($pr.title -match '(?i)\bfeat(?:ure)?\b' -or $labelNames -match '^(?i:feature|feat|新功能|enhancement|feature / 增加功能)$') {
+                $category = "新功能"
+              }
+              elseif ($labelNames -match '^(?i:improvement|改进)$') {
+                $category = "改进"
+              }
+
               # 作者写成普通的 Markdown 链接（指向作者主页）：
               # 不用「@名字」，否则 GitHub 会把它当成 mention
               if ($null -ne $pr.author -and -not [string]::IsNullOrWhiteSpace($pr.author.login)) {
                 $authorLogin = $pr.author.login
                 $authorUrl = "https://github.com/$authorLogin"
 
-                $notesLines += "- $($pr.title) ([#$($pr.number)]($($pr.url))) [$authorLogin]($authorUrl)"
+                $entry = "- $($pr.title) ([#$($pr.number)]($($pr.url))) [$authorLogin]($authorUrl)"
               }
               else {
-                $notesLines += "- $($pr.title) ([#$($pr.number)]($($pr.url)))"
+                $entry = "- $($pr.title) ([#$($pr.number)]($($pr.url)))"
               }
+
+              $noteEntries += [PSCustomObject]@{ Category = $category; Text = $entry }
+            }
+
+            # 大版本 Notes 分组展示；patch Notes 保持原有的按时间排列格式。
+            $notesLines = @()
+
+            if ($GroupByCategory) {
+              foreach ($category in @("BUG 修复", "新功能", "改进", "其他")) {
+                $entries = @($noteEntries | Where-Object { $_.Category -eq $category })
+
+                if ($entries.Count -gt 0) {
+                  $notesLines += "### $category"
+                  $notesLines += $entries | ForEach-Object { $_.Text }
+                  $notesLines += ""
+                }
+              }
+            }
+            else {
+              $notesLines = @($noteEntries | ForEach-Object { $_.Text })
             }
 
             # 隐藏的 HTML 注释：记录本次 Notes 覆盖了哪些 PR
@@ -427,7 +464,8 @@ jobs:
             $releaseNotes = Get-ReleaseNotesFromMergedPullRequests `
               -AlreadyNoted $alreadyNoted `
               -SinceDate $baselineDate `
-              -VersionLabel $version
+              -VersionLabel $version `
+              -GroupByCategory ($majorMinorChanged -eq "true")
           }
 
           # 写入 GitHub Actions outputs
