@@ -18,12 +18,12 @@ jobs:
           script: |
             const title = context.payload.pull_request.title;
             const rules = [
-              { pattern: /\b(?:bug|fix(?:es|ed)?)\b/i, labels: ['bug', 'Bug Fix', 'Bug 修复'] },
-              { pattern: /\bfeat(?:ure)?\b/i, labels: ['feature', 'Feature', '新功能', 'enhancement', '改进'] },
-              { pattern: /\bperf(?:ormance)?\b/i, labels: ['performance', 'Performance', '性能优化', 'improvement', '改进', 'enhancement'] },
-              { pattern: /\brefactor(?:ing)?\b/i, labels: ['refactor', 'Refactor', '代码重构'] },
-              { pattern: /\bdocs?(?:umentation)?\b/i, labels: ['documentation', 'Documentation', '文档更新', 'docs'] },
-              { pattern: /\b(?:chore|build)\b/i, labels: ['chore', 'Chore', 'Build', '构建与工具链'] },
+              { pattern: /\b(?:bug|fix(?:es|ed)?)\b/i, labels: ['Bug Fix / Bug 修复'] },
+              { pattern: /\bfeat(?:ure)?\b/i, labels: ['Feature / 增加功能'] },
+              { pattern: /\bperf(?:ormance)?\b/i, labels: ['Performance / 性能优化'] },
+              { pattern: /\brefactor(?:ing)?\b/i, labels: ['Refactor / 代码重构'] },
+              { pattern: /\bdocs?(?:umentation)?\b/i, labels: ['Documentation / 文档更新'] },
+              { pattern: /\b(?:chore|build)\b/i, labels: ['Chore & Build / 构建与工具链'] },
             ];
             const rule = rules.find(({ pattern }) => pattern.test(title));
             const { owner, repo } = context.repo;

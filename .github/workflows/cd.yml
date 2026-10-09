@@ -174,7 +174,7 @@ jobs:
                   # 版本号回写用的 PR（分支名 version-change-vX.Y.Z）是打包流程自己产生的，
                   # 与本次发布的内容无关，不能出现在 Release Notes 里
                   $_.headRefName -notmatch '^version-change-v' -and
-                  -not ($_.labels.name -match '^(?i:chore|build|构建与工具链)$') -and
+                  -not ($_.labels.name -match '^(?i:chore|build|构建与工具链|chore & build / 构建与工具链)$') -and
                   ([DateTimeOffset]::Parse($_.mergedAt) -gt $SinceDate)
                 } |
                 Sort-Object {
@@ -192,13 +192,13 @@ jobs:
               $labelNames = @($pr.labels | ForEach-Object { $_.name })
               $category = "其他"
 
-              if ($labelNames -match '^(?i:bug|bug fix|fix|bug 修复)$' -or $pr.title -match '(?i)\bfix(?:es|ed)?\b') {
+              if ($labelNames -match '^(?i:bug|bug fix|fix|bug 修复|bug fix / bug 修复)$' -or $pr.title -match '(?i)\bfix(?:es|ed)?\b') {
                 $category = "BUG 修复"
               }
-              elseif ($pr.title -match '(?i)\bperf(?:ormance)?\b' -or $labelNames -match '^(?i:performance|perf|性能优化)$') {
+              elseif ($pr.title -match '(?i)\bperf(?:ormance)?\b' -or $labelNames -match '^(?i:performance|perf|性能优化|performance / 性能优化)$') {
                 $category = "改进"
               }
-              elseif ($pr.title -match '(?i)\bfeat(?:ure)?\b' -or $labelNames -match '^(?i:feature|feat|新功能|enhancement)$') {
+              elseif ($pr.title -match '(?i)\bfeat(?:ure)?\b' -or $labelNames -match '^(?i:feature|feat|新功能|enhancement|feature / 增加功能)$') {
                 $category = "新功能"
               }
               elseif ($labelNames -match '^(?i:improvement|改进)$') {
