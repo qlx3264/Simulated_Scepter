@@ -317,7 +317,7 @@ class FingerSnap(AnyFateUniverse):
                 self.save_screen(save_path=os.path.join(PATHS["temp"], "bigmaperror"))
                 raise NoMatchError
         # 检测角标（pig/reinforce/alienation等），关联到最近节点
-        corner_results = detect_corner_markers(image, matches)
+        corner_results = detect_corner_markers(image, matches, mode)
         if corner_results:
             CUS_LOGGER.debug(f'检测到 {len(corner_results)} 个角标')
             for cr in corner_results:
