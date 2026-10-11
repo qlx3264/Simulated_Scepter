@@ -50,11 +50,11 @@
 
 # 功能 | Function
 
-## 智能择路  
+## 智能择路
 
 ![image](doc/select.png)
 
-## 精准索敌  
+## 精准索敌
 
 ![image](doc/battle.png)
 
@@ -70,12 +70,12 @@
 
 ## 进阶功能
 
-### 视频录制  
+### 视频录制
 
 以爱的名义，她将逝去的一切尽数珍藏。。。直到时间的尽头
 ![image](doc/end.png)
 至少，这样的结局足够温柔
-### 提前轮回  
+### 提前轮回
 
 若此世无法带来拯救，那就为它带来毁灭。。。（极低概率实现40杀则立即重开）
 ![image](doc/retry.png)
@@ -111,17 +111,34 @@ sqlite3 config/backup/emergency.db "DELETE FROM node_log;"
 由于onnxruntime环境，电脑环境需注意win10版本是否大于等于2004，win11默认支持 ，同时建议具有2G以上显存运行本软件
 
 下载解压目录不允许有中文路径！！
-# 下载 | Download 
+# 下载 | Download
 方法一：直接下载打包好的发行版（推荐）* ![](https://img.shields.io/badge/QQ%201群[开发意向优先]-1072802257-4e4c97)* ![](https://img.shields.io/badge/QQ%202群-870863632-4e4c97)
 
 方法二：自行下载源码本地部署，没接触过python的，请忽视下述教程，可以直接前往交流群下载相关资源
 
-**快速部署**
+**配置环境**
 
 ```plaintext
 uv sync
+```
+
+**启动权杖**
+
+```plaintext
 uv run new_gui.py
 ```
+
+**启动后自动运行任务**
+
+可以通过指定参数，在启动时运行配置中的内核和脚本，并指定等待时间。
+```powershell
+uv run new_gui.py --start-task --engine:ironblood --file:insect.json --start-delay:10
+```
+
+内核 `--engine:` 、脚本 `--file:` 和延迟参数 `--start-delay:` 均为可选项；未使用内核与脚本选项时，默认使用设置文件中的参数；延迟参数未设置时默认等待 5 秒。选项名必须小写，内核 ID 与脚本名不区分大小写。
+
+如果设置文件中的 `script_file` 为空（尚未开启过 debug 模式），则默认使用 `IronBlood` 内核和 `insect.json` 脚本（相当于 **“擢升铁血战士”** ）。启动参数填写错误时会弹窗提醒，程序仍会正常打开，但本次不会执行自动任务。
+
 ----------------------------------------------------------------------------------------------
 
 # 相关配置建议

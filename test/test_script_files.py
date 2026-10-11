@@ -34,7 +34,7 @@ class ScriptFileTests(unittest.TestCase):
         self.data = [new_event()]
 
     def test_existing_module_scripts_are_valid_without_mutation(self):
-        for path in [*ROOT.glob("core/*/actions/*.json"), ROOT / "actions/虚构刷贪饕脚本.json"]:
+        for path in [*ROOT.glob("core/*/actions/*.json"), ROOT / "actions/farmgluttony.json"]:
             with self.subTest(path=path):
                 original = json.loads(path.read_text(encoding="utf-8"))
                 self.assertEqual(read_script(path), original)
