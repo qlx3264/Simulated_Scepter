@@ -300,9 +300,56 @@ class FingerSnap(AnyFateUniverse):
             self.new_node = True
         key_mouse_manager.wait()
     def try_analysis_map(self, mode=1, target_selection=False):
+        """识别当前界面地图，必要时刷新截图重试。
+
+        慈怀状态节点在被识别到时正处于高亮闪光动画中，闪光峰值期间图标
+        相似度会跌到收集阈值以下，boss/head 节点可能整帧漏检。这里保留
+        刷新截图重试的机会，避免把瞬时漏检当成地图识别失败而中断流程。
+
+        Args:
+            mode: 地图识别模式，1/2/3 分别对应不同位面的图标集合。
+            target_selection: 是否处于慈怀选目标阶段。
+
+        Returns:
+            bool: 建图并载入决策模型成功返回 True，起点没有可用后继返回 False。
+
+        Raises:
+            NoMatchError: 未匹配到任何地图图标，或建图失败次数过多。
+            NoBossError: 重试后仍未识别到 boss/head 节点。
+        """
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            if attempt > 1:
+                time.sleep(0.3)  # 等待慈怀闪光结束，单位为秒。
+            try:
+                return self._analysis_map_once(
+                    mode, target_selection, refresh=attempt > 1)
+            except NoBossError:
+                if attempt == max_attempts:
+                    raise
+                CUS_LOGGER.warning(
+                    f"第{attempt}/{max_attempts}次识图(模式{mode})未识别到"
+                    f"boss/head节点，疑似慈怀闪光造成的瞬时漏检")
+                CUS_LOGGER.warning("刷新截图缓冲区后重新匹配地图图标")
+
+    def _analysis_map_once(self, mode=1, target_selection=False, refresh=False):
+        """执行一次地图识别、节点检测与建图。
+
+        Args:
+            mode: 地图识别模式，1/2/3 分别对应不同位面的图标集合。
+            target_selection: 是否处于慈怀选目标阶段。
+            refresh: 是否在识别前重新抓取截图，False 时沿用缓存的截图。
+
+        Returns:
+            bool: 建图并载入决策模型成功返回 True，起点没有可用后继返回 False。
+
+        Raises:
+            NoMatchError: 未匹配到任何地图图标，或建图失败次数过多。
+            NoBossError: 未识别到 boss/head 节点。
+        """
         # if self.debug:
         #     self.save_screen(not_now=True)
-        image = self.screen
+        image = self.get_screen() if refresh else self.screen
         matches = match_multiple_targets(image, mode)
         CUS_LOGGER.debug(f"当前模式{mode},找到 {len(matches)} 个匹配")
         if not matches:
