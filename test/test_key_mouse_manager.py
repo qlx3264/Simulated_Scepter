@@ -26,7 +26,7 @@ class KeyMouseBoundaryTests(unittest.TestCase):
         self.manager = KeyMouseManager()
         self.manager.set_screen_params(WINDOW_RIGHT, WINDOW_BOTTOM, CLIENT_WIDTH, CLIENT_HEIGHT)
         self.addCleanup(self.manager.stop)
-        self.logger = self.enterContext(patch("tool.log.CUS_LOGGER"))
+        self.logger = self.enterContext(patch("tool.key_mouse_manager.CUS_LOGGER"))
         self.cursor = self.enterContext(patch("tool.key_mouse_manager.win32api.SetCursorPos"))
         self.click = self.enterContext(patch("tool.key_mouse_manager.pyautogui.click"))
         self.drag_to = self.enterContext(patch("tool.key_mouse_manager.pyautogui.dragTo"))

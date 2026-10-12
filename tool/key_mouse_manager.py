@@ -9,10 +9,6 @@ import win32con
 from tool.log import CUS_LOGGER
 from tool.thread import ThreadWithException
 
-# 延迟导入，避免循环导入
-def get_CUS_LOGGER():
-    from tool.log import CUS_LOGGER
-    return CUS_LOGGER
 
 class KeyMouseManager:
     """
@@ -78,7 +74,6 @@ class KeyMouseManager:
         """
         启动键鼠管理器线程
         """
-        CUS_LOGGER = get_CUS_LOGGER()
         CUS_LOGGER.info("启动键鼠管理器线程")
         if not self.running:
             self.running = True
@@ -92,7 +87,6 @@ class KeyMouseManager:
         """
         停止键鼠管理器线程
         """
-        CUS_LOGGER = get_CUS_LOGGER()
         CUS_LOGGER.info("停止键鼠管理器线程")
         self.running = False
         if self.worker_thread and self.worker_thread.is_alive():
@@ -106,7 +100,6 @@ class KeyMouseManager:
         """
         清除当前键鼠管理器线程所有操作
         """
-        CUS_LOGGER = get_CUS_LOGGER()
         CUS_LOGGER.debug("清除当前所有操作")
         if self.worker_thread and self.worker_thread.is_alive():
             with self.queue_lock:
@@ -116,7 +109,6 @@ class KeyMouseManager:
         """
         工作线程，处理队列中的操作
         """
-        CUS_LOGGER = get_CUS_LOGGER()
         while self.running:
             operation = None
             with self.queue_lock:
@@ -196,7 +188,6 @@ class KeyMouseManager:
             return actual_x, actual_y
         if self.skipped_pointer != (op_type, x, y):
             self.skipped_pointer = (op_type, x, y)
-            CUS_LOGGER = get_CUS_LOGGER()
             CUS_LOGGER.warning(
                 "%s原本要落在游戏窗口(%s, %s)-(%s, %s)内，"
                 "请求坐标(%s, %s)换算为屏幕坐标(%s, %s)已越界，跳过本次操作。",
@@ -212,7 +203,6 @@ class KeyMouseManager:
             operation: 操作字典，包含操作类型和参数
         """
         op_type = operation['type']
-        CUS_LOGGER = get_CUS_LOGGER()
         CUS_LOGGER.debug(f"执行操作{operation}，当前队列长度{len(self.operation_queue)}")
         if op_type == 'keyDown':
             key = self._get_mapping(operation['key'])
