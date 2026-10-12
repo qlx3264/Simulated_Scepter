@@ -80,6 +80,11 @@ def match_multiple_targets(processed_image, mode=1, threshold=0.5, color_image=N
     processed_image = cv2.GaussianBlur(processed_image.copy(), (5, 5), 0)
     processed_image = cv2.Canny(processed_image, 100, 200)
 
+    # mode 决定使用哪套节点图模板（gray_image/node{mode}/），对应游戏里两种节点图画面：
+    #   1 = 「进入位面」总览画面（刚进位面时看到的整张节点图）；
+    #   2/3 = 「选择生效目标」「选择移动目标」画面（3 为第三位面，模板与 2 相同）。
+    # node1 与 node2 是同一套图标的两种渲染尺度（「选择」画面比「进入位面」画面大约 1.2 倍），不能混用；
+    # 角标模板（pig*/reinforce*/alienation*）按「选择」画面尺度采集，在「进入位面」画面上会匹配偏弱。
     if mode == 1:
         kind_list = ['event', 'wait', 'trade', 'adventure', 'reward', 'battle', 'elite', 'bugevent', 'bugbattle',
                      'head', 'boss']
