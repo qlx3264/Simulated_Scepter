@@ -74,6 +74,7 @@ class FakeEngine:
         self.fail_match_count = 0
         self._cheat_count = 0
         self._reroll_count = 0
+        self._stop = False
         self.nodes = None
         self.edges = None
         self.start_nodes = None
@@ -164,6 +165,18 @@ class BossRetryTest(unittest.TestCase):
         self.assertEqual(2, engine.refreshed)
         self.assertFalse(sleeper.called)
         self.assertEqual(1, logger.error.call_count)
+
+    def test_stopped_engine_returns_false_without_building_graph(self):
+        """停机标志已置位时不识图、不建图，直接返回 False。"""
+        clock = FakeClock(seconds_per_screen=0.2)
+        engine = FakeEngine([FLASH_FRAME], clock)
+        engine._stop = True
+        matcher, sleeper, _ = self.patch_analysis(fake_match, clock)
+
+        self.assertFalse(FingerSnap.try_analysis_map(engine, 1))
+        self.assertFalse(matcher.called)
+        self.assertEqual(0, engine.refreshed)
+        self.assertFalse(sleeper.called)
 
     def test_empty_match_keeps_the_original_no_match_failure(self):
         clock = FakeClock(seconds_per_screen=0.2)

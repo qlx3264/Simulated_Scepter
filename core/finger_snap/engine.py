@@ -406,6 +406,10 @@ class FingerSnap(AnyFateUniverse):
                     f"识图(模式{mode})未识别到boss/head节点，疑似慈怀闪光造成的瞬时漏检")
                 CUS_LOGGER.warning("刷新截图缓冲区后在限定时间内重新匹配地图图标")
             refresh = True
+        # 停机标志在识图过程中被置位时不再继续建图：既不做无意义的决策，也避免
+        # 循环未跑完时 matches/start 还没赋值。
+        if self._stop:
+            return False
         if mode == 3:
             self.nodes, self.edges, start_idx = build_rightward_graph2(
                 matches, start=start,
