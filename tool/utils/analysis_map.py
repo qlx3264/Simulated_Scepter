@@ -80,6 +80,11 @@ def match_multiple_targets(processed_image, mode=1, threshold=0.5, color_image=N
     processed_image = cv2.GaussianBlur(processed_image.copy(), (5, 5), 0)
     processed_image = cv2.Canny(processed_image, 100, 200)
 
+    # mode 决定使用哪套节点图模板（gray_image/node{mode}/），对应游戏里两种节点图画面：
+    #   1 = 「进入位面」总览画面（刚进位面时看到的整张节点图）；
+    #   2/3 = 「选择生效目标」「选择移动目标」画面（3 为第三位面，模板与 2 相同）。
+    # node1 与 node2 是同一套图标的两种渲染尺度（「选择」画面比「进入位面」画面大约 1.2 倍），不能混用；
+    # 角标模板（pig*/reinforce*/alienation*）按「选择」画面尺度采集，在「进入位面」画面上会匹配偏弱。
     if mode == 1:
         kind_list = ['event', 'wait', 'trade', 'adventure', 'reward', 'battle', 'elite', 'bugevent', 'bugbattle',
                      'head', 'boss']
@@ -577,6 +582,8 @@ def compute_start_point_from_crop(image, mode=2, th=0.85, return_details=False,
 # 角标模板需放置在 PATHS["image"]（即 resource/imgs/）目录下
 # 通过 load_img() 预加载到内存缓存，通过 find_image_in_folder 获取
 # 后续新增角标只需在此列表追加 name 即可
+# 模板按「选择生效目标／选择移动目标」画面（mode=2/3）的尺度采集，「进入位面」总览画面（mode=1）
+# 比它小约 1.2 倍，由 detect_corner_markers 按 mode 缩放模板后再匹配
 CORNER_MARKER_DEFS = [
     {'name': 'pig1', 'threshold': 0.7},
     {'name': 'pig2', 'threshold': 0.7},
@@ -589,14 +596,18 @@ CORNER_MARKER_DEFS = [
 ]
 
 
-def detect_corner_markers(color_image, matches, marker_defs=None, max_dist=80.0):
+def detect_corner_markers(color_image, matches, mode=2, marker_defs=None, max_dist=80.0):
     """在彩色原图上检测角标，并关联到最近的地图节点。
 
     使用彩色模板匹配（非灰度/Canny），因为角标具有颜色区分度。
+    角标模板按「选择生效目标／选择移动目标」画面（mode=2/3）的渲染尺度采集，而
+    「进入位面」总览画面（mode=1）的地图比它小约 1.2 倍，故匹配前按该比例缩小模板。
 
     Args:
         color_image: 原始彩色截图 (BGR)
         matches: match_multiple_targets 返回的匹配列表
+        mode: 与 match_multiple_targets 一致的画面模式，决定角标模板的缩放比例；
+            默认 2（「选择」画面，即角标模板的原生尺度）
         marker_defs: 角标定义列表，默认使用 CORNER_MARKER_DEFS
         max_dist: 角标中心与节点中心的最大距离（像素），超出则忽略关联
 
@@ -613,6 +624,9 @@ def detect_corner_markers(color_image, matches, marker_defs=None, max_dist=80.0)
             m.pop('corner_marker', None)
         return []
 
+    # 「进入位面」总览画面（mode=1）与「选择」画面（mode=2/3）的地图渲染尺度相差约 1.2 倍
+    scale = 1 / 1.2 if mode == 1 else 1.0
+
     # 第一步：全局彩色模板匹配，收集所有候选
     all_boxes = []
     all_scores = []
@@ -623,6 +637,8 @@ def detect_corner_markers(color_image, matches, marker_defs=None, max_dist=80.0)
         if tpl is None:
             CUS_LOGGER.warning(f'[角标检测] 无法从缓存加载模板: {mdef["name"]}')
             continue
+        if scale != 1.0:
+            tpl = cv2.resize(tpl, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
         th, tw = tpl.shape[:2]
         res = cv2.matchTemplate(color_image, tpl, cv2.TM_CCOEFF_NORMED)
         ys, xs = np.where(res >= mdef['threshold'])

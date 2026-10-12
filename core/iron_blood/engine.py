@@ -235,8 +235,12 @@ class IronBloodUniverse(AnyFateUniverse):
             path_ids = {n['idx'] for n in self.path}
             start_cx = self.start_nodes['cx']
             def has_pig(n):
-                return ((n.get('orig') or {}).get('corner_marker') or {}).get('name') in ('pig1', 'pig2')
-            # 第一优先级：path上最靠前的pig节点；第二优先级：不在path且在起点右侧的最靠左pig节点
+                """只认能走到的「战斗 / 战斗·虫群」区域上的祝福扑满（pig1/pig2）信标。"""
+                marker = (n.get('orig') or {}).get('corner_marker')
+                return (bool(marker) and marker['name'] in ('pig1', 'pig2')
+                        and n['name'] in ('battle', 'bugbattle')
+                        and (self.steps or {}).get(n['idx'], -1) >= 0)
+            # 第一优先级：path上最靠前的可替换pig节点；第二优先级：不在path且在起点右侧的最靠左可替换pig节点
             target_node = (
                 next((n for n in self.path if has_pig(n)), None)
                 or min((n for n in self.nodes if n['idx'] not in path_ids and has_pig(n) and n['cx'] >= start_cx),

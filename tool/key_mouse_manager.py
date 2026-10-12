@@ -9,10 +9,6 @@ import win32con
 from tool.log import CUS_LOGGER
 from tool.thread import ThreadWithException
 
-# 延迟导入，避免循环导入
-def get_CUS_LOGGER():
-    from tool.log import CUS_LOGGER
-    return CUS_LOGGER
 
 class KeyMouseManager:
     """
@@ -39,6 +35,8 @@ class KeyMouseManager:
         self.sleep_start_time = None
         self.sleep_duration = 0
         self.ending = True
+        # 最近一次因越界被跳过的操作，用于避免同一偏离反复刷屏
+        self.skipped_pointer = None
 
     def set_config(self, config):
         """
@@ -76,7 +74,6 @@ class KeyMouseManager:
         """
         启动键鼠管理器线程
         """
-        CUS_LOGGER = get_CUS_LOGGER()
         CUS_LOGGER.info("启动键鼠管理器线程")
         if not self.running:
             self.running = True
@@ -90,7 +87,6 @@ class KeyMouseManager:
         """
         停止键鼠管理器线程
         """
-        CUS_LOGGER = get_CUS_LOGGER()
         CUS_LOGGER.info("停止键鼠管理器线程")
         self.running = False
         if self.worker_thread and self.worker_thread.is_alive():
@@ -104,7 +100,6 @@ class KeyMouseManager:
         """
         清除当前键鼠管理器线程所有操作
         """
-        CUS_LOGGER = get_CUS_LOGGER()
         CUS_LOGGER.debug("清除当前所有操作")
         if self.worker_thread and self.worker_thread.is_alive():
             with self.queue_lock:
@@ -114,7 +109,6 @@ class KeyMouseManager:
         """
         工作线程，处理队列中的操作
         """
-        CUS_LOGGER = get_CUS_LOGGER()
         while self.running:
             operation = None
             with self.queue_lock:
@@ -173,6 +167,34 @@ class KeyMouseManager:
 
         return actual_x, actual_y
 
+    def _game_point(self, op_type, x, y):
+        """
+        换算坐标并确认落点在游戏窗口内
+
+        落点在游戏窗口之外时（例如归一化 y 变成负数会换算到窗口下边界以下），
+        照常移动光标会把点击送给别的窗口、抢走游戏前台，因此放弃这次操作，
+        并按同一偏离只警告一次记录原因。
+
+        Args:
+            op_type: 操作名称，用于日志
+            x: 请求的x坐标（浮点比例或实际坐标）
+            y: 请求的y坐标（浮点比例或实际坐标）
+
+        Returns:
+            (actual_x, actual_y): 游戏窗口内的屏幕坐标；越界时返回None
+        """
+        actual_x, actual_y = self._convert_coordinates(x, y)
+        if self.x0 <= actual_x <= self.x1 and self.y0 <= actual_y <= self.y1:
+            return actual_x, actual_y
+        if self.skipped_pointer != (op_type, x, y):
+            self.skipped_pointer = (op_type, x, y)
+            CUS_LOGGER.warning(
+                "%s原本要落在游戏窗口(%s, %s)-(%s, %s)内，"
+                "请求坐标(%s, %s)换算为屏幕坐标(%s, %s)已越界，跳过本次操作。",
+                op_type, self.x0, self.y0, self.x1, self.y1, x, y, actual_x, actual_y
+            )
+        return None
+
     def _execute_operation(self, operation):
         """
         执行单个键鼠操作
@@ -181,7 +203,6 @@ class KeyMouseManager:
             operation: 操作字典，包含操作类型和参数
         """
         op_type = operation['type']
-        CUS_LOGGER = get_CUS_LOGGER()
         CUS_LOGGER.debug(f"执行操作{operation}，当前队列长度{len(self.operation_queue)}")
         if op_type == 'keyDown':
             key = self._get_mapping(operation['key'])
@@ -214,9 +235,11 @@ class KeyMouseManager:
 
         elif op_type == 'click':
             x, y = operation['x'], operation['y']
-            # 转换坐标
-            actual_x, actual_y = self._convert_coordinates(x, y)
-            win32api.SetCursorPos((actual_x, actual_y))
+            # 转换坐标，并确认落点在游戏窗口内
+            point = self._game_point("点击", x, y)
+            if point is None:
+                return
+            win32api.SetCursorPos(point)
             pyautogui.click()
 
         elif op_type == 'mouse_move':
@@ -228,9 +251,11 @@ class KeyMouseManager:
         elif op_type == 'scroll':
             x, y = operation['x'], operation['y']
             direct = operation['direct']
-            # 转换坐标
-            actual_x, actual_y = self._convert_coordinates(x, y)
-            win32api.SetCursorPos((actual_x, actual_y))
+            # 转换坐标，并确认落点在游戏窗口内
+            point = self._game_point("滚轮", x, y)
+            if point is None:
+                return
+            win32api.SetCursorPos(point)
             count = abs(direct)
             for _ in range(count):
                 if direct > 0:
@@ -242,13 +267,15 @@ class KeyMouseManager:
             start_x, start_y = operation['start_x'], operation['start_y']
             end_x, end_y = operation['end_x'], operation['end_y']
             duration = operation.get('duration', 0.4)
-            # 转换起始坐标
-            actual_start_x, actual_start_y = self._convert_coordinates(start_x, start_y)
-            actual_end_x, actual_end_y = self._convert_coordinates(end_x, end_y)
-            win32api.SetCursorPos((actual_start_x, actual_start_y))
+            # 转换坐标，并确认起止点都在游戏窗口内
+            start = self._game_point("拖拽起点", start_x, start_y)
+            end = self._game_point("拖拽终点", end_x, end_y)
+            if start is None or end is None:
+                return
+            win32api.SetCursorPos(start)
             self._sleep(0.2)
-            pyautogui.dragTo(actual_end_x, actual_end_y, duration, button='left')
-            # pyautogui.drag(actual_end_x - actual_start_x, actual_end_y - actual_start_y, duration)
+            pyautogui.dragTo(end[0], end[1], duration, button='left')
+            # pyautogui.drag(end[0] - start[0], end[1] - start[1], duration)
 
         elif op_type == 'sleep':
             duration = operation.get('duration', 0)
