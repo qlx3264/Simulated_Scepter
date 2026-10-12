@@ -38,7 +38,7 @@ from tool.utils.analysis_map import (
     match_multiple_targets,
     save_analysis_map_debug,
 )
-from tool.utils.Error import NoBossError, NoMatchError
+from tool.utils.Error import NoMatchError
 from tool.utils.image_tool import find_image_by_name
 from tool.utils.ocr_num import (
     extract_number,
@@ -193,7 +193,7 @@ class FingerSnap(AnyFateUniverse):
             try:
                 if not self.try_analysis_map(mode=2, target_selection=True):
                     return
-            except (NoMatchError, NoBossError):
+            except NoMatchError:
                 return
             self.countdown_agent.locked_effect = EFFECT_SELECT
             advice = self.countdown_agent.recommend_target()
@@ -300,78 +300,116 @@ class FingerSnap(AnyFateUniverse):
             self.new_node = True
         key_mouse_manager.wait()
     def try_analysis_map(self, mode=1, target_selection=False):
-        # if self.debug:
-        #     self.save_screen(not_now=True)
-        image = self.screen
-        matches = match_multiple_targets(image, mode)
-        CUS_LOGGER.debug(f"当前模式{mode},找到 {len(matches)} 个匹配")
-        if not matches:
-            self.click_text(text="点击空白处关闭", box=[875, 1047, 776, 807])
-            CUS_LOGGER.warning("未匹配到任何地图图标却错误进入寻路阶段，可能是误识别")
-            CUS_LOGGER.warning("刷新截图缓冲区后最后一次尝试匹配地图图标")
-            image = self.get_screen()
+        """识别地图，必要时刷新截图复核，补偿慈怀闪光造成的瞬时漏检。
+
+        慈怀状态节点在被识别到时正处于高亮闪光动画中（约 2 帧），闪光峰值期间
+        相似度会跌到收集阈值以下，boss/head 节点可能整帧漏检。识别不到 boss/head
+        时刷新截图再识别一次，之后按 3 秒窗口反复复核：单次识图耗时随机型而定，
+        用时间窗口而不是固定延时可让设备自行决定复核次数；窗口结束仍未识别到
+        boss/head 时记一条错误日志并返回，由调用方按原有流程处理，不中断整个流程。
+
+        Args:
+            mode: 地图识别模式，1/2/3 分别对应不同位面的图标集合。
+            target_selection: 是否处于慈怀选目标阶段。
+
+        Returns:
+            bool: 建图并载入决策模型成功返回 True；起点没有可用后继，或识别窗口内
+                始终未识别到 boss/head 节点，返回 False。
+
+        Raises:
+            NoMatchError: 未匹配到任何地图图标，或建图失败次数过多。
+        """
+        tm = time.monotonic()
+        refresh = False
+        while not self._stop:
+            # if self.debug:
+            #     self.save_screen(not_now=True)
+            image = self.get_screen() if refresh else self.screen
             matches = match_multiple_targets(image, mode)
             CUS_LOGGER.debug(f"当前模式{mode},找到 {len(matches)} 个匹配")
             if not matches:
-                self.save_screen(not_now=True, save_path=os.path.join(PATHS["temp"], "bigmaperror"))
-                self.save_screen(save_path=os.path.join(PATHS["temp"], "bigmaperror"))
-                raise NoMatchError
-        # 检测角标（pig/reinforce/alienation等），关联到最近节点
-        corner_results = detect_corner_markers(image, matches, mode)
-        if corner_results:
-            CUS_LOGGER.debug(f'检测到 {len(corner_results)} 个角标')
-            for cr in corner_results:
-                CUS_LOGGER.debug(f"  {cr['name']} sim={cr['similarity']:.3f} -> 节点{cr['node_idx']}({matches[cr['node_idx']]['name']}) dist={cr['node_dist']}")
-        # 检测青绿色可传染节点
-        infectable_indices = detect_infectable_nodes(
-            image, matches, target_selection=target_selection)
-        if infectable_indices:
-            CUS_LOGGER.debug(f'检测到 {len(infectable_indices)} 个可传染节点')
-            for idx in infectable_indices:
-                CUS_LOGGER.debug(f"  节点{idx}: {matches[idx]['name']} at {matches[idx]['location']}")
-        if mode==2:
-            # 把当前操控角色位交给 analysis_map 优先尝试；检测结果与
-            # current_role 不一致时（例如 silver_wolf_manager 在秘技点
-            # 耗尽时直接按 "1" 切回一号位，未经过 switch_current_role），
-            # 以检测结果为准更新 current_role，使该属性始终反映实际状态。
-            center, details = compute_start_point_from_crop(
-                image, return_details=True, preferred_slot=self.current_role)
-            if center is None:
+                self.click_text(text="点击空白处关闭", box=[875, 1047, 776, 807])
+                CUS_LOGGER.warning("未匹配到任何地图图标却错误进入寻路阶段，可能是误识别")
+                CUS_LOGGER.warning("刷新截图缓冲区后最后一次尝试匹配地图图标")
+                image = self.get_screen()
+                matches = match_multiple_targets(image, mode)
+                CUS_LOGGER.debug(f"当前模式{mode},找到 {len(matches)} 个匹配")
+                if not matches:
+                    self.save_screen(not_now=True, save_path=os.path.join(PATHS["temp"], "bigmaperror"))
+                    self.save_screen(save_path=os.path.join(PATHS["temp"], "bigmaperror"))
+                    raise NoMatchError
+            # 检测角标（pig/reinforce/alienation等），关联到最近节点
+            corner_results = detect_corner_markers(image, matches, mode)
+            if corner_results:
+                CUS_LOGGER.debug(f'检测到 {len(corner_results)} 个角标')
+                for cr in corner_results:
+                    CUS_LOGGER.debug(f"  {cr['name']} sim={cr['similarity']:.3f} -> 节点{cr['node_idx']}({matches[cr['node_idx']]['name']}) dist={cr['node_dist']}")
+            # 检测青绿色可传染节点
+            infectable_indices = detect_infectable_nodes(
+                image, matches, target_selection=target_selection)
+            if infectable_indices:
+                CUS_LOGGER.debug(f'检测到 {len(infectable_indices)} 个可传染节点')
+                for idx in infectable_indices:
+                    CUS_LOGGER.debug(f"  节点{idx}: {matches[idx]['name']} at {matches[idx]['location']}")
+            if mode==2:
+                # 把当前操控角色位交给 analysis_map 优先尝试；检测结果与
+                # current_role 不一致时（例如 silver_wolf_manager 在秘技点
+                # 耗尽时直接按 "1" 切回一号位，未经过 switch_current_role），
+                # 以检测结果为准更新 current_role，使该属性始终反映实际状态。
                 center, details = compute_start_point_from_crop(
-                    image, th=0.7, return_details=True,
-                    preferred_slot=self.current_role)
-            start = center
-            if details is not None and details['slot'] != self.current_role:
-                CUS_LOGGER.debug(
-                    f"角色位与 current_role 不一致："
-                    f"current_role={self.current_role} 检测={details['slot']}，"
-                    f"同步为检测结果")
-                self.current_role = details['slot']
-        elif mode==3:
-            start = compute_start_point_from_crop(image,mode=mode)
-            if start is None:
-                start = compute_start_point_from_crop(image, mode,th=0.7)
-        else:
-            start=None
-        CUS_LOGGER.debug(f"当前起点坐标{start}")
-        for i, m in enumerate(matches):
-            cm = m.get('corner_marker', None)
-            cm_str = f' [角标:{cm["name"]}]' if cm else ''
-            inf_str = ' [可传染]' if m.get('infectable', False) else ''
-            CUS_LOGGER.debug(f"  {i}: {m['name']} at {m['location']}, 相似度: {m.get('similarity')}{cm_str}{inf_str}")
-        if self.debug:
-            save_analysis_map_debug(
-                image, matches, start=start,
-                tag=f"mode{mode}" + ("_sel" if target_selection else ""))
-        boss_head_x = [m['location'][0] for m in matches if m['name'] in ('boss', 'head')]
-        if boss_head_x:
-            rightmost = max(boss_head_x)
-            matches = [m for m in matches if m['location'][0] <= rightmost]
-            CUS_LOGGER.debug(f"过滤boss/head右侧节点后，剩余 {len(matches)} 个匹配")
+                    image, return_details=True, preferred_slot=self.current_role)
+                if center is None:
+                    center, details = compute_start_point_from_crop(
+                        image, th=0.7, return_details=True,
+                        preferred_slot=self.current_role)
+                start = center
+                if details is not None and details['slot'] != self.current_role:
+                    CUS_LOGGER.debug(
+                        f"角色位与 current_role 不一致："
+                        f"current_role={self.current_role} 检测={details['slot']}，"
+                        f"同步为检测结果")
+                    self.current_role = details['slot']
+            elif mode==3:
+                start = compute_start_point_from_crop(image,mode=mode)
+                if start is None:
+                    start = compute_start_point_from_crop(image, mode,th=0.7)
+            else:
+                start=None
+            CUS_LOGGER.debug(f"当前起点坐标{start}")
             for i, m in enumerate(matches):
-                CUS_LOGGER.debug(f"  {i}: {m['name']} at {m['location']}, 相似度: {m.get('similarity')}")
-        else:
-            raise NoBossError
+                cm = m.get('corner_marker', None)
+                cm_str = f' [角标:{cm["name"]}]' if cm else ''
+                inf_str = ' [可传染]' if m.get('infectable', False) else ''
+                CUS_LOGGER.debug(f"  {i}: {m['name']} at {m['location']}, 相似度: {m.get('similarity')}{cm_str}{inf_str}")
+            if self.debug:
+                save_analysis_map_debug(
+                    image, matches, start=start,
+                    tag=f"mode{mode}" + ("_sel" if target_selection else ""))
+            boss_head_x = [m['location'][0] for m in matches if m['name'] in ('boss', 'head')]
+            if boss_head_x:
+                rightmost = max(boss_head_x)
+                matches = [m for m in matches if m['location'][0] <= rightmost]
+                CUS_LOGGER.debug(f"过滤boss/head右侧节点后，剩余 {len(matches)} 个匹配")
+                for i, m in enumerate(matches):
+                    CUS_LOGGER.debug(f"  {i}: {m['name']} at {m['location']}, 相似度: {m.get('similarity')}")
+                break
+            # 至少复核一次，之后按 3 秒窗口反复识图：单次识图耗时随机型而定，用
+            # 时间窗口而非固定延时让设备自行决定复核次数；窗口结束仍识别不到时把
+            # 漏检记成错误日志并返回，交给调用方按原有流程处理，不中断整个流程，
+            # 单位为秒。
+            if refresh and time.monotonic() - tm >= 3:
+                CUS_LOGGER.error(
+                    f"识图(模式{mode})在限定时间内未识别到boss/head节点，放弃本次识图")
+                return False
+            if not refresh:
+                CUS_LOGGER.warning(
+                    f"识图(模式{mode})未识别到boss/head节点，疑似慈怀闪光造成的瞬时漏检")
+                CUS_LOGGER.warning("刷新截图缓冲区后在限定时间内重新匹配地图图标")
+            refresh = True
+        # 停机标志在识图过程中被置位时不再继续建图：既不做无意义的决策，也避免
+        # 循环未跑完时 matches/start 还没赋值。
+        if self._stop:
+            return False
         if mode == 3:
             self.nodes, self.edges, start_idx = build_rightward_graph2(
                 matches, start=start,
