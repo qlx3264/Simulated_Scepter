@@ -499,7 +499,10 @@ jobs:
           python-version: "3.12"
 
       - name: Sync dependencies
-        run: uv sync
+        shell: pwsh
+        run: |
+          ./scripts/uv_fallback.ps1
+          exit $LASTEXITCODE
 
       # 打包前先把版本号写进工作区的源码：EXTRA.py 会被 PyInstaller 打进 exe，
       # 版本号是运行时读取的，所以必须先改再打包，exe 里才会是新版本号。
