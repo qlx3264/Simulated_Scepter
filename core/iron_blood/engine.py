@@ -43,6 +43,7 @@ class IronBloodUniverse(AnyFateUniverse):
         self.tk = text_keys(self.my_fate)
         self.expectation_weight = 0 # 地图路径期望
         self.first_plane_weight = 0 # 保存开局期望
+        self.first_plane_weight_valid = False # 开局期望是否已经确认识别成功
         # 铁血战士使用毁灭专属事件优先级
         event_iron_blood = resource_path(__file__, "config/event_iron_blood.yml")
         with open(event_iron_blood, encoding="utf-8", errors="ignore") as f:
@@ -72,6 +73,7 @@ class IronBloodUniverse(AnyFateUniverse):
         self.elapsed_time = 0  # 重置演算持续时间
         self.kill_count = 0
         self.first_plane_weight = 0 # 重置开局期望
+        self.first_plane_weight_valid = False # 重置开局期望识别状态
         self.fail_match_count=0
         self.node_count=0
         self.chaoyan_seen = False  # 新轮回重置「超验之镜」已进过标记
@@ -88,10 +90,10 @@ class IronBloodUniverse(AnyFateUniverse):
             start_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.run_start_time))
             total_min = self.elapsed_time // 60
             total_sec = self.elapsed_time % 60
-            if self.first_plane_weight == 0:
-                line = f"轮回次数:{self.count}, 开始时间:{start_time_str}, 用时:{total_min}分{total_sec}秒, 击杀数:{self.kill_count:02d}"
-            else:
+            if self.first_plane_weight_valid:
                 line = f"轮回次数:{self.count}, 开始时间:{start_time_str}, 用时:{total_min}分{total_sec}秒, 击杀数:{self.kill_count:02d}, 开局期望:{self.first_plane_weight:.2f}"
+            else:
+                line = f"轮回次数:{self.count}, 开始时间:{start_time_str}, 用时:{total_min}分{total_sec}秒, 击杀数:{self.kill_count:02d}"
             with open(record_file, "a", encoding="utf-8") as file:
                 file.write(line + "\n")
         except Exception as e:
@@ -166,26 +168,40 @@ class IronBloodUniverse(AnyFateUniverse):
         else:
             CUS_LOGGER.warning("多么绝妙的巧合。你我都心知肚明。")
             return
-        self.expectation_weight = 0 # 重置地图路径期望
-        tm = time.time()
-        while time.time() - tm < 3: # 3秒内反复识别地图直至成功
-            self.try_analysis_map(1,1)
-            if self.expectation_weight:
-                break
-        if self.early_stop and self.gwypzmgzcndqlp:
-            CUS_LOGGER.debug(f"当前一面最低期望{self.first_plane_min_weight}，识别到开局期望{self.expectation_weight}")
-            if self.plane_floor==1:
-                self.first_plane_weight = self.expectation_weight
-                if self.expectation_weight and self.expectation_weight < self.first_plane_min_weight:
-                    CUS_LOGGER.warning("如果不能将此世从「毁灭」中拯救它，那就让寰宇在愤怒中燃烧吧......")
-                    self.need_end=True
-                elif not self.expectation_weight:
-                    CUS_LOGGER.warning("识别开局期望失败")
+        # 「进入位面」按钮出现时，节点图可能还在逐个生成节点、甚至还在把随机节点替换成
+        # 精英节点。此时识别会漏掉尚未出现的节点，得到一张不完整的图，期望值随之偏低
+        # （实测可为 0 或正常值的一半），本应继续打的开局会被误判成期望过低而退出，
+        # 于是 kill_record.txt 里留下一条用时明显偏短的记录，即「假账」。
+        # 因此先等节点图渲染稳定（连续多次匹配结果一致）并留下这张稳定帧，随后立即点击
+        # 「进入位面」让游戏开始播入场动画，最后才用稳定帧做一次完整识别：
+        # 点按钮并不需要等识别结果，把角标检测与寻路挪到动画期间做就不占开局时间。
+        render_status, stable_frame = self.wait_map_rendered(1)
         for _ in range(5):
             self.click_text(text="进入位面", box=[907, 1009, 857, 891])
             self.node_count = 0
             self.new_node = True
         key_mouse_manager.wait()
+        if render_status == self.MAP_ANALYSIS_OK:
+            expectation_confirmed = self.analyze_map_until_stable(1, 1, captured=stable_frame)
+        else:
+            # 节点图没能在限定时间内渲染稳定，这次的期望值不予采信
+            expectation_confirmed = render_status
+        if self.early_stop and self.gwypzmgzcndqlp:
+            CUS_LOGGER.debug(f"当前一面最低期望{self.first_plane_min_weight}，识别到开局期望{self.expectation_weight}")
+            if self.plane_floor==1:
+                self.first_plane_weight_valid = True
+                if expectation_confirmed == self.MAP_ANALYSIS_OK:
+                    self.first_plane_weight = self.expectation_weight
+                    if self.expectation_weight < self.first_plane_min_weight:
+                        CUS_LOGGER.warning("如果不能将此世从「毁灭」中拯救它，那就让寰宇在愤怒中燃烧吧......")
+                        self.need_end=True
+                else:
+                    # 识别失败时把原因记成负数，便于事后分辨失败类型：
+                    # -1 等待渲染稳定超时、-2 匹配不到地图图标、-3 缺少首领节点、-4 未找到有效路径
+                    self.first_plane_weight = expectation_confirmed
+                    CUS_LOGGER.warning(
+                        f"识别开局期望失败（{self.MAP_ANALYSIS_STATUS.get(expectation_confirmed, '未知原因')}），"
+                        f"本局不依据期望值提前退出，开局期望记为{expectation_confirmed}")
         return
     def initing_map2(self):
         key_mouse_manager.keyUp("w")
