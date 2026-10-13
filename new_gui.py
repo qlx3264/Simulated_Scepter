@@ -1560,7 +1560,12 @@ def main(show, startup_args=None):
             print(f"异常退出，进程已结束,退出代码:{e.code}")
             input("按Enter键退出...")
 if __name__ == "__main__":
-    startup_args = parse_startup_args()
+    # 打包版不支持启动参数，避免双击或外部启动参数触发误导性提示。
+    startup_args = (
+        parse_startup_args([])
+        if getattr(sys, "frozen", False)
+        else parse_startup_args()
+    )
     fault_log_file = open("logs/crash_dump.txt", "w", encoding="utf-8")
     faulthandler.enable(file=fault_log_file)
     main(1, startup_args)
