@@ -20,6 +20,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
+
 from importing import load_img
 
 # core.iron_blood.engine 在导入期会读取灰度模板，必须先预热图片缓存。
@@ -191,7 +192,7 @@ class MapReadyTest(unittest.TestCase):
                          engine.analyze_map_until_stable(1, 1))
         self.assertEqual(0, engine.expectation_weight)
         self.assertEqual(1, logger.warning.call_count)
-        self.assertLessEqual(clock.now, engine.MAP_READY_TIMEOUT + 1)
+        self.assertLessEqual(clock.now, 11)  # 等待上限 10 秒，允许一次循环的额外步进
 
     def test_empty_map_is_waited_for_without_debug_dumps(self):
         """节点图还没出现时继续等待，且不反复写 bigmaperror 调试截图。"""

@@ -700,17 +700,12 @@ class AnyFateUniverse(SimulatedUniverse):
         self.click_text(text="击败该首领",box=[1108, 1385, 267, 290])
         self.click_text(text="确认选择",box=[1633, 1733, 961, 990])
 
-    # 节点图是逐节点渲染出来的：识别开始得太早会漏掉尚未出现的节点，
-    # 得到一张「缺节点」的图，期望值随之偏低（实测可为 0 或正常值的一半），
-    # 使开局期望被误判为过低而提前退出，留下用时偏短的「假账」记录。
-    # 因此识别必须使用最新截图，并等到连续多次匹配结果一致（渲染稳定）才采信；
-    # 等待期间只做开销较小的图标匹配，稳定后再做一次完整的角标检测与寻路。
-    MAP_READY_TIMEOUT = 10.0  # 等待节点图渲染稳定的最长时间（秒）
-    MAP_READY_INTERVAL = 0.2  # 相邻两次匹配之间的最小间隔（秒），单次匹配耗时更长时不再额外等待
-    MAP_READY_STABLE_ROUNDS = 3  # 需要连续几次结果一致才认为渲染稳定，用于跨过渲染中途的停顿
-    MAP_READY_POS_TOLERANCE = 4  # 节点中心坐标的量化像素，用于抵消渲染抖动
-    # analyze_map_until_stable 的返回值：正数表示识别成功，负数表示失败原因。
-    # 失败原因会以负数写入开局期望，便于事后分辨这次到底是「图没识别出来」还是「期望值本来就低」，不用再靠猜。
+    # 节点图是逐节点渲染出来的：识别开始得太早会漏掉尚未出现的节点，得到一张「缺节点」的图，
+    # 期望值随之偏低（实测可为 0 或正常值的一半），使开局期望被误判为过低而提前退出，
+    # 留下用时偏短的「假账」记录。因此识别必须使用最新截图，并等到连续多次匹配结果一致
+    # （渲染稳定）才采信；等待期间只做开销较小的图标匹配，稳定后再做一次完整的角标检测与寻路。
+    # 下面这组状态码是 analyze_map_until_stable 的返回值，也是写进 kill_record 的失败原因：
+    # 正数表示识别成功，负数表示失败原因，便于事后分辨「图没识别出来」和「期望值本来就低」。
     MAP_ANALYSIS_OK = 1  # 识别成功
     MAP_ANALYSIS_TIMEOUT = -1  # 等待节点图渲染稳定超时
     MAP_ANALYSIS_NO_MATCH = -2  # 始终匹配不到地图图标
@@ -735,35 +730,30 @@ class AnyFateUniverse(SimulatedUniverse):
         Returns:
             tuple: 按（图标名, 量化坐标）排序后的元组；节点图还没出现时为空元组。
         """
+        # 坐标量化到 4 像素：抵消渲染抖动，又不至于把相邻两个节点混为同一个
         return tuple(sorted(
-            (m['name'], int(m['location'][0] // self.MAP_READY_POS_TOLERANCE),
-             int(m['location'][1] // self.MAP_READY_POS_TOLERANCE))
+            (m['name'], int(m['location'][0] // 4), int(m['location'][1] // 4))
             for m in matches
         ))
 
-    def wait_map_rendered(self, mode=1, timeout=None, interval=None):
-        """等节点图渲染稳定。
+    def wait_map_rendered(self, mode=1):
+        """等节点图渲染稳定，返回本次等待的状态码与稳定帧。
 
-        节点图是从左向右逐个生成的画面，渲染途中识别会漏掉还没出现的节点，
-        而替换精英节点的动画中途也会出现短暂停顿。这里只做开销较小的图标匹配：
-        连续 MAP_READY_STABLE_ROUNDS 次匹配到完全相同的节点才算渲染结束。
+        节点图是从左向右逐个生成的画面，渲染途中识别会漏掉还没出现的节点；
+        替换精英节点的动画中途也会停顿一两帧。这里只做开销较小的图标匹配，
+        连续三次匹配到完全相同的节点才算渲染结束。
 
         Args:
             mode: 识别模式，含义同 try_analysis_map。
-            timeout: 等待上限（秒），默认为 MAP_READY_TIMEOUT。
-            interval: 相邻两次匹配的最小间隔（秒），默认为 MAP_READY_INTERVAL；
-                单次匹配耗时更长时不再额外等待，避免拖慢性能较差的机器。
 
         Returns:
             tuple: (状态码, 稳定帧)。状态码为 MAP_ANALYSIS_OK 时第二个元素是
                 (image, matches)，即判定稳定的那一帧与它的匹配结果，可以直接交给
                 try_analysis_map 复用，不必重新截图、重新匹配；其余情况第二个元素
-                为 None，状态码含义为 MAP_ANALYSIS_NO_MATCH（等待期间一次都没
-                匹配到地图图标）或 MAP_ANALYSIS_TIMEOUT。
+                为 None，状态码为 MAP_ANALYSIS_NO_MATCH（等待期间一次都没匹配到
+                地图图标）或 MAP_ANALYSIS_TIMEOUT。
         """
-        timeout = self.MAP_READY_TIMEOUT if timeout is None else timeout
-        interval = self.MAP_READY_INTERVAL if interval is None else interval
-        deadline = time.time() + timeout
+        deadline = time.time() + 10  # 节点图通常一两秒渲染完，这里给性能较差的机器留足时间
         previous_signature = None
         stable_rounds = 0
         seen_match = False
@@ -779,36 +769,33 @@ class AnyFateUniverse(SimulatedUniverse):
             elif signature == previous_signature:
                 seen_match = True
                 stable_rounds += 1
-                if stable_rounds >= self.MAP_READY_STABLE_ROUNDS:
+                if stable_rounds >= 3:
+                    # 连续三次一致才采信：替换精英节点的动画中途会停顿一两帧
                     CUS_LOGGER.debug(f"节点图已渲染稳定，共 {len(signature)} 个节点")
                     return self.MAP_ANALYSIS_OK, (image, matches)
             else:
                 seen_match = True
                 previous_signature = signature
                 stable_rounds = 1
-            # 单次匹配本身就要几百毫秒，已经提供了间隔，不再叠加固定等待
-            sleep_time = max(0.0, interval - (time.time() - round_start))
+            # 单次匹配本身就要几百毫秒，已经构成间隔，不再叠加固定等待
+            sleep_time = max(0.0, 0.2 - (time.time() - round_start))
             if time.time() + sleep_time >= deadline:
                 break
             time.sleep(sleep_time)
         status = self.MAP_ANALYSIS_TIMEOUT if seen_match else self.MAP_ANALYSIS_NO_MATCH
-        CUS_LOGGER.warning(
-            f"等待{timeout:.1f}秒后节点图仍未渲染稳定（{self.MAP_ANALYSIS_STATUS[status]}）")
+        CUS_LOGGER.warning(f"等待节点图渲染稳定超时（{self.MAP_ANALYSIS_STATUS[status]}）")
         return status, None
 
-    def analyze_map_until_stable(self, mode=1, path_mode=2, timeout=None, interval=None,
-                                 captured=None):
+    def analyze_map_until_stable(self, mode=1, path_mode=2, captured=None):
         """等节点图渲染稳定后识别一次开局期望，返回本次识别的状态码。
 
         调用方（例如「进入位面」后推断开局期望）必须依据返回值决定能否使用
-        self.expectation_weight：返回值不是 MAP_ANALYSIS_OK 时说明节点
-        图没能稳定识别，此时期望值不可信，不允许据此提前退出演算。
+        self.expectation_weight：返回值不是 MAP_ANALYSIS_OK 时说明节点图没能
+        稳定识别，此时期望值不可信，不允许据此提前退出演算。
 
         Args:
             mode: 识别模式，含义同 try_analysis_map。
             path_mode: 构图方式，含义同 try_analysis_map。
-            timeout: 等待上限（秒），默认为 MAP_READY_TIMEOUT。
-            interval: 相邻两次匹配的最小间隔（秒），默认为 MAP_READY_INTERVAL。
             captured: 可选的 (image, matches) 稳定帧。调用方已经调用过
                 wait_map_rendered、并希望把耗时的完整识别推迟到点击之后
                 （例如先点「进入位面」让游戏播入场动画，识别与动画重叠）时传入，
@@ -819,17 +806,16 @@ class AnyFateUniverse(SimulatedUniverse):
                 为可信结果（可能为 0）；其余负数表示失败原因，见 MAP_ANALYSIS_STATUS。
         """
         if captured is None:
-            render_status, captured = self.wait_map_rendered(mode, timeout, interval)
-            if render_status != self.MAP_ANALYSIS_OK:
+            status, captured = self.wait_map_rendered(mode)
+            if status != self.MAP_ANALYSIS_OK:
                 self.expectation_weight = 0
-                return render_status
+                return status
         image, matches = captured
         # 节点图稳定后再完整识别一次：角标检测、建图寻路只有对稳定的图才有意义
         self.fail_match_count = 0
         self.expectation_weight = 0
         try:
-            if self.try_analysis_map(mode, path_mode, save_debug=False,
-                                     image=image, matches=matches):
+            if self.try_analysis_map(mode, path_mode, image=image, matches=matches):
                 return self.MAP_ANALYSIS_OK
             status = self.MAP_ANALYSIS_NO_PATH
         except NoMatchError:
@@ -842,14 +828,12 @@ class AnyFateUniverse(SimulatedUniverse):
         self.expectation_weight = 0
         return status
 
-    def try_analysis_map(self,mode=1,path_mode=2,save_debug=True,image=None,matches=None):
+    def try_analysis_map(self,mode=1,path_mode=2,image=None,matches=None):
         """识别当前节点图并算出路径理论期望值。
 
         Args:
             mode: 识别模式：1 进入位面前的总览图，2 选择移动目标，3 地图更新。
             path_mode: 1 用 build_rightward_graph，其余用 build_rightward_graph2。
-            save_debug: 匹配不到地图图标时是否把当前画面存到 temp/bigmaperror 以便排查；
-                批量等待渲染稳定时传 False，避免反复写大图。
             image: 可选，复用调用方刚截取的画面；不传则重新截图。
             matches: 可选，复用调用方对 image 做好的匹配结果；不传则自己匹配。
                 与 image 一起传可以在「先点击、后识别」时避开已经切走的画面。
@@ -863,27 +847,21 @@ class AnyFateUniverse(SimulatedUniverse):
         """
         # 默认必须重新截图：self.screen 可能是上一轮循环留下的旧画面，
         # 而节点图是一次性渲染完成的，用旧画面识别会漏掉后出现的节点。
-        provided = matches is not None
         if image is None:
             image = self.get_screen()
-        if not provided:
+        if matches is None:
             matches = match_multiple_targets(image, mode)
-        CUS_LOGGER.debug(f"当前模式{mode},找到 {len(matches)} 个匹配")
-        if len(matches)==0 and provided:
-            # 复用的画面由调用方确认过节点图已渲染稳定，不必再点击或重试
-            raise NoMatchError
-        if len(matches)==0:
-            self.click_text(text="点击空白处关闭", box=[875, 1047, 776, 807])
-            CUS_LOGGER.warning("未匹配到任何地图图标却错误进入寻路阶段，可能是误识别")
-            CUS_LOGGER.warning("刷新截图缓冲区后最后一次尝试匹配地图图标")
-            image = self.get_screen()
-            matches = match_multiple_targets(image, mode)
-            CUS_LOGGER.debug(f"当前模式{mode},找到 {len(matches)} 个匹配")
-            if len(matches) == 0:
-                if save_debug:
+            if len(matches)==0:
+                self.click_text(text="点击空白处关闭", box=[875, 1047, 776, 807])
+                CUS_LOGGER.warning("未匹配到任何地图图标却错误进入寻路阶段，可能是误识别")
+                CUS_LOGGER.warning("刷新截图缓冲区后最后一次尝试匹配地图图标")
+                image = self.get_screen()
+                matches = match_multiple_targets(image, mode)
+                if len(matches) == 0:
                     self.save_screen(not_now=True, save_path=os.path.join(PATHS["temp"], "bigmaperror"))
                     self.save_screen(save_path=os.path.join(PATHS["temp"], "bigmaperror"))
-                raise NoMatchError
+                    raise NoMatchError
+        CUS_LOGGER.debug(f"当前模式{mode},找到 {len(matches)} 个匹配")
         # 检测角标（pig/reinforce/alienation等），关联到最近节点
         corner_results = detect_corner_markers(image, matches, mode)
         if corner_results:
