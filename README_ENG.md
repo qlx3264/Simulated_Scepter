@@ -118,6 +118,14 @@ Method 2: Download the source code and deploy locally. If you have no experience
 uv sync
 uv run new_gui.py
 ```
+
+If the default Tsinghua mirror is unavailable, it tries Tsinghua, Aliyun, USTC and the official PyPI index in order, moving to the next one when a download fails, and only stops with an error when every mirror has failed.
+
+```plaintext
+powershell -ExecutionPolicy Bypass -File scripts/uv_fallback.ps1
+```
+
+The script runs `uv sync` by default; other uv commands work too, e.g. `powershell -ExecutionPolicy Bypass -File scripts/uv_fallback.ps1 -Executable uvx -Arguments 'ruff check .'`.
 ----------------------------------------------------------------------------------------------
 
 # Configuration Recommendations

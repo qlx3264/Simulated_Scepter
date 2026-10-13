@@ -121,6 +121,7 @@ sqlite3 config/backup/emergency.db "DELETE FROM node_log;"
 ```plaintext
 uv sync
 ```
+上条指令如因网络问题不可用，也可以换成其它 uv 命令，例如 `powershell -ExecutionPolicy Bypass -File scripts/uv_fallback.ps1 -Executable uvx -Arguments 'ruff check .'`。
 
 **启动权杖**
 

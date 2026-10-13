@@ -18,7 +18,10 @@ jobs:
           python-version: "3.12"
 
       - name: Ruff — only crash-level rules
-        run: uvx ruff check . --exclude test --select=F821,E722,F403
+        shell: pwsh
+        run: |
+          ./scripts/uv_fallback.ps1 -Executable uvx -Arguments 'ruff','check','.','--exclude','test','--select=F821,E722,F403'
+          exit $LASTEXITCODE
 
       - name: Compile-check — catch syntax errors
         run: python -m compileall -q -x test .
@@ -33,9 +36,12 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Sync dependencies & verify main module imports
+      - name: Sync dependencies
+        run: |
+          ./scripts/uv_fallback.ps1
+          exit $LASTEXITCODE
+
+      - name: Verify main module imports
         env:
           PYTHONIOENCODING: utf-8
-        run: |
-          uv sync
-          uv run python -c "import new_gui; print('Startup import OK')"
+        run: uv run python -c "import new_gui; print('Startup import OK')"

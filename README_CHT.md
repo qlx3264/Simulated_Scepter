@@ -118,6 +118,14 @@ sqlite3 config/backup/emergency.db "DELETE FROM node_log;"
 uv sync
 uv run new_gui.py
 ```
+
+若預設的清華源無法使用，會依序嘗試清華、阿里雲、中科大和 PyPI 官方源，某個源下載失敗就自動換下一個，全部失敗才報錯停止。
+
+```plaintext
+powershell -ExecutionPolicy Bypass -File scripts/uv_fallback.ps1
+```
+
+指令碼預設執行 `uv sync`；也可以換成其它 uv 命令，例如 `powershell -ExecutionPolicy Bypass -File scripts/uv_fallback.ps1 -Executable uvx -Arguments 'ruff check .'`。
 ----------------------------------------------------------------------------------------------
 
 # 相關配置建議
