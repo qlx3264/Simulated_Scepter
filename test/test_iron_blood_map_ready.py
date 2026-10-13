@@ -248,14 +248,13 @@ class AnalysisStatusTest(unittest.TestCase):
 class InitingMapTest(unittest.TestCase):
     """「进入位面」后的开局期望识别：先点击再识别，只有确认成功才参与退出判断。"""
 
-    def run_initing_map(self, confirmed, weight=0.0, render_ok=True):
+    def run_initing_map(self, confirmed, weight=0.0, render_ok=True, early_stop=True):
         engine = object.__new__(IronBloodUniverse)
         engine.plane_floor = -1
-        engine.early_stop = True
+        engine.early_stop = early_stop
         engine.gwypzmgzcndqlp = True
         engine.first_plane_min_weight = 8.0
         engine.first_plane_weight = 0
-        engine.first_plane_weight_valid = True
         engine.need_end = False
         engine.expectation_weight = 0
         engine.third_plane_pause_count = 0
@@ -299,7 +298,7 @@ class InitingMapTest(unittest.TestCase):
         """点「进入位面」不必等识别结果，耗时的识别挪到游戏播入场动画期间做。"""
         engine = self.run_initing_map(True, 6.5)
 
-        self.assertEqual(["wait"] + ["click"] * 5 + ["analyze"], engine.events)
+        self.assertEqual(["wait", "click", "analyze"], engine.events)
         self.assertEqual(engine.stable_frame, engine.captured)
 
     def test_unstable_map_skips_analysis_and_never_stops_the_run(self):
@@ -307,84 +306,104 @@ class InitingMapTest(unittest.TestCase):
         engine = self.run_initing_map(True, 6.5, render_ok=False)
 
         self.assertNotIn("analyze", engine.events)
-        self.assertEqual(5, engine.clicks.count("进入位面"))
+        self.assertEqual(1, engine.clicks.count("进入位面"))
         self.assertEqual(IronBloodUniverse.MAP_ANALYSIS_TIMEOUT, engine.first_plane_weight)
         self.assertFalse(engine.need_end)
 
     def test_confirmed_low_expectation_still_stops_the_run(self):
         engine = self.run_initing_map(True, 6.5)
 
-        self.assertTrue(engine.first_plane_weight_valid)
         self.assertEqual(6.5, engine.first_plane_weight)
         self.assertTrue(engine.need_end)
-        self.assertEqual(5, engine.clicks.count("进入位面"))
+        self.assertEqual(1, engine.clicks.count("进入位面"))
 
     def test_confirmed_good_expectation_keeps_the_run(self):
         engine = self.run_initing_map(True, 8.5)
 
-        self.assertTrue(engine.first_plane_weight_valid)
         self.assertEqual(8.5, engine.first_plane_weight)
+        self.assertFalse(engine.need_end)
+
+    def test_expectation_is_recorded_even_when_early_stop_is_off(self):
+        """记录开局期望与「是否据此提前退出」解耦：关掉提前退出也照样留下读数。"""
+        engine = self.run_initing_map(True, 6.5, early_stop=False)
+
+        self.assertEqual(6.5, engine.first_plane_weight)
         self.assertFalse(engine.need_end)
 
     def test_unconfirmed_expectation_never_stops_the_run(self):
         """识别没确认成功时不得提前退出，这正是「假账」要根治的地方。"""
         engine = self.run_initing_map(False)
 
-        self.assertTrue(engine.first_plane_weight_valid)
         self.assertEqual(IronBloodUniverse.MAP_ANALYSIS_TIMEOUT, engine.first_plane_weight)
         self.assertFalse(engine.need_end)
-        self.assertEqual(5, engine.clicks.count("进入位面"))
+        self.assertEqual(1, engine.clicks.count("进入位面"))
 
 
 class RecordLineTest(unittest.TestCase):
-    """kill_record.txt 的「开局期望」条目由「识别是否确认成功」决定。"""
+    """kill_record.txt 一定会写「开局期望」：确认识别写真实值（含 0），失败/未识别写负数原因码。"""
 
-    def write_record(self, confirmed, weight):
+    def write_record(self, weight, restart_first=False):
         engine = object.__new__(IronBloodUniverse)
         engine.plane_floor = 1
         engine.kill_count = 3
         engine.count = 447
         engine.run_start_time = 1700000000.0
         engine.first_plane_weight = weight
-        engine.first_plane_weight_valid = confirmed
         engine.need_end = True
+        engine.record = False  # 关掉录像分支，只验证每局计数的重置
         engine.stop = lambda: None
         clock = FakeClock()
         clock.now = engine.run_start_time + 23.0
+        self.last_engine = engine  # 供用例在记录写完后继续断言引擎状态
         with TemporaryDirectory() as backup:
             with patch.object(iron_blood_engine, "PATHS", {"backup": backup}), \
                     patch.object(iron_blood_engine, "time", clock), \
                     patch.object(SimulatedUniverse, "end_of_university", lambda self: None), \
                     patch.object(IronBloodUniverse, "init_map", lambda self: None), \
                     patch.object(iron_blood_engine, "CUS_LOGGER") as logger:
+                if restart_first:
+                    engine.restart_recording()
                 engine.end_of_university()
                 # 写文件失败会被 end_of_university 吞掉并记 error，这里显式暴露
                 self.assertFalse(logger.error.called)
             return Path(backup, "kill_record.txt").read_text(encoding="utf-8")
 
     def test_confirmed_expectation_is_written(self):
-        line = self.write_record(True, 3.5)
+        line = self.write_record(3.5)
 
         self.assertIn("开局期望:3.50", line)
         self.assertIn("用时:0分23秒", line)
 
     def test_confirmed_zero_expectation_is_still_written(self):
         """确认识别到的 0 期望是真读数，照常写入记录；旧实现会漏掉这一条。"""
-        line = self.write_record(True, 0)
+        line = self.write_record(0)
 
         self.assertIn("开局期望:0.00", line)
 
     def test_failure_reason_is_written_as_negative_weight(self):
         """识别失败时把原因码写成负数，便于事后分辨失败类型。"""
-        line = self.write_record(True, IronBloodUniverse.MAP_ANALYSIS_NO_MATCH)
+        line = self.write_record(IronBloodUniverse.MAP_ANALYSIS_NO_MATCH)
 
         self.assertIn("开局期望:-2.00", line)
 
-    def test_unexpected_run_without_analysis_has_no_expectation(self):
-        """连识别都没走到（如未开启提前退出）时不写「开局期望」。"""
-        line = self.write_record(False, 0)
+    def test_restart_before_the_record_keeps_the_expectation(self):
+        """退出流程里「点击空白结算」可能先于「结算界面」触发，不能因此丢掉开局期望。"""
+        line = self.write_record(3.5, restart_first=True)
 
-        self.assertNotIn("开局期望", line)
+        self.assertIn("开局期望:3.50", line)
+
+    def test_expectation_is_cleared_after_the_record(self):
+        """本局记录写完就重置为「还没做开局识别」，避免下一局沿用上一局的读数。"""
+        self.write_record(3.5)
+
+        self.assertEqual(IronBloodUniverse.MAP_ANALYSIS_NO_INIT,
+                         self.last_engine.first_plane_weight)
+
+    def test_run_without_analysis_records_no_init_code(self):
+        """已经在模拟宇宙里直接开局时走不到识别流程，记录里写 -5，而不是少一个字段。"""
+        line = self.write_record(IronBloodUniverse.MAP_ANALYSIS_NO_INIT)
+
+        self.assertIn("开局期望:-5.00", line)
         self.assertIn("用时:0分23秒", line)
 
 
