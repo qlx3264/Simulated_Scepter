@@ -964,13 +964,13 @@ class AnyFateUniverse(SimulatedUniverse):
         self.steps = compute_all_max_steps(self.nodes, self.edges, start_idx)
         if self.debug:
             if self.replace_idx is None or discounted_delta <= 0:
-                CUS_LOGGER.info('\n替换评估：未找到有益的单节点替换')
+                CUS_LOGGER.info('替换评估：未找到有益的单节点替换')
                 highlight = None
                 alt_path = None
             else:
                 b = self.replace_idx
                 k = self.steps.get(b, -1)
-                CUS_LOGGER.debug(f"\n最佳单节点替换：索引={b}, 名称={self.nodes[b]['name']}")
+                CUS_LOGGER.debug(f"最佳单节点替换：索引={b}, 名称={self.nodes[b]['name']}")
                 CUS_LOGGER.debug(
                     f'  原类型权重 -> 新类型权重：{self.nodes[b]["weight"]:.3f} -> {delta + self.nodes[b]["weight"]:.3f} (+{delta:.3f})')
                 CUS_LOGGER.debug(f'  距离起点的最长步数 k={k}')
@@ -996,7 +996,7 @@ class AnyFateUniverse(SimulatedUniverse):
                 }
                 orig_min = sum(weight_ranges.get(n['name'], (0, 0))[0] for n in path)
                 orig_max = sum(weight_ranges.get(n['name'], (0, 0))[1] for n in path)
-                CUS_LOGGER.debug(f'\n原路径理论期望值：{self.expectation_weight:.3f} (min={orig_min}, max={orig_max})')
+                CUS_LOGGER.debug(f'原路径理论期望值：{self.expectation_weight:.3f} (min={orig_min}, max={orig_max})')
                 if baseline_ids == new_ids and b is not None:
                     if next((node for node in self.nodes if node['idx'] == b), None):
                         # 获取目标类型的权重范围
