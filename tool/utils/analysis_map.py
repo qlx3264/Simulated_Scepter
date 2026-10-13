@@ -595,6 +595,33 @@ CORNER_MARKER_DEFS = [
     {'name': 'alienation2', 'threshold': 0.9},
 ]
 
+# 扑满信标模板：pig1/pig2 是蓝色祝福扑满、pig3/pig4 是金色奇物扑满
+PIG_MARKER_NAMES = ('pig1', 'pig2', 'pig3', 'pig4')
+
+
+def is_blessing_pig(color_image, marker):
+    """按角标自身的颜色判断是否是祝福扑满（蓝色）。
+
+    扑满模板是同一个图标的换色版本，`cv2.matchTemplate` 的归一化相关由形状主导，
+    实测蓝色信标上金模板（pig3/pig4）反而比蓝模板多得约 0.03 分，故模板名不能用来区分蓝/金。
+    这里取角标框内最亮 1/4 像素的 R-B 分量：蓝信标约 -82（祝福）、金信标约 +44（奇物）。
+
+    Args:
+        color_image: 原始彩色截图 (BGR)
+        marker: detect_corner_markers 的角标 dict（含 location/size）
+
+    Returns:
+        bool | None: True 祝福扑满（蓝）、False 奇物扑满（金）、None 角标框取不到像素
+    """
+    x, y = marker['location']
+    w, h = marker['size']
+    pixels = color_image[y:y + h, x:x + w].reshape(-1, 3).astype(np.float32)
+    if pixels.size == 0:
+        return None
+    bright = pixels[np.argsort(pixels.sum(axis=1))[-max(1, len(pixels) // 4):]]
+    blue, _, red = bright.mean(axis=0)
+    return bool(red - blue < 0)
+
 
 def detect_corner_markers(color_image, matches, mode=2, marker_defs=None, max_dist=80.0):
     """在彩色原图上检测角标，并关联到最近的地图节点。
@@ -602,6 +629,7 @@ def detect_corner_markers(color_image, matches, mode=2, marker_defs=None, max_di
     使用彩色模板匹配（非灰度/Canny），因为角标具有颜色区分度。
     角标模板按「选择生效目标／选择移动目标」画面（mode=2/3）的渲染尺度采集，而
     「进入位面」总览画面（mode=1）的地图比它小约 1.2 倍，故匹配前按该比例缩小模板。
+    扑满信标（pig1~pig4）的 name 在关联后按角标实际颜色归一化为 pig1（祝福扑满）/ pig3（奇物扑满）。
 
     Args:
         color_image: 原始彩色截图 (BGR)
@@ -715,6 +743,11 @@ def detect_corner_markers(color_image, matches, mode=2, marker_defs=None, max_di
     # 写入节点属性（存储完整角标信息以便可视化框出实际位置）
     corner_results = []
     for ni, c in node_assigned.items():
+        # 扑满信标按颜色归一化族别：name 统一为 pig1（祝福扑满）/ pig3（奇物扑满）
+        if c['name'] in PIG_MARKER_NAMES:
+            blessing = is_blessing_pig(color_image, c)
+            if blessing is not None:
+                c['name'] = 'pig1' if blessing else 'pig3'
         matches[ni]['corner_marker'] = c
         corner_results.append(c)
 
