@@ -306,7 +306,8 @@ class IronBloodUniverse(AnyFateUniverse):
                 # 进入最终首领格前暂停
                 if self.next_node["name"] == "boss" and self.boss_before_pause_count > 0 and self.boss_before_pause_count <= self.kill_count:
                     CUS_LOGGER.debug(f"当前击杀数：{self.kill_count}，即将进入最终首领格，停止程序")
-                    CUS_LOGGER.info("恭喜，您即将获得铁血战士！")
+                    if self.kill_count >= 39:
+                        CUS_LOGGER.info("恭喜，您即将获得铁血战士！")
                     self.stop()
                     return
                 self.start_nodes=self.next_node
