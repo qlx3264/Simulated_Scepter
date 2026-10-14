@@ -1891,7 +1891,7 @@
       .filter(r =>
         !r.missing &&
         Number.isFinite(r.openingExpectation) &&
-        r.openingExpectation < 0
+        r.openingExpectation <= 0
       )
       .sort((a, b) => a.round - b.round);
 
