@@ -550,7 +550,6 @@ class SimulatedUniverse(UniverseUtils):
         key_mouse_manager.click(0.5062, 0.1065)
     # 事件界面
     def select_event(self):
-        tx, ty = self.tx, self.ty
         event_prior =  self.event_prior+[self.fate]
         success = self.click_text(event_prior)
         key_mouse_manager.wait()
@@ -569,9 +568,11 @@ class SimulatedUniverse(UniverseUtils):
             CUS_LOGGER.info("事已至此，我只想知道，当他们以凡人的身躯在黑潮中消散时……你为何连一滴眼泪都没有流下？")
             key_mouse_manager.click(0.1667, 0.2592)
         else:
+            # 事件选项一个都没匹配上：什么都不要点。
+            # 旧实现在这个分支盲点 click(tx, ty) 与 click(0.1167, ty - 0.1139)，
+            # 这两个坐标取自进入本函数时的 self.tx/self.ty（上一次匹配的残留位置，
+            # 失败的匹配同样会写入），与当前界面元素无关，还可能点到游戏窗口之外。
             CUS_LOGGER.info("「救世主」…在命运三相神谕的语境下，这张牌意味着谐调和完美无缺。")
-            key_mouse_manager.click(tx, ty)
-            key_mouse_manager.click(0.1167, ty - 0.1139)
     # 选取奇物
     def select_strange(self):
         img = self.get_small_interaction_img(x=0.5000, y=0.7333, mask="mask_strange", fresh=True)
