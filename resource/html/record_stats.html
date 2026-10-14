@@ -1886,6 +1886,57 @@
     detailDiv.innerHTML = `<div class="section-title" style="margin-top:0;">三面详细记录（击杀数 &gt; 30）</div>` + buildTieDetailTable(allRecords);
     panel.appendChild(detailDiv);
 
+    // 异常开局期望值记录：只统计负数，没有异常则不显示整个板块。
+    const abnormalRecords = allRecords
+      .filter(r =>
+        !r.missing &&
+        Number.isFinite(r.openingExpectation) &&
+        r.openingExpectation < 0
+      )
+      .sort((a, b) => a.round - b.round);
+
+    if (abnormalRecords.length > 0) {
+      const abnormalReasons = {
+        '-1': '等待节点图渲染稳定超时',
+        '-2': '始终匹配不到地图图标',
+        '-3': '匹配到图标但没有首领节点',
+        '-4': '匹配到图标但构建不出有效路径',
+        '-5': '本局未经过开局节点图识别（例如演算中途权杖接管）'
+      };
+
+      let abnormalHtml = `<table><thead><tr>
+        <th>来源文件</th>
+        <th class="num">轮回次数</th>
+        <th class="num">击杀数</th>
+        <th class="num">用时</th>
+        <th class="num">异常开局期望</th>
+        <th>原因</th>
+      </tr></thead><tbody>`;
+
+      for (const r of abnormalRecords) {
+        const reason = abnormalReasons[r.openingExpectation] || '—';
+
+        abnormalHtml += `<tr>
+          <td>${escapeHtml(r.sourceFile || '')}</td>
+          <td class="num">${r.round}</td>
+          <td class="num">${r.value}</td>
+          <td class="num">${formatDuration(r.duration)}</td>
+          <td class="num">${r.openingExpectation.toFixed(0)}</td>
+          <td>${escapeHtml(reason)}</td>
+        </tr>`;
+      }
+
+      abnormalHtml += '</tbody></table>';
+
+      const abnormalDiv = document.createElement('div');
+      abnormalDiv.className = 'full-width';
+      abnormalDiv.innerHTML =
+        `<div class="section-title" style="margin-top:0;">异常开局期望值记录（共 ${abnormalRecords.length} 条）</div>` +
+        abnormalHtml;
+
+      panel.appendChild(abnormalDiv);
+    }
+    
     const validRecords = allRecords
       .filter(r => !r.missing && Number.isFinite(r.openingExpectation) && r.openingExpectation > 0)
       .map(r => ({
