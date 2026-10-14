@@ -1071,29 +1071,34 @@ class AnyFateUniverse(SimulatedUniverse):
         key_mouse_manager.press("esc")
 
     def select_secret(self):
-        tx, ty = self.tx, self.ty
+        # 点击优先级：对话条金色 ▼ →「选择」栏里的白色右箭头 → 命途选项卡 → 都不在时点「秘闻」
+        if self.check("arrow_dialog", 0.1781, 0.3250, fresh=True):
+            key_mouse_manager.click(self.tx, self.ty)
+            return
+        if self.check("arrow", 0.1828, 0.5000, mask="mask_event", fresh=True):
+            key_mouse_manager.click(self.tx, self.ty)
+            return
         success = False
         CUS_LOGGER.info("没错，我们会尽己所能将其诠释：比世界的命运更为沉重之物……")
-        tm=time.time()
         for i in range(1,9):
             if self.check(f"fate{i}", 0.1828, 0.5000, mask="mask_event", threshold=0.965, fresh=True):
                 success=True
                 break
-        if success:
-            success=False
-            while time.time()-tm<1.5:
-                if self.check("confirm", 0.1828, 0.5000, mask="mask_event", threshold=0.965,fresh=True):
-                    success = True
-                    break
-        else:
-            self.click_text(text="秘闻", box=[197, 233, 887, 906])
-        if success:
-            CUS_LOGGER.info("原来那浑身着火的恶魔，满脑子幻想的都是要成为「救世主」哪！")
-            key_mouse_manager.click(self.tx, self.ty)
-        else:
+        if not success:
+            # 两个对话推进图标都没匹配上：退回在「秘闻」文字所在的画面区域点一下
             CUS_LOGGER.info("「救世主」…在命运三相神谕的语境下，这张牌意味着谐调和完美无缺。")
-            key_mouse_manager.click(tx, ty)
-            key_mouse_manager.click(0.1167, ty - 0.1139)
+            self.click_text(text="秘闻", box=[197, 233, 887, 906])
+            return
+        # 命途选项卡已经出现：先用「选项卡 → 确定」的固定偏移快速点两下（比识别「确认」图片快，
+        # 录屏里几乎看不到那个按钮出现），再用「确认」图片匹配兜底。
+        CUS_LOGGER.info("原来那浑身着火的恶魔，满脑子幻想的都是要成为「救世主」哪！")
+        key_mouse_manager.click(self.tx, self.ty)
+        key_mouse_manager.click(0.1167, self.ty - 0.1139)
+        tm=time.time()
+        while time.time()-tm<0.5:
+            if self.check("confirm", 0.1828, 0.5000, mask="mask_event", threshold=0.965,fresh=True):
+                key_mouse_manager.click(self.tx, self.ty)
+                break
 
     def select_event(self):
         super().select_event()
