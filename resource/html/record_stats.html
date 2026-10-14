@@ -1887,7 +1887,7 @@
     panel.appendChild(detailDiv);
 
     const validRecords = allRecords
-      .filter(r => !r.missing && Number.isFinite(r.openingExpectation))
+      .filter(r => !r.missing && Number.isFinite(r.openingExpectation) && r.openingExpectation > 0)
       .map(r => ({
         round: r.round,
         kills: r.value,
