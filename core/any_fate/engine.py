@@ -1219,35 +1219,33 @@ class AnyFateUniverse(SimulatedUniverse):
                 self.click_text(text="点击空白", box=[872, 1048, 729, 1015],warning=False)
         key_mouse_manager.press("esc")
 
+    # 命途选项卡 →「确定」按钮的手量固定偏移：选项卡是固定尺寸的单行卡片（不折行），所以这个偏移一直准；
+    # 事件路径的「确定」贴在会折行的选项文本下方，两处不能共用一个偏移，见 SimulatedUniverse.confirm_point
     def select_secret(self):
-        # 点击优先级：对话条金色 ▼ →「选择」栏里的白色右箭头 → 命途选项卡 → 都不在时点「秘闻」
-        if self.check("arrow_dialog", 0.1781, 0.3250, fresh=True):
+        # 点击优先级：对话条金色 ▼ →「选择」栏白色箭头 → 命途选项卡 → 都不在时点「秘闻」
+        if self.check("arrow_dialog", 0.1781, 0.3250, mask="mask_dialog", fresh=True):
             key_mouse_manager.click(self.tx, self.ty)
             return
-        if self.check("arrow", 0.1828, 0.5000, mask="mask_event", fresh=True):
+        # 图标（白色右箭头、命途选项卡）都在左侧图标列，与 select_event 用同一套区域
+        if self.check("arrow", 0.2865, 0.5000, mask="mask_event_icon", fresh=True):
             key_mouse_manager.click(self.tx, self.ty)
             return
         success = False
         CUS_LOGGER.info("没错，我们会尽己所能将其诠释：比世界的命运更为沉重之物……")
         for i in range(1,9):
-            if self.check(f"fate{i}", 0.1828, 0.5000, mask="mask_event", threshold=0.965, fresh=True):
+            if self.check(f"fate{i}", 0.2865, 0.5000, mask="mask_event_icon", threshold=0.965, fresh=True):
                 success=True
                 break
         if not success:
-            # 两个对话推进图标都没匹配上：退回在「秘闻」文字所在的画面区域点一下
+            # 两个图标都没匹配上：在「秘闻」文字所在位置点一下
             CUS_LOGGER.info("「救世主」…在命运三相神谕的语境下，这张牌意味着谐调和完美无缺。")
             self.click_text(text="秘闻", box=[197, 233, 887, 906])
             return
-        # 命途选项卡已经出现：先用「选项卡 → 确定」的固定偏移快速点两下（比识别「确认」图片快，
-        # 录屏里几乎看不到那个按钮出现），再用「确认」图片匹配兜底。
+        # 命途选项卡已经出现：先用「选项卡 → 确定」的固定偏移快速点一下，再由 confirm_event 用文字识别复核
         CUS_LOGGER.info("原来那浑身着火的恶魔，满脑子幻想的都是要成为「救世主」哪！")
         key_mouse_manager.click(self.tx, self.ty)
-        key_mouse_manager.click(0.1167, self.ty - 0.1139)
-        tm=time.time()
-        while time.time()-tm<0.5:
-            if self.check("confirm", 0.1828, 0.5000, mask="mask_event", threshold=0.965,fresh=True):
-                key_mouse_manager.click(self.tx, self.ty)
-                break
+        # 固定偏移：x=0.1167 是按钮中心屏幕 x≈1696 的比例坐标，y = 选项卡 y - 0.1139
+        self.confirm_event(point=(0.1167, self.ty - 0.1139), timeout=0.5)
 
     def select_event(self):
         super().select_event()

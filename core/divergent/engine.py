@@ -509,6 +509,14 @@ class DivergentUniverse(UniverseUtils):
                     score += event_weight[i]
         return score
 
+    def confirm_text(self):
+        """在右侧box里找「确定」按钮并点它，找到返回 True。"""
+        for res in self.ts.find_with_box([1590, 1830, 240, 1070], forward=1):
+            if "确定" in res.get("raw_text", ""):
+                self.click_box(res["box"])
+                return True
+        return False
+
     def event(self):
         event_id = (-1, '')
         self.event_solved = 1
@@ -527,13 +535,13 @@ class DivergentUniverse(UniverseUtils):
                 return
 
             self.get_screen()
-            if self.check("arrow", 0.1828, 0.5000, mask="mask_event"):
+            # 图标都在左侧图标列（实测 x≈1367~1374）：搜索窗口 mask_event_icon
+            if self.check("arrow", 0.2865, 0.5000, mask="mask_event_icon"):
                 self.click((self.tx, self.ty))
-            # 事件界面：退出
-            elif self.check("arrow_1", 0.1828, 0.5000, mask="mask_event"):
+            elif self.check("arrow_1", 0.2865, 0.5000, mask="mask_event_icon"):
                 self.click((self.tx, self.ty))
             # 事件选择界面
-            elif self.check("star", 0.1828, 0.5000, mask="mask_event", threshold=0.965):
+            elif self.check("star", 0.2865, 0.5000, mask="mask_event_icon", threshold=0.965):
                 if self.debug and event_id[0] == -1:
                     CUS_LOGGER.debug(f"self.ts.res: {self.ts.res}")
                     with open('test.txt', 'a') as f:
@@ -571,16 +579,13 @@ class DivergentUniverse(UniverseUtils):
                         self.click_box(i['box'])
                         time.sleep(0.4)
                         self.get_screen()
-                        if self.check("confirm", 0.1828, 0.5000, mask="mask_event", threshold=0.965):
-                            self.click((self.tx, self.ty))
+                        if self.confirm_text():
                             clicked = 1
                             break
                 if not clicked:
                     self.click((tx, ty))
                     time.sleep(0.4)
-                    if self.check("confirm", 0.1828, 0.5000, mask="mask_event", threshold=0.965):
-                        self.click((self.tx, self.ty))
-                    else:
+                    if not self.confirm_text():
                         self.click((0.1167, ty - 0.4685 + 0.3546 + 0.02))
                 time.sleep(0.8)
                 start = 0
