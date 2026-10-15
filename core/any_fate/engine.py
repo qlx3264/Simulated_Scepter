@@ -1276,6 +1276,7 @@ class AnyFateUniverse(SimulatedUniverse):
                     CUS_LOGGER.error(f"写入节点日志失败: {e}")
 
     def emergency(self):
+        self.nodes = None # 清除地图缓存
         event_name = self.ts.find_with_box(box=[897, 1023, 500, 540], forward=True, re_screen=False)
         if len(event_name)==0:
             self.save_screen(not_now=True, save_path=os.path.join(PATHS["temp"], "event"))
