@@ -148,6 +148,7 @@ class CurrencyActionDispatchTests(unittest.TestCase):
     def test_loop_reports_screen_text_when_nothing_matches(self, _time, logger, imwrite):
         """回归：整屏无命中超过10秒时，记录屏幕文字并留一张截图备查。"""
         currency = object.__new__(SimulatedCurrency)
+        currency.state = "currency_main"
         currency._stop = False
         currency.get_screen = Mock(return_value=object())
         currency.check = Mock(return_value=False)
@@ -185,8 +186,9 @@ class CurrencyActionDispatchTests(unittest.TestCase):
     @patch("core.currency.automation.CUS_LOGGER")
     @patch("core.common.engine.time.time", side_effect=[0, 5, 11, 15, 17])
     def test_loop_skips_report_while_in_battle(self, _time, logger, imwrite):
-        """回归：战斗中长时间无触发属正常，不做记录也不存图。"""
+        """等待战斗的状态允许长时间无触发，不做诊断也不存图。"""
         currency = object.__new__(SimulatedCurrency)
+        currency.state = "startbattle"
         currency._stop = False
         currency.get_screen = Mock(return_value=object())
         currency.check = Mock(return_value=True)
@@ -203,7 +205,7 @@ class CurrencyActionDispatchTests(unittest.TestCase):
 
         currency.loop()
 
-        currency.check.assert_called_once_with("auto_2", 0.0583, 0.0769)
+        currency.ts.find_with_box.assert_not_called()
         logger.warning.assert_not_called()
         imwrite.assert_not_called()
 

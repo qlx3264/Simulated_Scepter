@@ -73,7 +73,8 @@ class GuiPreferencesTests(unittest.TestCase):
         gui = load_task("new_gui.py", "MainWindow", {
             "init_kernel_buttons", "init_script_controls", "save_script_selection", "refresh_scripts", "run_script", "launch_script",
             "update_settings", "update_dependent_controls_state",
-            "connect_dependency_signals", "handle_key_pressed",
+            "connect_dependency_signals", "handle_key_pressed", "save_game_path_config",
+            "create_task_engine",
         }, {
             "os": os, "json": json, "shutil": shutil, "pyqtSlot": pyqtSlot,
             "time": SimpleNamespace(localtime=lambda: SimpleNamespace(tm_hour=12)),

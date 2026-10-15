@@ -3,8 +3,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
+from core.common.engine import StateKernel
 from core.currency.automation import SimulatedCurrency
-from core.currency.run_history import RUN_END_ACTION, RUN_START_ACTION
+from core.currency.run_history import RUN_END_ACTION
 
 
 class CurrencyWarActionsTest(unittest.TestCase):
@@ -41,7 +42,7 @@ class CurrencyWarActionsTest(unittest.TestCase):
             },
         )
 
-    def test_standalone_popup_events_trigger_once(self):
+    def test_popup_and_exit_events_trigger_once(self):
         once_names = {
             action["name"]
             for action in self.actions
@@ -50,7 +51,7 @@ class CurrencyWarActionsTest(unittest.TestCase):
 
         self.assertEqual(
             once_names,
-            {"盛会之星", "领航员", "啊哈大悦", "命运圣杯祈愿试炼", "独家代言"},
+            {"盛会之星", "领航员", "啊哈大悦", "命运圣杯祈愿试炼", "独家代言", "开始退出"},
         )
 
     def test_item_detail_confirms_selection_before_escape(self):
@@ -75,20 +76,20 @@ class CurrencyWarActionsTest(unittest.TestCase):
         self.assertEqual(detail["actions"], [{"press": "esc"}])
         self.assertLess(names.index("物品详情确认选择"), names.index("物品详情弹层"))
 
-    def test_run_history_actions_keep_expected_names(self):
+    def test_run_end_action_keeps_expected_name(self):
         action_names = {action.get("name") for action in self.actions}
 
-        self.assertIn(RUN_START_ACTION, action_names)
         self.assertIn(RUN_END_ACTION, action_names)
 
-    def test_selected_difficulty_uses_state_completing_action(self):
-        action = next(
+    def test_start_button_checks_difficulty_before_starting_run(self):
+        matches = [
             action
             for action in self.actions
-            if action.get("name") == RUN_START_ACTION
-        )
+            if action["trigger"].get("text") == "开始对局"
+        ]
 
-        self.assertEqual(action["actions"], ["complete_difficulty_selection"])
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["actions"], ["handle_difficulty_selection"])
 
     def test_environment_state_advances_only_inside_selection_action(self):
         action = next(
@@ -112,7 +113,7 @@ class CurrencyWarActionsTest(unittest.TestCase):
 
         self.assertLess(skip_index, battle_index)
         self.assertEqual(skip_action["trigger"]["text"], "跳过")
-        self.assertEqual(skip_action["trigger"]["condition"], "startbattle")
+        self.assertEqual(skip_action["trigger"]["condition"], "currency_main")
         self.assertEqual(skip_action["actions"], [{"position": [1818, 750]}])
         self.assertIn(skip_action["trigger"]["text"], "跳过(2/2)")
         self.assertIn(skip_action["trigger"]["text"], "跳过(1/2)")
@@ -125,7 +126,8 @@ class CurrencyWarActionsTest(unittest.TestCase):
             action for action in self.actions if action.get("name") == "出战"
         )
         currency = object.__new__(SimulatedCurrency)
-        currency.state = "startbattle"
+        StateKernel.__init__(currency)
+        currency.state = "currency_main"
         currency.get_screen = Mock(return_value=255)
         currency.ts = Mock()
         currency.ts.find_with_box.return_value = [
@@ -134,8 +136,6 @@ class CurrencyWarActionsTest(unittest.TestCase):
                 "box": [1784, 1852, 730, 770],
             }
         ]
-        currency.action_history = []
-        currency.action_time = 0
         currency.do_action = Mock(return_value=1)
         currency._on_static_action_completed = Mock()
 
