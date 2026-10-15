@@ -9,6 +9,13 @@ class CurrencyDifficultySelectionTest(unittest.TestCase):
     def make_currency(state="difficulty_select"):
         currency = object.__new__(SimulatedCurrency)
         currency.state = state
+        currency._stop = False
+        currency.set_exit_plane = 2
+        currency.exit_plane = 1
+        currency.prior_environment_found = True
+        currency.exit_requested = True
+        currency.exit_started = True
+        currency.run_history = Mock()
         currency.update_state = Mock(
             side_effect=lambda next_state: setattr(currency, "state", next_state)
         )
@@ -43,22 +50,28 @@ class CurrencyDifficultySelectionTest(unittest.TestCase):
         manager.clean.assert_called_once_with()
         manager.click.assert_called_once_with(1692, 965, force=True)
         manager.wait.assert_called_once_with()
-        currency.update_state.assert_called_once_with("startbattle")
-        self.assertEqual(currency.state, "startbattle")
+        currency.update_state.assert_called_once_with("currency_main")
+        self.assertEqual(currency.state, "currency_main")
+        self.assertEqual(currency.exit_plane, 2)
+        self.assertFalse(currency.prior_environment_found)
+        self.assertFalse(currency.exit_requested)
+        self.assertFalse(currency.exit_started)
+        currency.run_history.start_run.assert_called_once_with()
 
     @patch("core.currency.automation.key_mouse_manager")
     def test_complete_selection_is_idempotent_after_state_advanced(self, manager):
-        currency = self.make_currency("startbattle")
+        currency = self.make_currency("currency_main")
 
         self.assertTrue(currency.complete_difficulty_selection())
 
         manager.clean.assert_not_called()
         manager.click.assert_not_called()
         currency.update_state.assert_not_called()
+        currency.run_history.start_run.assert_not_called()
 
     @patch("core.currency.automation.key_mouse_manager")
     def test_scroll_loop_stops_when_state_already_advanced(self, manager):
-        currency = self.make_currency("startbattle")
+        currency = self.make_currency("currency_main")
         currency.get_screen = Mock()
         currency.is_one = Mock()
 

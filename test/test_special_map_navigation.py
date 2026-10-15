@@ -8,6 +8,7 @@ import cv2 as cv
 import numpy as np
 
 from tool.utils.image_tool import load_all_images_from_directory
+from tool.utils.minimap_util import deal_minimap
 
 ROOT = Path(__file__).resolve().parents[1]
 load_all_images_from_directory(str(ROOT / "resource" / "imgs"))
@@ -239,6 +240,9 @@ class RecordedSpecialMapNavigationTest(unittest.TestCase):
         universe.native_special_map_root = "maps"
         universe.loaded_map_root = "maps"
         universe.node_count = 0
+        universe.new_node = True
+        universe.area = "事件"
+        universe.now_area = []
 
         with patch.object(SimulatedUniverse, "init_map") as native_init:
             universe.init_map()
@@ -246,6 +250,9 @@ class RecordedSpecialMapNavigationTest(unittest.TestCase):
         native_init.assert_called_once_with()
         self.assertIsNone(universe.native_special_map_root)
         self.assertIsNone(universe.loaded_map_root)
+        self.assertEqual(universe.node_count, 1)
+        self.assertEqual(universe.now_area, ["事件"])
+        self.assertFalse(universe.new_node)
 
     def test_rest_area_does_not_reuse_previous_battle_map(self):
         universe = self.make_universe({((12, 34), 1)})
@@ -285,19 +292,23 @@ class RecordedSpecialMapNavigationTest(unittest.TestCase):
         universe.get_blank_state = Mock(return_value=300)
         universe.get_screen = Mock(return_value=universe.screen)
         universe.click_text = Mock(return_value=False)
-        universe._match_map_templates = Mock(return_value=("my_17682", 1.0))
         universe.get_target = Mock(return_value=set(targets))
 
+        # 用同一张小地图建立候选模板，保留当前实现的真实预处理与匹配流程。
+        minimap = np.random.default_rng(7).integers(0, 256, (186, 186, 3), dtype=np.uint8)
+        template = cv.resize(deal_minimap(minimap, is_minimap=True), None,
+                             fx=0.5, fy=0.5, interpolation=cv.INTER_CUBIC)
         latest = ("map.jpg", 424.0, 588.8, 31, 207.0, 277.0, "target.jpg")
         with (
-            patch("core.iron_blood.engine.find_latest_modified_file", return_value=latest),
-            patch("core.iron_blood.engine.cv.imread", return_value=np.zeros((80, 98), dtype=np.uint8)),
-            patch("core.iron_blood.engine.key_mouse_manager", Mock()),
+            patch("core.any_fate.engine.get_minimap", return_value=minimap),
+            patch("core.any_fate.engine.find_latest_modified_file", return_value=latest),
+            patch("core.any_fate.engine.cv.imread", return_value=np.zeros((80, 98), dtype=np.uint8)),
+            patch("core.any_fate.engine.key_mouse_manager", Mock()),
         ):
             return universe.map_data_load(
                 create=create,
                 map_root="special_maps",
-                image_maps={},
+                image_maps={"my_17682": template},
                 target_mode="special",
             )
 

@@ -10,6 +10,8 @@ from pathlib import Path
 
 from PyQt5 import QtCore, QtWidgets, uic
 
+from load_ui import QMainWindowLoadUI
+
 UI_PATH = Path(__file__).resolve().parents[1] / "resource" / "ui" / "UI.ui"
 
 
@@ -20,8 +22,12 @@ class VideoConvertUiTests(unittest.TestCase):
         # QApplication 与窗口都由类持有：若只在某个测试里创建成局部变量，它会在该测试
         # 结束时被回收，Qt 随之销毁已建的控件，后续测试拿到的是被删除的对象。
         cls.app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        cls.addClassCleanup(cls.app.setFont, cls.app.font())
 
         cls.window = QtWidgets.QMainWindow()
+        # 直接加载 .ui 不会执行主窗口的字体初始化，测量前复用正式字体。
+        QMainWindowLoadUI.font_set(cls.window)
+        cls.window.setFont(cls.app.font())
         uic.loadUi(str(UI_PATH), cls.window)
         cls.window.resize(900, 900)
         cls.window.show()
