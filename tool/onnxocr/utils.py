@@ -241,7 +241,8 @@ def infer_args():
     parser.add_argument("--min_subgraph_size", type=int, default=15)
     parser.add_argument("--precision", type=str, default="fp32")
     parser.add_argument("--gpu_mem", type=int, default=500)
-    parser.add_argument("--gpu_id", type=int, default=0)
+    parser.add_argument("--gpu_id", type=int, default=None, help="本次调用使用的 DXGI 适配器索引；默认使用 OCR 设备设置")
+    parser.add_argument("--ocr_device", type=str, default="auto")
 
     # params for text detector
     parser.add_argument("--image_dir", type=str)

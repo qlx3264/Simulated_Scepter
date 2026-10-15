@@ -42,7 +42,8 @@ class IronBloodUniverse(AnyFateUniverse):
         self.my_fate = config.fates.index(self.fate)
         self.tk = text_keys(self.my_fate)
         self.expectation_weight = 0 # 地图路径期望
-        self.first_plane_weight = 0 # 保存开局期望
+        # 保存开局期望。-5 表示本局还没走到开局节点图识别，直接开局的局会以这个值写入记录
+        self.first_plane_weight = self.MAP_ANALYSIS_NO_INIT
         # 铁血战士使用毁灭专属事件优先级
         event_iron_blood = resource_path(__file__, "config/event_iron_blood.yml")
         with open(event_iron_blood, encoding="utf-8", errors="ignore") as f:
@@ -71,7 +72,8 @@ class IronBloodUniverse(AnyFateUniverse):
             self.update_state("re_start")
         self.elapsed_time = 0  # 重置演算持续时间
         self.kill_count = 0
-        self.first_plane_weight = 0 # 重置开局期望
+        # 开局期望不在这里清零：退出流程中「点击空白结算」可能先于「结算界面」触发，
+        # 在这里清零会让本局记录丢掉「开局期望」条目。改为 end_of_university 写完记录后清零。
         self.fail_match_count=0
         self.node_count=0
         self.chaoyan_seen = False  # 新轮回重置「超验之镜」已进过标记
@@ -88,15 +90,15 @@ class IronBloodUniverse(AnyFateUniverse):
             start_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.run_start_time))
             total_min = self.elapsed_time // 60
             total_sec = self.elapsed_time % 60
-            if self.first_plane_weight == 0:
-                line = f"轮回次数:{self.count}, 开始时间:{start_time_str}, 用时:{total_min}分{total_sec}秒, 击杀数:{self.kill_count:02d}"
-            else:
-                line = f"轮回次数:{self.count}, 开始时间:{start_time_str}, 用时:{total_min}分{total_sec}秒, 击杀数:{self.kill_count:02d}, 开局期望:{self.first_plane_weight:.2f}"
+            # 「开局期望」一律写入：确认识别到写真实值（0 也是真读数），识别失败或本局没做识别写负数原因码
+            line = f"轮回次数:{self.count}, 开始时间:{start_time_str}, 用时:{total_min}分{total_sec}秒, 击杀数:{self.kill_count:02d}, 开局期望:{self.first_plane_weight:.2f}"
             with open(record_file, "a", encoding="utf-8") as file:
                 file.write(line + "\n")
         except Exception as e:
             CUS_LOGGER.error(f"写入击杀记录文件失败{e}")
         self.run_start_time = time.time()  # 开始下一局计时
+        # 本局记录已写完，重置为「还没做开局识别」，避免下一局沿用本局的读数
+        self.first_plane_weight = self.MAP_ANALYSIS_NO_INIT
         self.need_end=False
         self.init_map()
         if self.kill_count>=40:
@@ -166,26 +168,35 @@ class IronBloodUniverse(AnyFateUniverse):
         else:
             CUS_LOGGER.warning("多么绝妙的巧合。你我都心知肚明。")
             return
-        self.expectation_weight = 0 # 重置地图路径期望
-        tm = time.time()
-        while time.time() - tm < 3: # 3秒内反复识别地图直至成功
-            self.try_analysis_map(1,1)
-            if self.expectation_weight:
-                break
+        # 「进入位面」按钮出现时，节点图可能还在逐个生成节点、甚至还在把随机节点替换成精英节点。
+        # 此时识别会漏掉尚未出现的节点，得到一张不完整的图，期望值随之偏低，本应继续打的开局会被
+        # 误判成期望过低而退出，于是 kill_record.txt 里留下一条用时明显偏短的记录，即「假账」。
+        # 因此先等节点图渲染稳定（连续 3 次匹配结果一致）并留下这张稳定帧，随后立即点击「进入位面」
+        # 让游戏开始播入场动画，最后才用稳定帧做一次完整识别，不占开局时间。
+        # 若一次点击未能生效，按钮还留在屏幕上，主循环会再点一次，至多间隔三秒，不会卡死。
+        analysis_status, stable_frame = self.wait_map_rendered(1)
+        self.click_text(text="进入位面", box=[907, 1009, 857, 891])
+        self.node_count = 0
+        self.new_node = True
+        key_mouse_manager.wait()
+        if analysis_status == self.MAP_ANALYSIS_OK:
+            analysis_status = self.analyze_map_until_stable(1, 1, captured=stable_frame)
+        if self.plane_floor==1:
+            # 识别结果一律记录，不依赖「是否据此提前退出」的开关：识别成功记真实期望
+            # （0 也是真读数），识别失败记负数原因码，这样 kill_record 里就不会缺字段。
+            if analysis_status == self.MAP_ANALYSIS_OK:
+                self.first_plane_weight = self.expectation_weight
+            else:
+                self.first_plane_weight = analysis_status
+                CUS_LOGGER.warning(
+                    f"识别开局期望失败（{self.MAP_ANALYSIS_STATUS.get(analysis_status, '未知原因')}），"
+                    f"本局不依据期望值提前退出，开局期望记为{analysis_status}")
         if self.early_stop and self.gwypzmgzcndqlp:
             CUS_LOGGER.debug(f"当前一面最低期望{self.first_plane_min_weight}，识别到开局期望{self.expectation_weight}")
-            if self.plane_floor==1:
-                self.first_plane_weight = self.expectation_weight
-                if self.expectation_weight and self.expectation_weight < self.first_plane_min_weight:
-                    CUS_LOGGER.warning("如果不能将此世从「毁灭」中拯救它，那就让寰宇在愤怒中燃烧吧......")
-                    self.need_end=True
-                elif not self.expectation_weight:
-                    CUS_LOGGER.warning("识别开局期望失败")
-        for _ in range(5):
-            self.click_text(text="进入位面", box=[907, 1009, 857, 891])
-            self.node_count = 0
-            self.new_node = True
-        key_mouse_manager.wait()
+            if self.plane_floor == 1 and analysis_status == self.MAP_ANALYSIS_OK \
+                    and self.expectation_weight < self.first_plane_min_weight:
+                CUS_LOGGER.warning("如果不能将此世从「毁灭」中拯救它，那就让寰宇在愤怒中燃烧吧......")
+                self.need_end=True
         return
     def initing_map2(self):
         key_mouse_manager.keyUp("w")
@@ -295,7 +306,8 @@ class IronBloodUniverse(AnyFateUniverse):
                 # 进入最终首领格前暂停
                 if self.next_node["name"] == "boss" and self.boss_before_pause_count > 0 and self.boss_before_pause_count <= self.kill_count:
                     CUS_LOGGER.debug(f"当前击杀数：{self.kill_count}，即将进入最终首领格，停止程序")
-                    CUS_LOGGER.info("恭喜，您即将获得铁血战士！")
+                    if self.kill_count >= 39:
+                        CUS_LOGGER.info("恭喜，您即将获得铁血战士！")
                     self.stop()
                     return
                 self.start_nodes=self.next_node

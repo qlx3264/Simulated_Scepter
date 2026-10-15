@@ -9,9 +9,17 @@ from pathlib import Path
 from threading import Event
 from unittest.mock import Mock, patch
 
-from PyQt5.QtCore import QEvent
+from PyQt5.QtCore import QEvent, Qt
 from PyQt5.QtTest import QTest
-from PyQt5.QtWidgets import QApplication, QDialog, QLayout, QMessageBox, QWidget
+from PyQt5.QtWidgets import (
+    QApplication,
+    QDialog,
+    QLayout,
+    QMessageBox,
+    QStyle,
+    QStyleOptionComboBox,
+    QWidget,
+)
 
 from test.core_fixture import copy_core
 from tool import GLOBAL
@@ -109,8 +117,26 @@ class RuntimeGuiLayoutTests(unittest.TestCase):
         self.assertLessEqual(abs(self.window.script_combo.geometry().center().y()
                                  - self.window.run_script_btn.geometry().center().y()), 1)
         self.assertGreater(self.window.script_combo.y(), self.window.engine_combo.geometry().bottom())
-        self.assertGreater(self.window.engine_combo.width(), 150)
-        self.assertGreater(self.window.script_combo.width(), 100)
+        engine = self.window.engine_combo
+        option = QStyleOptionComboBox()
+        engine.initStyleOption(option)
+        text_rect = engine.style().subControlRect(
+            QStyle.CC_ComboBox, option, QStyle.SC_ComboBoxEditField, engine)
+        # 按正式字体检查可读性，避免把旧侧栏尺寸当成布局契约。
+        for index in range(engine.count()):
+            self.assertGreaterEqual(
+                text_rect.width(), engine.fontMetrics().horizontalAdvance(engine.itemText(index)))
+
+        script = self.window.script_combo
+        script.initStyleOption(option)
+        text_rect = script.style().subControlRect(
+            QStyle.CC_ComboBox, option, QStyle.SC_ComboBoxEditField, script)
+        visible = script.fontMetrics().elidedText(script.currentText(), Qt.ElideRight, text_rect.width())
+        self.assertNotIn(visible, ("", "…"))
+        self.assertEqual(
+            Path(script.itemData(script.currentIndex(), Qt.ToolTipRole)).name,
+            Path(script.currentData()).name,
+        )
 
     def test_main_window_keeps_only_general_configuration_controls(self):
         self.assertFalse(hasattr(self.window, "homeTab"))

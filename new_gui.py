@@ -636,6 +636,7 @@ class MainWindow(QMainWindowLog):
         self.print_btn.clicked.connect(self.test_2)
         self.stop_btn.clicked.connect(self.stop_task)
         self.general_settings_save_btn.clicked.connect(self.save_general_config)
+        self.ocr_settings_btn.clicked.connect(self.open_ocr_settings)
         self.hotkey_save_btn.clicked.connect(self.save_hotkey_config)
         self.record_stats_btn.clicked.connect(self.open_record_stats)
         self.Aboutupdatelock.clicked.connect(lambda: show_unlock_dialog(self))
@@ -687,6 +688,20 @@ class MainWindow(QMainWindowLog):
         finally:
             dialog.deleteLater()
 
+
+    def open_ocr_settings(self):
+        from tool.gui.ocr_settings import OcrSettingsDialog
+
+        try:
+            dialog = OcrSettingsDialog(self)
+        except (OSError, ValueError) as error:
+            QMessageBox.warning(self, "OCR 设置加载失败", str(error))
+            return
+        try:
+            if dialog.exec_() == QDialog.Accepted:
+                self.opt = load_settings()
+        finally:
+            dialog.deleteLater()
 
     def load_hotkey_config(self):
         """从 settings.json 加载快捷键配置"""
@@ -1560,7 +1575,12 @@ def main(show, startup_args=None):
             print(f"异常退出，进程已结束,退出代码:{e.code}")
             input("按Enter键退出...")
 if __name__ == "__main__":
-    startup_args = parse_startup_args()
+    # 打包版不支持启动参数，避免双击或外部启动参数触发误导性提示。
+    startup_args = (
+        parse_startup_args([])
+        if getattr(sys, "frozen", False)
+        else parse_startup_args()
+    )
     fault_log_file = open("logs/crash_dump.txt", "w", encoding="utf-8")
     faulthandler.enable(file=fault_log_file)
     main(1, startup_args)

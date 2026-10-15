@@ -1,6 +1,8 @@
 import argparse
 import time
 
+from tool.settings import load_settings
+
 from .predict_system import TextSystem
 from .utils import draw_ocr
 from .utils import infer_args as init_args
@@ -22,6 +24,8 @@ class ONNXPaddleOcr(TextSystem):
         # 根据传入的参数覆盖更新默认参数
         params.__dict__.update({"cpu": False})
         params.__dict__.update(**kwargs)
+        if "ocr_device" not in kwargs and not params.cpu and params.use_gpu and params.gpu_id is None:
+            params.ocr_device = load_settings().get("ocr_device", "auto")
 
         # 初始化模型
         super().__init__(params)

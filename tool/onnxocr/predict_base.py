@@ -1,20 +1,30 @@
-from onnxruntime import InferenceSession, SessionOptions, get_available_providers
+from pathlib import Path
+
+from onnxruntime import InferenceSession, SessionOptions
 
 from tool.log import CUS_LOGGER
 
 
 class PredictBase:
-    def __init__(self, cpu=False):
-        self.cpu = cpu
+    def __init__(self, device):
+        self.device = device
 
-    def get_onnx_session(self, model_dir, use_gpu):
-        if self.cpu:
+    def get_onnx_session(self, model_dir):
+        sess_options = SessionOptions()
+        if self.device is None:
             providers = ['CPUExecutionProvider']
         else:
-            providers = get_available_providers()
-        sess_options = SessionOptions()
+            providers = [('DmlExecutionProvider', {'device_id': str(self.device.index)}), 'CPUExecutionProvider']
+            sess_options.enable_mem_pattern = False
         onnx_session = InferenceSession(model_dir, providers=providers, sess_options=sess_options)
-
+        if self.device is not None:
+            if 'DmlExecutionProvider' not in onnx_session.get_providers():
+                raise RuntimeError(f"OCR 设备初始化失败：{self.device.label}；运行时已回退 CPU，请重新选择设备")
+            # 禁止运行时静默重建 CPU 会话；已有 safe_run 仍负责记录明确的异常降级。
+            onnx_session.disable_fallback()
+            CUS_LOGGER.debug("OCR 模型 %s 使用 DirectML：%s", Path(model_dir).name, self.device.label)
+        else:
+            CUS_LOGGER.debug("OCR 模型 %s 使用 CPU", Path(model_dir).name)
         return onnx_session
 
     def safe_run(self, session, output_names, input_feed):
