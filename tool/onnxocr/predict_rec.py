@@ -9,15 +9,15 @@ from .rec_postprocess import CTCLabelDecode
 
 
 class TextRecognizer(PredictBase):
-    def __init__(self, args, cpu=False):
-        super().__init__(cpu)
+    def __init__(self, args, device):
+        super().__init__(device)
         self.rec_image_shape = [int(v) for v in args.rec_image_shape.split(",")]
         self.rec_batch_num = args.rec_batch_num
         self.rec_algorithm = args.rec_algorithm
         self.postprocess_op = CTCLabelDecode(character_dict_path=args.rec_char_dict_path, use_space_char=args.use_space_char)
 
         # 初始化模型
-        self.rec_onnx_session = self.get_onnx_session(args.rec_model_dir, args.use_gpu)
+        self.rec_onnx_session = self.get_onnx_session(args.rec_model_dir)
         self.rec_input_name = self.get_input_name(self.rec_onnx_session)
         self.rec_output_name = self.get_output_name(self.rec_onnx_session)
 

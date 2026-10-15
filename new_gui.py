@@ -636,6 +636,7 @@ class MainWindow(QMainWindowLog):
         self.print_btn.clicked.connect(self.test_2)
         self.stop_btn.clicked.connect(self.stop_task)
         self.general_settings_save_btn.clicked.connect(self.save_general_config)
+        self.ocr_settings_btn.clicked.connect(self.open_ocr_settings)
         self.hotkey_save_btn.clicked.connect(self.save_hotkey_config)
         self.record_stats_btn.clicked.connect(self.open_record_stats)
         self.Aboutupdatelock.clicked.connect(lambda: show_unlock_dialog(self))
@@ -687,6 +688,20 @@ class MainWindow(QMainWindowLog):
         finally:
             dialog.deleteLater()
 
+
+    def open_ocr_settings(self):
+        from tool.gui.ocr_settings import OcrSettingsDialog
+
+        try:
+            dialog = OcrSettingsDialog(self)
+        except (OSError, ValueError) as error:
+            QMessageBox.warning(self, "OCR 设置加载失败", str(error))
+            return
+        try:
+            if dialog.exec_() == QDialog.Accepted:
+                self.opt = load_settings()
+        finally:
+            dialog.deleteLater()
 
     def load_hotkey_config(self):
         """从 settings.json 加载快捷键配置"""

@@ -925,6 +925,13 @@ border:none</string>
                       </property>
                      </widget>
                     </item>
+                    <item>
+                     <widget class="QPushButton" name="ocr_settings_btn">
+                      <property name="text">
+                       <string>OCR 设备设置</string>
+                      </property>
+                     </widget>
+                    </item>
                    </layout>
                   </item>
                   <item>
