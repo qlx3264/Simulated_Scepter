@@ -562,13 +562,15 @@ class SimulatedUniverse(UniverseUtils):
         x = (row["box"][0] + row["box"][1]) / 2
         y = (row["box"][2] + row["box"][3]) / 2
         text = row["raw_text"][1:]
-        name = event_name or self.event_name_for_log(self.screen)
+        # 事件名只在出问题（越界、退而求其次）时才读：正常命中优选项的路径不读，省一次 OCR。
         if not (left <= x <= right and top <= y <= bottom):
+            name = event_name or self.event_name_for_log(self.screen)
             CUS_LOGGER.error(f"「{name}」选项「{text}」位置 ({x:.0f}, {y:.0f}) 不在选项列表区域内，放弃点击")
             return False
         if from_prior:
             CUS_LOGGER.debug(f"点击优选项：「{text}」")
         else:
+            name = event_name or self.event_name_for_log(self.screen)
             CUS_LOGGER.warning(f"「{name}」选项列表里没有优选项命中，点击「{text}」")
         key_mouse_manager.click(1 - x / self.xx, 1 - y / self.yy)
         return True
@@ -660,12 +662,10 @@ class SimulatedUniverse(UniverseUtils):
         while time.time() - tm < timeout:
             box = self.confirm_text_box()
             if box is not None:
-                name = event_name or self.event_name_for_log(getattr(self, "screen", None))
-                CUS_LOGGER.debug(f"事件「{name}」选项已选中，点击「确定」推进事件")
+                CUS_LOGGER.debug("选项已选中，点击「确定」推进事件")
                 self.click_confirm_text(box)
                 return True
             time.sleep(0.25)
-        name = event_name or self.event_name_for_log(getattr(self, "screen", None))
         return False
 
     def event_ui_label(self, img=None):
@@ -686,7 +686,7 @@ class SimulatedUniverse(UniverseUtils):
             img = self.get_screen()
         if img is None:
             return ""
-        name_box = [120, 640, 920, 1020]
+        name_box = [190, 750, 960, 1000]
         h, w = img.shape[:2]
         if (w, h) != (1920, 1080):
             x1, x2, y1, y2 = name_box
@@ -809,7 +809,6 @@ class SimulatedUniverse(UniverseUtils):
     # event_option_rows 先把所有星号都认出来，再只 OCR 每条星号右侧的文字。
     def select_event(self):
         screen = self.get_screen()
-        event_prior = self.event_prior + [self.fate]
         if self.check("arrow_dialog", 0.1781, 0.3250, mask="mask_dialog"):
             key_mouse_manager.click(self.tx, self.ty)
             return
@@ -817,7 +816,7 @@ class SimulatedUniverse(UniverseUtils):
             if self.check(photo, 0.2865, 0.5000, mask="mask_event_icon"):
                 key_mouse_manager.click(self.tx, self.ty)
                 return
-        # 若检测到切换到奇物商店或祝福强化界面：交给对应动作处理。
+        # 若检测到切换到奇物商店或祝福强化界面：交给对应动作处理
         label = self.event_ui_label(screen)
         if any(skip in label for skip in ("商店", "奇物", "祝福", "强化")):
             if getattr(self, "_skip_label_logged", None) != label:
@@ -825,33 +824,47 @@ class SimulatedUniverse(UniverseUtils):
                 CUS_LOGGER.debug(f"当前界面是「{label}」，交给它的动作处理")
             return
         self._skip_label_logged = None
-        # 星号（※）出现就代表选项出现了。
+        # 星号（※）出现代表选项出现
         rows = self.event_option_rows()
         if not rows:
-            # 选项区一个字都没有：选完选项正在进战斗、或玩家已经离开事件界面时。
+            # 选项区一个字都没有：选完选项正在进战斗、或玩家已经离开事件界面时
             CUS_LOGGER.debug(
                 f"事件「{getattr(self, 'event', '') or '未知事件'}」选项列表区域没有识别到任何文本或已退出事件，本帧不点击"
             )
             if not getattr(self, "_star_rows", None) and getattr(self, "_nothing_logged", None) is not True:
-                # 金色▼、推进图标、标题、星号、选项文字全没认到：一条 warning 说明原因（仅发送一次，事件结束时重置）。
+                # 金色▼、推进图标、标题、星号、选项文字全没认到
                 self._nothing_logged = True
-                CUS_LOGGER.warning("事件界面未识别到有效触发器，本帧不点击")
+                CUS_LOGGER.info("「救世主」…在命运三相神谕的语境下，这张牌意味着谐调和完美无缺。")
             # 已经离开选项界面：忘掉上一个事件的名字，下一个事件写日志时重新读
             self.event = ""
             return
         self._nothing_logged = None
-        # 事件名（地图左下角标签）只在写日志时才需要，交给 event_name_for_log 读。
+        # 事件名（地图左下角标签）只在写日志时才需要，交给 event_name_for_log 读
         prior = self.click_event_prior("", rows)
         if not prior:
             # 没有战斗的事件不存在优选项
-            CUS_LOGGER.debug(f"未匹配到事件优选项 {event_prior} ，改选识别范围内的选项")
             event_name = self.event_name_for_log(screen)
-            CUS_LOGGER.warning(
-                f"事件「{event_name}」没有匹配到优选项，将改选识别范围内的选项"
-            )
+            CUS_LOGGER.debug(f"事件「{event_name}」没有匹配到优选项，将改选识别范围内的选项")
+            if event_name == "虫巢" and type(self).__module__.startswith("core.iron_blood"):
+                # 「虫巢」事件的优选项「进入虫巢，绞杀它们！」用的是命途图标而不是星号（※），
+                # 通用流程匹配不上；仅出现在铁血战士内核，所以按文字点掉第一行选项。
+                CUS_LOGGER.debug("检测到事件「虫巢」，将选择优选项「进入虫巢，绞杀它们！」")
+                for res in self.ts.find_with_box(
+                    box=self.scaled_box([1300, 1880, 180, 1070]), forward=True, re_screen=True
+                ):
+                    if isinstance(res, dict) and "绞杀它们" in res.get("raw_text", ""):
+                        key_mouse_manager.click(
+                            1 - (res["box"][0] + res["box"][1]) / 2 / self.xx,
+                            1 - (res["box"][2] + res["box"][3]) / 2 / self.yy,
+                        )
+                        self.confirm_event(event_name, self.confirm_point(res))
+                        return
+                CUS_LOGGER.warning(f"事件「虫巢」未识别到优选项「绞杀它们」，本帧不点击")
+                return
             picked = self.pick_fallback_option(rows)
             if picked is None or not self.click_event_option(event_name, picked):
-                CUS_LOGGER.info("「救世主」…在命运三相神谕的语境下，这张牌意味着谐调和完美无缺。")
+                # 认到了星号与选项文字，但兜底选项的点击点落在选项面板外
+                CUS_LOGGER.warning(f"事件「{event_name}」的兜底选项点击点不在选项面板内，本帧不点击")
                 return
             self.confirm_event(event_name, self.confirm_point(picked))
             return

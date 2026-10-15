@@ -89,7 +89,7 @@ EVENT_LABEL_CLICK = (0.9479166666666666, 0.9564814814814815)
 # event_ui_label / read_event_name / confirm_text_box / event_option_rows），测试里留一份同值副本：
 # 改真实现的数字时，这几行要跟着改。
 EVENT_LABEL_BOX = [93, 230, 50, 100]  # 左上角界面标题（「事件」「奇物商店」…）
-EVENT_NAME_BOX = [120, 640, 920, 1020]  # 左下角地图标签里的事件名
+EVENT_NAME_BOX = [190, 750, 960, 1000]  # 左下角地图标签里的事件名
 EVENT_OPTION_BOX = [1320, 1850, 320, 1010]  # 右侧选项面板：点击点校验 + 星号横条右边界
 CONFIRM_BOX = [1590, 1830, 240, 1070]  # 右侧竖条：只在这里找「确定」文字（覆盖 5 条选项）
 CONFIRM_LABEL = "确定"
@@ -139,6 +139,7 @@ class _StubEngine:
         self.options = list(options) if options else []
         self.confirm_box = None
         self.bands = None
+        self.worm_results = None
         self.stars = list(stars) if stars is not None else self._default_stars(self.options)
 
         def _star_rows():
@@ -200,6 +201,8 @@ class _StubEngine:
         for star in self.stars:
             if box is not None and list(box) == self._star_band(star):
                 return list(self.options)
+        if self.worm_results is not None:
+            return list(self.worm_results)
         return []
 
     def stub_ocr(self, options=None, confirm_box=None, stars=None, bands=None):
@@ -352,6 +355,9 @@ class SelectEventTest(unittest.TestCase):
     def _info_messages(self):
         return [call.args[0] for call in self.logger.info.call_args_list]
 
+    def _debug_messages(self):
+        return [call.args[0] for call in self.logger.debug.call_args_list]
+
     def _run_with_options(self, event_name="选择事件"):
         """兜底路径用真实现：OCR 在选项区域里识别到一个选项，但优选项一个都没命中。"""
         engine = _StubEngine(
@@ -415,7 +421,7 @@ class SelectEventTest(unittest.TestCase):
         self.assertFalse(
             any("一个都没匹配上" in call.args[0] for call in self.logger.warning.call_args_list)
         )
-        self.assertTrue(any("本帧不点击" in msg for msg in self._info_messages()))
+        self.assertTrue(any("本帧不点击" in msg for msg in self._debug_messages()))
 
     def test_dialogue_marker_clicked_before_the_push_icons(self):
         """顺序是金色▼在前（对话阶段），两者同帧命中时点▼，推进图标这一帧不再判定。"""
@@ -444,21 +450,21 @@ class SelectEventTest(unittest.TestCase):
         SimulatedUniverse.select_event(engine)
 
         engine.event_star_rows.assert_called_once_with()
-        # 认到星号但选项横条里没文字：这是原有行为（info + 不点击），不该报「什么都没识别到」
+        # 认到星号但选项横条里没文字：这是原有行为（debug + 不点击），不该报「未识别到有效触发器」
         self.manager.click.assert_not_called()
         self.assertFalse(
-            any("什么都没识别到" in msg for msg in self._warning_messages())
+            any("未识别到有效触发器" in msg for msg in self._warning_messages())
         )
 
-    def test_nothing_recognized_logs_one_warning(self):
-        """整个 select_event 什么都没识别到（连星号都没有）时补一条 warning，且同一状态不刷屏。"""
+    def test_nothing_recognized_logs_one_info(self):
+        """整个 select_event 什么都没识别到（连星号都没有）时补一条 info，且同一状态不刷屏。"""
         engine = self._run({}, {})
         # 同一个引擎再跑一帧：状态没变，不该再打第二条
         SimulatedUniverse.select_event(engine)
 
         self.manager.click.assert_not_called()
-        warnings = [msg for msg in self._warning_messages() if "什么都没识别到" in msg]
-        self.assertEqual(len(warnings), 1)
+        infos = [msg for msg in self._info_messages() if "救世主" in msg]
+        self.assertEqual(len(infos), 1)
 
     def test_options_all_unmatched_falls_back_to_a_recognized_option(self):
         """没匹配到优选项（没有战斗的事件）：在识别到的选项里挑一个点，避免卡在事件界面。"""
@@ -508,7 +514,7 @@ class SelectEventTest(unittest.TestCase):
             SimulatedUniverse.select_event(engine)
 
             self.manager.click.assert_not_called()
-            self.assertTrue(any(label[:2] in msg for msg in self._info_messages()))
+            self.assertTrue(any(label[:2] in msg for msg in self._debug_messages()))
 
     def test_ui_label_is_reread_every_frame(self):
         """界面标题不能缓存：读出「奇物商店」让路后，切回事件界面必须继续处理（缓存会让它永远让路）。"""
@@ -520,14 +526,14 @@ class SelectEventTest(unittest.TestCase):
 
         SimulatedUniverse.select_event(engine)
         self.manager.click.assert_not_called()
-        self.assertTrue(any("奇物商店" in msg for msg in self._info_messages()))
+        self.assertTrue(any("奇物商店" in msg for msg in self._debug_messages()))
 
-        self.logger.info.reset_mock()
+        self.logger.debug.reset_mock()
         SimulatedUniverse.select_event(engine)
         # 第二帧标题读到「事件」：不再让路，继续走到选项阶段
         self.assertTrue(
-            any("选项列表区域没有识别到任何文本" in msg for msg in self._info_messages()),
-            self._info_messages(),
+            any("选项列表区域没有识别到任何文本" in msg for msg in self._debug_messages()),
+            self._debug_messages(),
         )
 
     def test_event_name_read_from_map_label_and_kept_in_self_event(self):
@@ -560,16 +566,22 @@ class SelectEventTest(unittest.TestCase):
             if call.args[1] == EVENT_NAME_BOX
         ]
 
-    def test_event_name_is_read_once_per_event_and_reused_by_later_logs(self):
-        """优选项命中的正常路径只读一次事件名：后面的日志复用 self.event。"""
+    def test_event_name_is_not_read_when_preferred_option_hits(self):
+        """优选项命中的正常路径没有任何日志要写事件名，不该花这次 OCR。"""
         engine = _StubEngine(
             {},
             {"休息区": False},
             event_name="超验之镜",
             options=[{"raw_text": "选择事件", "box": OPTION_BOX}],
         )
-        engine.ts.find_text = Mock(return_value=OPTION_OCR_BOX)
         SimulatedUniverse.select_event(engine)
+
+        self.assertEqual(self._name_reads(engine), [])
+        self.assertEqual(engine.event, "")
+
+    def test_event_name_is_read_once_per_event_and_reused_by_later_logs(self):
+        """兜底路径只读一次事件名：select_event 读到的名字被 click_event_option 复用，不再重读。"""
+        engine = self._run_with_options(event_name="超验之镜")
 
         self.assertEqual(len(self._name_reads(engine)), 1)
         self.assertEqual(engine.event, "超验之镜")
@@ -587,17 +599,17 @@ class SelectEventTest(unittest.TestCase):
             self.assertEqual(SimulatedUniverse.read_event_name(engine), expected, raw)
 
     def test_warning_log_carries_real_event_name(self):
-        """没匹配到优选项的 warning 要带上真实事件名，而不是「未知事件」，而且不是 error。"""
+        """兜底点击那条 warning 要带上真实事件名，而不是「未知事件」，而且不是 error。"""
         self._run_with_options(event_name="超验之镜")
 
         self.assertTrue(
-            any("事件「超验之镜」没有匹配到优选项" in msg for msg in self._warning_messages()),
+            any("「超验之镜」选项列表里没有优选项命中" in msg for msg in self._warning_messages()),
             self._warning_messages(),
         )
         self.assertEqual(self._error_messages(), [])
 
     def test_fallback_skips_option_whose_text_sits_outside_option_area(self):
-        """OCR 报出来的文本框若落在选项区域之外（例如左侧导航/顶部标签），兜底不点它。"""
+        """OCR 报出来的文本框若落在选项区域之外（例如左侧导航/顶部标签），兜底不点它，并留下放弃原因。"""
         engine = _StubEngine({}, {"休息区": False})
         engine.event_option_rows = Mock(
             return_value=[
@@ -607,6 +619,59 @@ class SelectEventTest(unittest.TestCase):
         SimulatedUniverse.select_event(engine)
 
         self.manager.click.assert_not_called()
+        self.assertTrue(
+            any("兜底选项点击点不在选项面板内" in msg for msg in self._warning_messages()),
+            self._warning_messages(),
+        )
+        # 「救世主」那条剧情文案只属于「连星号都没认到」的空状态，兜底放弃不再蹭它
+        self.assertFalse(
+            any("救世主" in msg for msg in self._info_messages()),
+            self._info_messages(),
+        )
+
+
+    @staticmethod
+    def _iron_blood_stub(**kwargs):
+        """铁血内核替身：分支按类的所属模块认内核（core.iron_blood），所以套一个改过 __module__ 的替身类。"""
+        stub = type("IronBloodStub", (_StubEngine,), {"__module__": "core.iron_blood.engine"})
+        return stub({}, {"休息区": False}, **kwargs)
+
+    def test_worm_nest_prior_is_clicked_by_its_text_on_iron_blood(self):
+        """铁血内核的「虫巢」：优选项认不到星号，改成认出「绞杀它们」那句文字、点它自己的中心。"""
+        engine = self._iron_blood_stub(
+            event_name="虫巢", options=[{"raw_text": OPTION_TEXT, "box": OPTION_BOX}]
+        )
+        engine.worm_results = [{"raw_text": "进入虫巢，绞杀它们！", "box": [1354, 1486, 283, 315]}]
+        SimulatedUniverse.select_event(engine)
+
+        self.assertEqual(
+            [call.args for call in self.manager.click.call_args_list],
+            [(1 - 1420 / 1920, 1 - 299 / 1080)],
+        )
+        self.assertEqual(
+            engine.confirm_event.call_args.args,
+            ("虫巢", (0.1135, 1 - (315 + 76) / 1080)),
+        )
+        # 搜索范围得宽到同时装得下两种面板偏移下第一行选项的文字框
+        # （实测 [1354,1486,283,315] 与 [1357,1595,211,242]，纵向差 71 px）
+        box = engine.ts.find_with_box.call_args.kwargs["box"]
+        self.assertLessEqual(box[0], 1354)
+        self.assertGreaterEqual(box[1], 1595)
+        self.assertLessEqual(box[2], 211)
+        self.assertGreaterEqual(box[3], 315)
+
+    def test_worm_nest_keeps_the_fallback_flow_on_other_kernels(self):
+        """不是铁血内核时不许走这条分支：别的内核跑「虫巢」还是按识别到的选项兜底。"""
+        engine = _StubEngine(
+            {},
+            {"休息区": False},
+            event_name="虫巢",
+            options=[{"raw_text": OPTION_TEXT, "box": OPTION_BOX}],
+        )
+        engine.worm_results = [{"raw_text": "进入虫巢，绞杀它们！", "box": [1354, 1486, 283, 315]}]
+        SimulatedUniverse.select_event(engine)
+
+        self.assertEqual([call.args for call in self.manager.click.call_args_list], [OPTION_POINT])
 
 
 class ConfirmEventClickTest(unittest.TestCase):
