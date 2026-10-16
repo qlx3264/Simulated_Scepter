@@ -98,6 +98,8 @@ CONFIRM_LABEL = "确定"
 # 左缘往回让 30 px 是因为整屏 OCR 会把 ※ 和选项文字并进同一个框）
 STAR_X = 1367
 STAR_BAND_GAP = (-30, 30, 20)
+# 命途图标模板名：真实现里 AnyFateUniverse.extra_option_icon_names() 给出的就是这八个
+FATE_ICON_NAMES = tuple(f"fate{i}" for i in range(1, 9))
 
 
 class _FakeClock:
@@ -154,10 +156,12 @@ class _StubEngine:
         # 命途图标（个别事件的优选项用它）：只在「※ 那遍没匹配到优选项」的补认里出现
         self.fate_stars = list(fate_stars) if fate_stars else []
 
-        def _option_icons(fate=False):
+        def _option_icons(names=None):
             # 真实现会把这一帧认到的选项图标留在 self._option_icons：select_event 用它判断
             # 「连选项图标都没有」才报「什么都没识别到」
-            icons = list(self.stars) + (list(self.fate_stars) if fate else [])
+            names = self.option_icon_names() if names is None else tuple(names)
+            wants_fate = any(name.startswith("fate") for name in names)
+            icons = list(self.stars) + (list(self.fate_stars) if wants_fate else [])
             self._option_icons = icons
             return icons
 
@@ -193,6 +197,14 @@ class _StubEngine:
         top = min(res["box"][2] for res in options)
         return [{"x": STAR_X, "y": top + 16, "score": 0.99}]
 
+    # 替身代表 any_fate 一系的内核：先只认星号，没命中优选项再补认八个命途图标。
+    # 真实现里 option_icon_names 在 SimulatedUniverse、extra_option_icon_names 在 AnyFateUniverse。
+    def option_icon_names(self):
+        return ("star",)
+
+    def extra_option_icon_names(self):
+        return FATE_ICON_NAMES
+
     def _star_band(self, star):
         """与 event_option_rows 里同一条横条公式：改真实现的数字时这里要跟着改。"""
         gap, up, down = STAR_BAND_GAP
@@ -226,9 +238,17 @@ class _StubEngine:
             self.stars = list(stars)
         if fate_stars is not None:
             self.fate_stars = list(fate_stars)
-        # 与 __init__ 里那份桩一样：fate=True 是「※ 那遍没匹配到优选项」时的补认
+        # 与 __init__ 里那份桩一样：补认那一遍（names 里带命途图标）才会给出命途图标
         self.event_option_icons = Mock(
-            side_effect=lambda fate=False: list(self.stars) + (list(self.fate_stars) if fate else [])
+            side_effect=lambda names=None: list(self.stars)
+            + (
+                list(self.fate_stars)
+                if any(
+                    name.startswith("fate")
+                    for name in (self.option_icon_names() if names is None else tuple(names))
+                )
+                else []
+            )
         )
         self.confirm_box = confirm_box
         self.bands = {tuple(box): list(lines) for box, lines in bands.items()} if bands else None
@@ -465,8 +485,8 @@ class SelectEventTest(unittest.TestCase):
         )
         SimulatedUniverse.select_event(engine)
 
-        # 两遍匹配：先只认 ※（fate=False），没命中优选项才补认命途图标（fate=True，见 select_event）
-        engine.event_option_icons.assert_called_once_with(fate=False)
+        # 两遍匹配：先只认 ※（names=("star",)），没命中优选项才补认命途图标（见 select_event）
+        engine.event_option_icons.assert_called_once_with(("star",))
         # 认到图标但选项横条里没文字：这是原有行为（debug + 不点击），不该报「未识别到有效触发器」
         self.manager.click.assert_not_called()
         self.assertFalse(
@@ -701,7 +721,7 @@ class SelectEventTest(unittest.TestCase):
 
         self.manager.click.assert_not_called()
         self.assertTrue(
-            any("本帧先不点击" in msg for msg in self._debug_messages()),
+            any("本帧不点击" in msg for msg in self._debug_messages()),
             self._debug_messages(),
         )
 
@@ -741,8 +761,8 @@ class SelectEventTest(unittest.TestCase):
 
         # 先只认 ※（两条，没命中优选项），再补认命途图标（第三条进来，命中「绞杀它们」）
         self.assertEqual(
-            [call.kwargs.get("fate", False) for call in engine.event_option_icons.call_args_list],
-            [False, True],
+            [call.args[0] for call in engine.event_option_icons.call_args_list],
+            [("star",), ("star",) + FATE_ICON_NAMES],
         )
         # 命途图标那条选项照常走优选项路径：点选项文字的中心，再按整条文字底边点「确定」
         self.assertEqual(
@@ -915,7 +935,7 @@ class ConfirmEventClickTest(unittest.TestCase):
 
     def test_all_option_icons_are_found_not_only_the_best_one(self):
         """check() 只拿得到最高分的那个图标：一帧 3~4 条选项时要靠多目标匹配把它们都认出来；
-        ※ 那一遍只认星号，命途图标（「虫巢」优选项用的 fate6）等第二遍 fate=True 才补认。"""
+        ※ 那一遍只认星号，命途图标（「虫巢」优选项用的 fate6）等补认那一遍才认。"""
         star = find_image_by_name("star")
         fate = find_image_by_name("fate6")
         engine = _StubEngine({})
@@ -930,7 +950,7 @@ class ConfirmEventClickTest(unittest.TestCase):
         stars = SimulatedUniverse.event_option_icons(engine)
         self.assertEqual([icon["icon"] for icon in stars], ["star", "star"])
 
-        icons = SimulatedUniverse.event_option_icons(engine, fate=True)
+        icons = SimulatedUniverse.event_option_icons(engine, ("star",) + FATE_ICON_NAMES)
 
         self.assertEqual([icon["icon"] for icon in icons], ["star", "star", "fate6"])
         for found, (top, template) in zip(icons, ((212, star), (391, star), (570, fate))):

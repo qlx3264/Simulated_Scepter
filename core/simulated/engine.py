@@ -715,17 +715,31 @@ class SimulatedUniverse(UniverseUtils):
                 self.event = name
         return getattr(self, "event", "") or "未知事件"
 
-    def event_option_icons(self, fate=False):
+    def option_icon_names(self):
+        """
+        第一遍要匹配的选项图标模板名。模拟宇宙的选项图标只有星号（※）。
+        个别事件会给某个选项配别的图标，那种内核自己补。
+        """
+        return ("star",)
+
+    def extra_option_icon_names(self):
+        """
+        第一遍没命中优选项时，额外补认一遍的图标模板名。
+        模拟宇宙本身没有可补的图标，因此返回空元组。
+        """
+        return ()
+
+    def event_option_icons(self, names=None):
         """
         找出图标列里**所有**选项图标的中心，返回[{"x","y","score","icon"}]（屏幕坐标，按 y 排序，icon 是模板名）
-        选项图标有两类：普通选项的星号（※），和个别事件给某个选项用的命途图标。
         check() 只能拿到全局最高分的一个位置：一帧里有 3~5 条选项时只有最靠上的那个图标会被认出来。
         图标既是「选项出现了」的标志，也是每条选项横条的锚点，所以这里自己做多目标匹配，
         与 check() 完全同一个搜索窗口，逐个模板取所有 > 0.95 的峰值，12 px 内只留最高的那个。
-        fate：连 8 个命途图标一起匹配。默认只匹配 ※（一张模板）——普通事件的选项图标就是 ※，
-        命途图标只在「※ 那一遍没匹配到优选项」时才补认（见 select_event）。
-        一个 ※ 都没有说明这一帧不是选项界面，那时连命途图标也不匹配。
+        names：要匹配的图标模板名，默认就是 option_icon_names() 那一遍；补认的模板由
+        extra_option_icon_names() 给出，只有第一遍没命中优选项时才会走到（见 select_event）。
+        一个星号都没有说明这一帧不是选项界面，补认的模板那时也不匹配。
         """
+        names = self.option_icon_names() if names is None else tuple(names)
         mask_img = find_image_by_name("mask_event_icon")
         if mask_img is None:
             self._option_icons = []
@@ -736,9 +750,9 @@ class SimulatedUniverse(UniverseUtils):
         left = max(0, self.xx - int(anchor_x * self.xx) - (shape[1] + 60) // 2)
         top = max(0, self.yy - int(anchor_y * self.yy) - (shape[0] + 60) // 2)
         icons = []
-        for name in ("star",) + tuple(f"fate{i}" for i in range(1, 9)):
-            if name != "star" and (not fate or not icons):
-                # 没让认fate图标，或一个星号都没认到：不匹配八张fate图标。
+        for name in names:
+            if name != "star" and "star" in names and not icons:
+                # 一个星号都没认到：这一帧不是选项界面，补认的模板不再匹配。
                 break
             target = find_image_by_name(name)
             if target is None:
@@ -770,20 +784,20 @@ class SimulatedUniverse(UniverseUtils):
         self._option_icons = icons
         return icons
 
-    def event_option_rows(self, fresh=False, fate=False):
+    def event_option_rows(self, fresh=False, names=None):
         """
-        按每条选项左侧的图标（星号 ※ 或命途图标）只 OCR 它右侧的横条，返回识别到的选项行。
+        按每条选项左侧的图标（模拟宇宙里就是星号 ※）只 OCR 它右侧的横条，返回识别到的选项行。
         每行 = {"raw_text": 选项文字, "box": 选项文字行的屏幕框,
         "lines": 这一条读到的全部文字行, "icon": 图标位置}。
         选项文字一定在图标右侧，所以只认与图标同一行的选项文字。
         左边包含 ※ 在内：正屏 OCR 会把 ※ 和选项文字并进同一个文本框，
         横条左缘必须容得下它，否则 box_contain 过滤不出来。
-        fate：是否连命途图标一起认（默认只认 ※，见 event_option_icons）。
+        names：交给 event_option_icons 的图标模板名，默认 option_icon_names() 那一遍。
         """
         kx, ky = self.xx / 1920, self.yy / 1080
         panel_right = int(1850 * kx)
         rows = []
-        for icon in self.event_option_icons(fate=fate):
+        for icon in self.event_option_icons(names):
             band = [
                 int(icon["x"] - 30 * kx),
                 panel_right,
@@ -813,7 +827,7 @@ class SimulatedUniverse(UniverseUtils):
     #   → 选项图标（选项出现的标志）→ 选项识别选择 + warning/兜底选项 + 点击「确定」
     # 选项图标都在左侧图标列，用 mask_event_icon（窗口 180x960）。
     # 选项区什么都读不到时就什么都不点，并补一条 warning 说明这一帧整个函数什么都没识别到。
-    # 选项图标（星号 ※ 或命途图标）出现就代表选项出现了，它和选项文字绑定：
+    # 选项图标（星号 ※）出现就代表选项出现了，它和选项文字绑定：
     # event_option_rows 先把所有选项图标都认出来，再只 OCR 每个图标右侧的文字。
     def select_event(self):
         screen = self.get_screen()
@@ -832,8 +846,8 @@ class SimulatedUniverse(UniverseUtils):
                 CUS_LOGGER.debug(f"当前界面是「{label}」，交给它的动作处理")
             return
         self._skip_label_logged = None
-        # 选项图标（星号 ※ 或命途图标）出现代表选项出现
-        rows = self.event_option_rows()
+        # 选项图标（星号 ※）出现代表选项出现
+        rows = self.event_option_rows(names=self.option_icon_names())
         if not rows:
             # 选项区一个字都没有：选完选项正在进战斗、或玩家已经离开事件界面时
             CUS_LOGGER.debug(
@@ -854,19 +868,21 @@ class SimulatedUniverse(UniverseUtils):
         # 事件名只在写日志时才需要，交给 event_name_for_log 读
         prior = self.click_event_prior("", rows)
         if not prior:
-            # 只识别星号时没命中优选项才补认fate图标
-            fate_rows = self.event_option_rows(fate=True)
-            if len(fate_rows) > len(rows):
-                rows = fate_rows
-                prior = self.click_event_prior("", rows)
+            # 第一遍只认主要图标，没命中优选项时再用 extra_option_icon_names() 补认一遍。
+            extra_names = self.extra_option_icon_names()
+            if extra_names:
+                all_rows = self.event_option_rows(names=self.option_icon_names() + tuple(extra_names))
+                if len(all_rows) > len(rows):
+                    rows = all_rows
+                    prior = self.click_event_prior("", rows)
         if not prior:
             # 事件名先读出来：下面不管是「先等面板淡入」还是兜底，日志里都要写事件名。
             # 读到的名字会缓存进 self.event，本帧只读这一次，后面的帧直接用缓存。
             event_name = self.event_name_for_log(screen)
             if self._option_shown_at is not None and time.time() - self._option_shown_at < 0.8:
-                # 选项面板是淡入的：先出选项文字、后出命途图标，在这不到 0.8 s 的窗口里按兜底点会点错。
+                # 选项面板是淡入的：先出选项文字、后出选项图标，在这不到 0.8 s 的窗口里按兜底点会点错。
                 # 所以本帧先不决定，也不 sleep：直接返回，下一帧重新截图重新认，
-                # 那时命途图标已经画好，优选项自然就命中了。等满 0.8 s 还没命中才照旧走兜底。
+                # 那时图标已经正常显示，优选项自然就命中了。等满 0.8 s 还没命中才照旧走兜底。
                 CUS_LOGGER.debug(f"事件「{event_name}」选项面板刚出现（图标可能还在淡入），本帧不点击")
                 return
             # 没有战斗的事件不存在优选项

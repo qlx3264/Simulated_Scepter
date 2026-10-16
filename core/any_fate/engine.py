@@ -1247,6 +1247,14 @@ class AnyFateUniverse(SimulatedUniverse):
         # 固定偏移：x=0.1167 是按钮中心屏幕 x≈1696 的比例坐标，y = 选项卡 y - 0.1139
         self.confirm_event(point=(0.1167, self.ty - 0.1139), timeout=0.5)
 
+    # 寰宇命途（以及铁血战士、弹指一挥）的选项除了普通选项的星号（※），个别事件还会给某个选项
+    # 配一张自己的命途图标。只认星号会漏掉这一条，优选项就永远匹配不上，所以这里补上八个命途图标。
+    def extra_option_icon_names(self):
+        """
+        第一遍没命中优选项时额外补认的图标：fate1~fate8。
+        """
+        return tuple(f"fate{i}" for i in range(1, 9))
+
     def select_event(self):
         super().select_event()
         if self.new_node:
