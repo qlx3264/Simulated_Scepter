@@ -88,7 +88,7 @@ EVENT_LABEL_CLICK = (0.9479166666666666, 0.9564814814814815)
 # event_ui_label / read_event_name / confirm_text_box / event_option_rows），测试里留一份同值副本：
 # 改真实现的数字时，这几行要跟着改。
 EVENT_LABEL_BOX = [93, 230, 50, 100]  # 左上角界面标题（「事件」「奇物商店」「祝福强化」）
-EVENT_NAME_BOX = [190, 750, 960, 1000]  # 左下角地图标签里的事件名
+EVENT_NAME_BOX = [190, 800, 960, 1000]  # 左下角地图标签里的事件名
 # 上边界是 110（不是老值 320）：面板纵向位置随事件浮动，320 会把浮动到靠上的首行选项判成「不在面板内」
 EVENT_OPTION_BOX = [1320, 1850, 110, 1010]  # 右侧选项面板：点击点校验 + 星号横条右边界
 CONFIRM_BOX = [1590, 1830, 240, 1070]  # 右侧竖条：只在这里找「确定」文字（覆盖 5 条选项）
@@ -123,32 +123,45 @@ class _StubEngine:
     # 1080p 的空白画面：read_event_name 需要真实尺寸的截图来算缩放和切片
     SCREEN = np.zeros((1080, 1920, 3), dtype=np.uint8)
 
-    def __init__(self, matched, text_results=None, event_name="", options=None, ui_label="", stars=None):
+    def __init__(
+        self,
+        matched,
+        text_results=None,
+        event_name="",
+        options=None,
+        ui_label="",
+        stars=None,
+        fate_stars=None,
+    ):
         self.tx, self.ty = STALE_POINT
         self.matched = matched
         self.event_prior = ["选择事件"]
         self.fate = "存护"
         # 真实现里 self.event 一开始并不存在（getattr 取空串），只有写日志时才读一次
         self.event = ""
+        # select_event 记下「面板第一次认到选项」的时刻，用来等面板淡入（测淡入把它设成 None）
+        self._option_shown_at = 0.0
         self.xx, self.yy = 1920, 1080
         self.scx = 1.0
         self.screen = self.SCREEN
         self.get_screen = Mock(return_value=self.SCREEN)
         self.check = Mock(side_effect=self._check)
-        # 选项相关的方法默认用真实现，OCR 与认到的星号都由替身喂
+        # 选项相关的方法默认用真实现，OCR 与认到的选项图标都由替身喂
         self.options = list(options) if options else []
         self.confirm_box = None
         self.bands = None
-        self.worm_results = None
         self.stars = list(stars) if stars is not None else self._default_stars(self.options)
+        # 命途图标（个别事件的优选项用它）：只在「※ 那遍没匹配到优选项」的补认里出现
+        self.fate_stars = list(fate_stars) if fate_stars else []
 
-        def _star_rows():
-            # 真实现会把这一帧认到的星号留在 self._star_rows：select_event 用它判断
-            # 「连星号都没有」才报「什么都没识别到」
-            self._star_rows = self.stars
-            return list(self.stars)
+        def _option_icons(fate=False):
+            # 真实现会把这一帧认到的选项图标留在 self._option_icons：select_event 用它判断
+            # 「连选项图标都没有」才报「什么都没识别到」
+            icons = list(self.stars) + (list(self.fate_stars) if fate else [])
+            self._option_icons = icons
+            return icons
 
-        self.event_star_rows = Mock(side_effect=_star_rows)
+        self.event_option_icons = Mock(side_effect=_option_icons)
         self.get_local = SimulatedUniverse.get_local.__get__(self)
         self.event_option_rows = SimulatedUniverse.event_option_rows.__get__(self)
         self.pick_fallback_option = SimulatedUniverse.pick_fallback_option.__get__(self)
@@ -201,11 +214,9 @@ class _StubEngine:
         for star in self.stars:
             if box is not None and list(box) == self._star_band(star):
                 return list(self.options)
-        if self.worm_results is not None:
-            return list(self.worm_results)
         return []
 
-    def stub_ocr(self, options=None, confirm_box=None, stars=None, bands=None):
+    def stub_ocr(self, options=None, confirm_box=None, stars=None, bands=None, fate_stars=None):
         """给 ts.find_with_box 喂结果：选项横条（options）、右侧竖条（confirm_box），或按横条逐条指定。"""
         if options is not None:
             self.options = list(options)
@@ -213,7 +224,12 @@ class _StubEngine:
                 self.stars = self._default_stars(self.options)
         if stars is not None:
             self.stars = list(stars)
-        self.event_star_rows = Mock(return_value=list(self.stars))
+        if fate_stars is not None:
+            self.fate_stars = list(fate_stars)
+        # 与 __init__ 里那份桩一样：fate=True 是「※ 那遍没匹配到优选项」时的补认
+        self.event_option_icons = Mock(
+            side_effect=lambda fate=False: list(self.stars) + (list(self.fate_stars) if fate else [])
+        )
         self.confirm_box = confirm_box
         self.bands = {tuple(box): list(lines) for box, lines in bands.items()} if bands else None
 
@@ -442,15 +458,16 @@ class SelectEventTest(unittest.TestCase):
             ["arrow_dialog", "arrow", "arrow_1"],
         )
 
-    def test_star_rows_are_read_before_the_option_texts(self):
-        """星号（※）和选项文字绑定：先认出所有星号、再只 OCR 每条星号右侧的横条；星号本身不点。"""
+    def test_option_icons_are_read_before_the_option_texts(self):
+        """选项图标（星号 ※ 或命途图标）和选项文字绑定：先认出所有图标、再只 OCR 每个图标右侧的横条；图标本身不点。"""
         engine = _StubEngine(
             {}, {"休息区": False}, stars=[{"x": STAR_X, "y": 424, "score": 0.99}]
         )
         SimulatedUniverse.select_event(engine)
 
-        engine.event_star_rows.assert_called_once_with()
-        # 认到星号但选项横条里没文字：这是原有行为（debug + 不点击），不该报「未识别到有效触发器」
+        # 两遍匹配：先只认 ※（fate=False），没命中优选项才补认命途图标（fate=True，见 select_event）
+        engine.event_option_icons.assert_called_once_with(fate=False)
+        # 认到图标但选项横条里没文字：这是原有行为（debug + 不点击），不该报「未识别到有效触发器」
         self.manager.click.assert_not_called()
         self.assertFalse(
             any("未识别到有效触发器" in msg for msg in self._warning_messages())
@@ -473,11 +490,23 @@ class SelectEventTest(unittest.TestCase):
         self.assertEqual([call.args for call in self.manager.click.call_args_list], [OPTION_POINT])
         self.assertTrue(engine.confirm_event.called)
 
-    def test_unmatched_prior_is_not_retried(self):
-        """优选项没命中时只识别一次：重试两轮要多花 0.7s + 两次整屏 OCR（完美大挑战实测 1.4s）。"""
+    def test_unmatched_prior_only_adds_the_fate_pass(self):
+        """优选项没命中时只补认一遍命途图标：两遍都是「在已有整屏 OCR 结果里按框过滤」（forward=0），
+        不重开整屏 OCR、不轮询重试（完美大挑战实测重开一轮要 0.7s / 1.4s）。"""
         engine = self._run_with_options()
 
-        self.assertEqual(engine.ts.find_with_box.call_count, 1)
+        # 同一个星号横条在 ※ 与命途两遍里各过滤一次；两次都没 forward/re_screen → 没有重截屏、没有重 OCR
+        band = engine._star_band(engine.stars[0])
+        self.assertEqual(
+            [call.kwargs["box"] for call in engine.ts.find_with_box.call_args_list],
+            [band, band],
+        )
+        self.assertTrue(
+            all(
+                call.kwargs["forward"] is False and call.kwargs["re_screen"] is False
+                for call in engine.ts.find_with_box.call_args_list
+            )
+        )
         self.assertFalse(self.engine_time.sleep.called)
 
     def test_option_matched_without_confirm_falls_back_to_option_then_confirm(self):
@@ -613,7 +642,7 @@ class SelectEventTest(unittest.TestCase):
         engine = _StubEngine({}, {"休息区": False})
         engine.event_option_rows = Mock(
             return_value=[
-                {"raw_text": OPTION_TEXT, "box": [200, 60, 460, 100], "lines": [], "star": {}}
+                {"raw_text": OPTION_TEXT, "box": [200, 60, 460, 100], "lines": [], "icon": {}}
             ]
         )
         SimulatedUniverse.select_event(engine)
@@ -642,7 +671,7 @@ class SelectEventTest(unittest.TestCase):
                     "raw_text": "米购买一个钻石盒。",
                     "box": [1357, 1591, 265, 292],
                     "lines": [],
-                    "star": {},
+                    "icon": {},
                 }
             ]
         )
@@ -654,49 +683,98 @@ class SelectEventTest(unittest.TestCase):
         )
         self.assertEqual(self._error_messages(), [])
 
-
-    @staticmethod
-    def _iron_blood_stub(**kwargs):
-        """铁血内核替身：分支按类的所属模块认内核（core.iron_blood），所以套一个改过 __module__ 的替身类。"""
-        stub = type("IronBloodStub", (_StubEngine,), {"__module__": "core.iron_blood.engine"})
-        return stub({}, {"休息区": False}, **kwargs)
-
-    def test_worm_nest_prior_is_clicked_by_its_text_on_iron_blood(self):
-        """铁血内核的「虫巢」：优选项认不到星号，改成认出「绞杀它们」那句文字、点它自己的中心。"""
-        engine = self._iron_blood_stub(
-            event_name="虫巢", options=[{"raw_text": OPTION_TEXT, "box": OPTION_BOX}]
+    def test_fallback_waits_for_the_fading_option_panel_before_deciding(self):
+        """
+        面板是淡入的：命途图标比选项文字晚约 0.4 s 才画出来
+        （虫巢录屏实测 27.10 s 优选项文字已可读，27.13 s fate6 才认得到）。
+        面板刚出现的那一两帧先别兜底——那时补认还没有结果，兜底会挑中最长文字
+        （虫巢那次挑中的是最后一行「止步于巢穴门口。」）。等满 0.8 s 再照旧兜底点击。
+        """
+        engine = _StubEngine(
+            {},
+            {"休息区": False},
+            event_name="银河好人（其三）",
+            options=[{"raw_text": OPTION_TEXT, "box": OPTION_BOX}],
         )
-        engine.worm_results = [{"raw_text": "进入虫巢，绞杀它们！", "box": [1354, 1486, 283, 315]}]
+        engine._option_shown_at = None  # 面板这一帧刚认到选项
         SimulatedUniverse.select_event(engine)
 
+        self.manager.click.assert_not_called()
+        self.assertTrue(
+            any("本帧先不点击" in msg for msg in self._debug_messages()),
+            self._debug_messages(),
+        )
+
+        engine._option_shown_at = 0.0  # 已经等满 0.8 s：照旧走兜底
+        SimulatedUniverse.select_event(engine)
+
+        self.assertEqual([call.args for call in self.manager.click.call_args_list], [OPTION_POINT])
+
+
+    def test_fate_icon_option_is_matched_after_the_star_pass_misses(self):
+        """命途图标（「虫巢」的优选项用的是 fate6）只在 ※ 那遍没命中优选项时补认，认到的文字照常参与匹配。"""
+        stars = [
+            {"x": STAR_X, "y": 480, "score": 0.99, "icon": "star"},
+            {"x": STAR_X, "y": 656, "score": 0.99, "icon": "star"},
+        ]
+        fate_icon = {"x": STAR_X, "y": 283, "score": 0.99, "icon": "fate6"}
+        engine = _StubEngine({}, {"休息区": False}, event_name="虫巢", stars=stars)
+        # 铁血战士的 event_prior 里有「绞杀它们」：以前这条优选项因为图标不是星号而永远认不到
+        engine.event_prior = ["绞杀它们"]
+        engine.stub_ocr(
+            fate_stars=[fate_icon],
+            bands={
+                tuple(engine._star_band(fate_icon)): [
+                    {"raw_text": "进入虫巢，绞杀它们！", "box": [1354, 1486, 283, 315]}
+                ],
+                tuple(engine._star_band(stars[0])): [
+                    {"raw_text": "深入虫巢。", "box": [1354, 1486, 462, 494]}
+                ],
+                tuple(engine._star_band(stars[1])): [
+                    {"raw_text": "止步于巢穴门口。", "box": [1354, 1584, 641, 672]}
+                ],
+            },
+        )
+        engine.confirm_event = Mock(return_value=True)
+
+        SimulatedUniverse.select_event(engine)
+
+        # 先只认 ※（两条，没命中优选项），再补认命途图标（第三条进来，命中「绞杀它们」）
+        self.assertEqual(
+            [call.kwargs.get("fate", False) for call in engine.event_option_icons.call_args_list],
+            [False, True],
+        )
+        # 命途图标那条选项照常走优选项路径：点选项文字的中心，再按整条文字底边点「确定」
         self.assertEqual(
             [call.args for call in self.manager.click.call_args_list],
             [(1 - 1420 / 1920, 1 - 299 / 1080)],
         )
         self.assertEqual(
-            engine.confirm_event.call_args.args,
-            ("虫巢", (0.1135, 1 - (315 + 76) / 1080)),
+            engine.confirm_event.call_args.kwargs["point"],
+            (0.1135, 1 - (315 + 76) / 1080),
         )
-        # 搜索范围得宽到同时装得下两种面板偏移下第一行选项的文字框
-        # （实测 [1354,1486,283,315] 与 [1357,1595,211,242]，纵向差 71 px）
-        box = engine.ts.find_with_box.call_args.kwargs["box"]
-        self.assertLessEqual(box[0], 1354)
-        self.assertGreaterEqual(box[1], 1595)
-        self.assertLessEqual(box[2], 211)
-        self.assertGreaterEqual(box[3], 315)
 
-    def test_worm_nest_keeps_the_fallback_flow_on_other_kernels(self):
-        """不是铁血内核时不许走这条分支：别的内核跑「虫巢」还是按识别到的选项兜底。"""
-        engine = _StubEngine(
-            {},
-            {"休息区": False},
-            event_name="虫巢",
-            options=[{"raw_text": OPTION_TEXT, "box": OPTION_BOX}],
+    def test_fate_icons_are_only_matched_when_no_prior_hits(self):
+        """※ 那遍就命中优选项时不再补认命途图标——普通事件每帧省下 8 张模板（约 115 ms）。"""
+        star = {"x": STAR_X, "y": 228, "score": 0.99, "icon": "star"}
+        engine = _StubEngine({}, {"休息区": False}, event_name="购买事件", stars=[star])
+        engine.event_prior = ["购买1个1星祝福"]
+        engine.stub_ocr(
+            bands={
+                tuple(engine._star_band(star)): [
+                    {"raw_text": "购买1个1星祝福。", "box": [1357, 1595, 211, 242]}
+                ]
+            },
         )
-        engine.worm_results = [{"raw_text": "进入虫巢，绞杀它们！", "box": [1354, 1486, 283, 315]}]
+        engine.confirm_event = Mock(return_value=True)
+
         SimulatedUniverse.select_event(engine)
 
-        self.assertEqual([call.args for call in self.manager.click.call_args_list], [OPTION_POINT])
+        self.assertEqual(len(engine.event_option_icons.call_args_list), 1)
+        self.assertEqual(
+            [call.args for call in self.manager.click.call_args_list],
+            [(1 - 1476 / 1920, 1 - 226.5 / 1080)],
+        )
 
 
 class ConfirmEventClickTest(unittest.TestCase):
@@ -732,10 +810,10 @@ class ConfirmEventClickTest(unittest.TestCase):
             [call.args for call in self.manager.click.call_args_list],
             [OPTION_POINT, CONFIRM_FIXED_POINT],
         )
-        # 复核一次就够：OCR 只查了这条选项的星号横条 + 右侧竖条各一次，没有轮询、也没有图片匹配
+        # 复核一次就够：选项横条只在 ※/命途两遍里各过滤一次，右侧竖条只查一次；没有轮询、也没有图片匹配
         self.assertEqual(
             [call.kwargs["box"] for call in engine.ts.find_with_box.call_args_list],
-            [engine._star_band(engine.stars[0]), CONFIRM_BOX],
+            [engine._star_band(engine.stars[0])] * 2 + [CONFIRM_BOX],
         )
         self.assertEqual(
             [call.args[0] for call in engine.check.call_args_list].count("confirm"), 0
@@ -761,13 +839,13 @@ class ConfirmEventClickTest(unittest.TestCase):
             "raw_text": "购买1个1星祝福。",
             "box": [1357, 1595, 390, 421],  # 星号行 407 → 选项文字行占 393~421
             "lines": [{"raw_text": "购买1个1星祝福。", "box": [1357, 1595, 390, 421]}],
-            "star": {"x": STAR_X, "y": 407, "score": 0.99},
+            "icon": {"x": STAR_X, "y": 407, "score": 0.99},
         }
         row2 = {
             "raw_text": "强化2个随机祝福。",
             "box": [1357, 1595, 568, 599],  # 星号行 585
             "lines": [{"raw_text": "强化2个随机祝福。", "box": [1357, 1595, 568, 599]}],
-            "star": {"x": STAR_X, "y": 585, "score": 0.99},
+            "icon": {"x": STAR_X, "y": 585, "score": 0.99},
         }
 
         point = SimulatedUniverse.confirm_point(engine, row)
@@ -835,24 +913,31 @@ class ConfirmEventClickTest(unittest.TestCase):
         point = SimulatedUniverse.confirm_point(engine, rows[0])
         self.assertAlmostEqual((1 - point[1]) * 1080, 474 + CONFIRM_TEXT_GAP, delta=1)
 
-    def test_all_stars_are_found_not_only_the_best_one(self):
-        """check() 只拿得到最高分的那个 ※：一帧 3~4 条选项时要靠多目标匹配全部认出来。"""
+    def test_all_option_icons_are_found_not_only_the_best_one(self):
+        """check() 只拿得到最高分的那个图标：一帧 3~4 条选项时要靠多目标匹配把它们都认出来；
+        ※ 那一遍只认星号，命途图标（「虫巢」优选项用的 fate6）等第二遍 fate=True 才补认。"""
         star = find_image_by_name("star")
+        fate = find_image_by_name("fate6")
         engine = _StubEngine({})
         frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
         for top in (212, 391):  # 实测两条选项的 ※ 左边界 x=1342、相差 178.5 px
             frame[top : top + star.shape[0], 1342 : 1342 + star.shape[1]] = star
+        # 「虫巢」的优选项用的是命途图标：同一列第三个位置贴一张 fate6
+        frame[570 : 570 + fate.shape[0], 1342 : 1342 + fate.shape[1]] = fate
         engine.screen = frame
         engine.get_screen = Mock(return_value=frame)
 
-        stars = SimulatedUniverse.event_star_rows(engine)
+        stars = SimulatedUniverse.event_option_icons(engine)
+        self.assertEqual([icon["icon"] for icon in stars], ["star", "star"])
 
-        self.assertEqual(len(stars), 2)
-        for found, top in zip(stars, (212, 391)):
-            self.assertAlmostEqual(found["x"], 1342 + star.shape[1] / 2, delta=2)
-            self.assertAlmostEqual(found["y"], top + star.shape[0] / 2, delta=2)
-        # 认到的结果留在 self._star_rows 里，select_event 靠它判断「连星号都没有」
-        self.assertEqual(engine._star_rows, stars)
+        icons = SimulatedUniverse.event_option_icons(engine, fate=True)
+
+        self.assertEqual([icon["icon"] for icon in icons], ["star", "star", "fate6"])
+        for found, (top, template) in zip(icons, ((212, star), (391, star), (570, fate))):
+            self.assertAlmostEqual(found["x"], 1342 + template.shape[1] / 2, delta=2)
+            self.assertAlmostEqual(found["y"], top + template.shape[0] / 2, delta=2)
+        # 认到的结果留在 self._option_icons 里，select_event 靠它判断「连选项图标都没有」
+        self.assertEqual(engine._option_icons, icons)
 
 
 if __name__ == "__main__":
