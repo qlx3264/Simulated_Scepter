@@ -541,7 +541,7 @@ class DivergentUniverse(UniverseUtils):
             elif self.check("arrow_1", 0.2865, 0.5000, mask="mask_event_icon"):
                 self.click((self.tx, self.ty))
             # 事件选择界面
-            elif self.check("star", 0.2865, 0.5000, mask="mask_event_icon", threshold=0.965):
+            elif self.check("star", 0.2865, 0.5000, mask="mask_event_icon", threshold=0.95):
                 if self.debug and event_id[0] == -1:
                     CUS_LOGGER.debug(f"self.ts.res: {self.ts.res}")
                     with open('test.txt', 'a') as f:

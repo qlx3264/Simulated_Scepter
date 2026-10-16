@@ -1233,7 +1233,7 @@ class AnyFateUniverse(SimulatedUniverse):
         success = False
         CUS_LOGGER.info("没错，我们会尽己所能将其诠释：比世界的命运更为沉重之物……")
         for i in range(1,9):
-            if self.check(f"fate{i}", 0.2865, 0.5000, mask="mask_event_icon", threshold=0.965, fresh=True):
+            if self.check(f"fate{i}", 0.2865, 0.5000, mask="mask_event_icon", threshold=0.95, fresh=True):
                 success=True
                 break
         if not success:

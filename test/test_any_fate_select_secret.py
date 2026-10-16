@@ -1,4 +1,5 @@
-"""「秘闻」事件与事件选项选择的点击目标回归测试。
+"""
+「秘闻」事件与事件选项选择的点击目标回归测试。
 
 背景：select_secret / select_event 原来的 else 分支会盲点 `click(self.tx, self.ty)` 与
 `click(0.1167, ty - 0.1139)`，而这两个坐标取自进入函数时的 `self.tx/self.ty`——它是上一次
@@ -12,15 +13,13 @@ check() 留下的位置（即使那次匹配失败也会写入），与当前界
 每个分支都点自己刚匹配到的位置，不再使用残留坐标。
 - select_secret 的金色 ▼ 用 `mask_dialog` 框定右侧对话区（搜索窗口 120x120 = 掩码 60x60 + 60），
   不再只搜「模板大小 + 60」（114x106）；事件面板里的图标改用 mask_event_icon 竖条
-  （掩码 120x900 → 窗口 180x960），「确定」按钮改成 OCR 读文字后按文字位置点，
-  不再用 confirm 图片 + mask_event 大窗口匹配。
+  （掩码 120x900 → 窗口 180x960），「确定」按钮改成 OCR 读文字后按文字位置点。
 - select_event：选项文字不再整框 OCR，而是先认出**所有**星号（※，check() 只拿得到最高分的那个，
   一帧 3~4 条选项时会漏），再只 OCR 每条星号右侧的横条（`event_option_rows`）——说明文字因此
   不会被当成一条独立选项，一条选项的整块文字也正好落在同一个横条里，「确定」按钮的偏移就按
   整块底边算（`confirm_point`）。
 - select_event：优选项没匹配上时只识别一次（没有战斗的事件本来就不存在优选项，重试只是白等），
-  先记一条 warning 再在识别到的选项里选一条点击，避免卡在事件界面；
-  确实一个都点不到时什么都不点。
+  先记一条 warning 再在识别到的选项里选一条点击，避免卡在事件界面；确实一个都点不到时什么都不点。
 """
 
 import types
@@ -85,12 +84,13 @@ WRAPPED_OPTION_LINES = [
 # 什么都不识别时的最终兜底：点左上角「事件」文字的固定落点（1 - x/xx, 1 - y/yy）
 EVENT_LABEL_CLICK = (0.9479166666666666, 0.9564814814814815)
 
-# 下面这几个区域/文字，真实现已经按用户要求内联进各自的函数（core/simulated/engine.py 的
+# 下面这几个区域/文字，真实现已内联进各自的函数（core/simulated/engine.py 的
 # event_ui_label / read_event_name / confirm_text_box / event_option_rows），测试里留一份同值副本：
 # 改真实现的数字时，这几行要跟着改。
-EVENT_LABEL_BOX = [93, 230, 50, 100]  # 左上角界面标题（「事件」「奇物商店」…）
+EVENT_LABEL_BOX = [93, 230, 50, 100]  # 左上角界面标题（「事件」「奇物商店」「祝福强化」）
 EVENT_NAME_BOX = [190, 750, 960, 1000]  # 左下角地图标签里的事件名
-EVENT_OPTION_BOX = [1320, 1850, 320, 1010]  # 右侧选项面板：点击点校验 + 星号横条右边界
+# 上边界是 110（不是老值 320）：面板纵向位置随事件浮动，320 会把浮动到靠上的首行选项判成「不在面板内」
+EVENT_OPTION_BOX = [1320, 1850, 110, 1010]  # 右侧选项面板：点击点校验 + 星号横条右边界
 CONFIRM_BOX = [1590, 1830, 240, 1070]  # 右侧竖条：只在这里找「确定」文字（覆盖 5 条选项）
 CONFIRM_LABEL = "确定"
 # 星号（※）在左侧图标列里的屏幕 x（实测模板左边界 1342 + 模板宽 50/2 ≈ 1367）；
@@ -629,6 +629,31 @@ class SelectEventTest(unittest.TestCase):
             self._info_messages(),
         )
 
+    def test_top_option_row_is_clickable_when_the_panel_sits_high(self):
+        """
+        真实卡死帧（银河好人（其三））：首行文字框中心 y=278 比老上边界 320 高，也必须能点。
+        选项面板的纵向位置随事件浮动；上边界写 320 时
+        这一行会被判成「不在选项列表区域内」，而兜底又正好挑中它 → 每帧放弃点击，卡死在该事件。
+        """
+        engine = _StubEngine({}, {"休息区": False})
+        engine.event_option_rows = Mock(
+            return_value=[
+                {
+                    "raw_text": "米购买一个钻石盒。",
+                    "box": [1357, 1591, 265, 292],
+                    "lines": [],
+                    "star": {},
+                }
+            ]
+        )
+        SimulatedUniverse.select_event(engine)
+
+        self.assertEqual(
+            [call.args for call in self.manager.click.call_args_list],
+            [(1 - 1474 / 1920, 1 - 278.5 / 1080)],
+        )
+        self.assertEqual(self._error_messages(), [])
+
 
     @staticmethod
     def _iron_blood_stub(**kwargs):
@@ -730,8 +755,7 @@ class ConfirmEventClickTest(unittest.TestCase):
         )
 
     def test_confirm_point_uses_the_option_text_line(self):
-        """「确定」位置按被点中那条选项「选项文字行」的底边 + 76 算：实测 21.24.05.06 那两帧
-        （星号行 407 / 585）按钮中心分别在 y=497 / 676。"""
+        """「确定」位置按被点中那条选项「选项文字行」的底边 + 76 算"""
         engine = _StubEngine({})
         row = {
             "raw_text": "购买1个1星祝福。",

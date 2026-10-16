@@ -558,7 +558,7 @@ class SimulatedUniverse(UniverseUtils):
         False 表示优选项都没命中、挑了一个识别到的选项兜底。
         """
         # 选项面板在右侧 [左, 右, 上, 下]（1920x1080 基准）：点击点必须落在里面才算点到了选项。
-        left, right, top, bottom = self.scaled_box([1320, 1850, 320, 1010])
+        left, right, top, bottom = self.scaled_box([1320, 1850, 110, 1010])
         x = (row["box"][0] + row["box"][1]) / 2
         y = (row["box"][2] + row["box"][3]) / 2
         text = row["raw_text"][1:]
@@ -722,7 +722,7 @@ class SimulatedUniverse(UniverseUtils):
         check() 只能拿到全局最高分的一个位置：一帧里有 3~4 条选项时（「休息区」实测 4 条）
         只有最靠上的那个 ※ 会被认出来。星号既是「选项出现了」的标志，也是每条选项横条的锚点，
         所以这里自己做多目标匹配——同一张 star 模板、与 check() 完全同一个搜索窗口，
-        取所有 > 0.965 的峰值，12 px 内只留最高的那个。
+        取所有 > 0.95 的峰值，12 px 内只留最高的那个。
         """
         target = find_image_by_name("star")
         mask_img = find_image_by_name("mask_event_icon")
@@ -739,7 +739,7 @@ class SimulatedUniverse(UniverseUtils):
         left = max(0, self.xx - int(anchor_x * self.xx) - (shape[1] + 60) // 2)
         top = max(0, self.yy - int(anchor_y * self.yy) - (shape[0] + 60) // 2)
         result = cv.matchTemplate(local, target, cv.TM_CCORR_NORMED)
-        ys, xs = np.where(result > 0.965)
+        ys, xs = np.where(result > 0.95)
         stars = []
         for score, px, py in sorted(
             (
@@ -859,7 +859,7 @@ class SimulatedUniverse(UniverseUtils):
                         )
                         self.confirm_event(event_name, self.confirm_point(res))
                         return
-                CUS_LOGGER.warning(f"事件「虫巢」未识别到优选项「绞杀它们」，本帧不点击")
+                CUS_LOGGER.warning("事件「虫巢」未识别到优选项「绞杀它们」，本帧不点击")
                 return
             picked = self.pick_fallback_option(rows)
             if picked is None or not self.click_event_option(event_name, picked):
