@@ -170,7 +170,7 @@ class SimulatedUniverse(UniverseUtils):
                     if self.ts.nothing:
                         self.update_state("battle")
                 else:
-                    CUS_LOGGER.warning("匹配不到任何图标")
+                    CUS_LOGGER.warning("匹配不到任何图标与简中文本标志")
             # 匹配到图片 res=1时等待一段时间
         CUS_LOGGER.info("演算世界：翁法罗斯已从缓冲区销毁。")
 

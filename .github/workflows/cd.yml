@@ -493,6 +493,9 @@ jobs:
         with:
           ref: master
 
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:

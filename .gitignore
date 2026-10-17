@@ -58,3 +58,7 @@ tp
 utils/mylib/
 update.py
 update.bat
+native/countdown/target/
+tool/_countdown_native.dll
+tool/_countdown_native.so
+tool/_countdown_native.dylib

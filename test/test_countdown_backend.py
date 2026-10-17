@@ -11,6 +11,13 @@ except ImportError:
     import countdown_backend as backend
 
 
+def sampling_snapshot(controller):
+    """仅在验证内部学习状态时导出 Rust 快照，生产推荐不做这项转换。"""
+    session = getattr(controller, "_native_session", None)
+    if session:
+        session.snapshot()
+
+
 def linear_map(infected=()):
     nodes = [
         {"idx": 0, "name": "start", "cx": 0, "cy": 0},
@@ -354,6 +361,7 @@ class CountdownMonteCarloTests(unittest.TestCase):
 
         with self.assertRaises(InterruptedError):
             controller.evaluate_current_policy(context, 100, cancelled=cancelled)
+        sampling_snapshot(controller)
         self.assertNotIn(controller._context_key(context), controller.frozen_policy)
         self.assertNotIn(controller._win_context_key(context),
                          controller.frozen_win_policy)
@@ -432,10 +440,12 @@ class CountdownMonteCarloTests(unittest.TestCase):
             locked_effect=backend.EFFECT_NOTHING)
         self.assertEqual(controller._context_key(low), controller._context_key(high))
         controller.refine_current_state(low)
+        sampling_snapshot(controller)
         sample = controller.q[controller._q_key(low, 1)]
         # 走感染节点的回报固定为 +1，而不是绝对终值。
         self.assertEqual(1.0, sample.mean)
         controller.refine_current_state(high)
+        sampling_snapshot(controller)
         self.assertEqual(1.0, controller.q[controller._q_key(high, 1)].mean)
 
     def test_current_state_refinement_balances_every_legal_root_action(self):
@@ -447,6 +457,7 @@ class CountdownMonteCarloTests(unittest.TestCase):
         context = backend.DecisionContext(
             backend.PHASE_EFFECT, state, backend.EFFECT_NOTHING)
         completed = controller.refine_current_state(context)
+        sampling_snapshot(controller)
         actions = controller.legal_actions(context)
         self.assertEqual(len(actions) * 7, completed)
         self.assertTrue(all(
@@ -495,6 +506,155 @@ class CountdownMonteCarloTests(unittest.TestCase):
         self.assertEqual(1.0, recommendation.reports[2].mean)
         self.assertEqual(2, controller._greedy_action(context))
 
+    def test_win_policy_keeps_learned_hits_below_root_noise_floor(self):
+        model = high_target_map()
+        controller = backend.MonteCarloController(
+            model, backend.MCConfig(win_rate_noise_floor_percent=0.2))
+        controller.win_target = 75
+        context = backend.DecisionContext(
+            backend.PHASE_PATH, model.initial_state(2, 3, 15),
+            locked_effect=backend.EFFECT_ADJACENT)
+        for action in controller.legal_actions(context):
+            for _ in range(2):
+                controller.q[controller._q_key(context, action)].append(
+                    40 if action == 20 else 10)
+        successes = controller.win_q[controller._win_q_key(context, 21)]
+        successes.append(76, 75)
+        for _ in range(999):
+            successes.append(30, 75)
+        self.assertEqual(20, controller._greedy_action(context))
+        self.assertEqual(0.001, successes.win_rate)
+        self.assertEqual(21, controller._greedy_win_action(context))
+
+    def test_zero_hit_evaluation_preserves_incumbent_without_inventing_wins(self):
+        model = high_target_map()
+        controller = backend.MonteCarloController(
+            model, backend.MCConfig(evaluation_rollouts=24))
+        controller.win_target = 75
+        context = backend.DecisionContext(
+            backend.PHASE_PATH, model.initial_state(2, 3, 15),
+            locked_effect=backend.EFFECT_ADJACENT)
+        controller._freeze_action(context, 21, True)
+        controller.win_q[controller._win_q_key(context, 21)].append(76, 75)
+        reports = {action: backend.MCSampleStats()
+                   for action in controller.legal_actions(context)}
+        for action, stats in reports.items():
+            for _ in range(4):
+                stats.append(40 if action == 20 else 30, 75)
+        with patch.object(controller, "evaluate_actions", return_value=(reports, 12)):
+            result = controller.evaluate_current_policy(context, target=75)
+        self.assertEqual(20, result.recommended_action)
+        self.assertEqual(21, result.highest_win_action)
+        self.assertEqual(21, controller._greedy_win_action(context))
+        self.assertEqual(24, result.evaluation_rollouts)
+        self.assertEqual({(0, 4, 0.0)}, {
+            (stats.wins, stats.target_count, stats.win_rate)
+            for stats in result.win_reports.values()})
+
+    def test_fresh_win_evidence_can_replace_incumbent(self):
+        model = high_target_map()
+        controller = backend.MonteCarloController(
+            model, backend.MCConfig(evaluation_rollouts=24))
+        controller.win_target = 75
+        context = backend.DecisionContext(
+            backend.PHASE_PATH, model.initial_state(2, 3, 15),
+            locked_effect=backend.EFFECT_ADJACENT)
+        controller._freeze_action(context, 21, True)
+        reports = {action: backend.MCSampleStats()
+                   for action in controller.legal_actions(context)}
+        for action, stats in reports.items():
+            for index in range(4):
+                stats.append(76 if action == 23 and index == 0 else 30, 75)
+        with patch.object(controller, "evaluate_actions", return_value=(reports, 12)):
+            result = controller.evaluate_current_policy(context, target=75)
+        self.assertEqual(23, result.highest_win_action)
+        self.assertEqual(23, controller._greedy_win_action(context))
+        self.assertEqual(0.25, result.win_reports[23].win_rate)
+
+        # 校准得到的成功证据也应保留，不能只保护学习 Q 表里的命中。
+        misses = {action: backend.MCSampleStats() for action in reports}
+        for action, stats in misses.items():
+            for _ in range(4):
+                stats.append(40 if action == 20 else 30, 75)
+        with patch.object(controller, "evaluate_actions", return_value=(misses, 12)):
+            result = controller.evaluate_current_policy(context, target=75)
+        self.assertEqual(23, result.highest_win_action)
+        self.assertEqual(0, result.win_reports[23].wins)
+
+    def test_zero_hits_without_prior_success_can_update_policy_by_mean(self):
+        model = high_target_map()
+        controller = backend.MonteCarloController(
+            model, backend.MCConfig(evaluation_rollouts=24))
+        controller.win_target = 75
+        context = backend.DecisionContext(
+            backend.PHASE_PATH, model.initial_state(2, 3, 15),
+            locked_effect=backend.EFFECT_ADJACENT)
+        controller._freeze_action(context, 21, True)
+        reports = {action: backend.MCSampleStats()
+                   for action in controller.legal_actions(context)}
+        for action, stats in reports.items():
+            for _ in range(4):
+                stats.append(40 if action == 20 else 30, 75)
+        with patch.object(controller, "evaluate_actions", return_value=(reports, 12)):
+            result = controller.evaluate_current_policy(context, target=75)
+        self.assertEqual(20, result.highest_win_action)
+        self.assertEqual(20, controller._greedy_win_action(context))
+
+    def test_deep_calibration_keeps_incumbent_when_every_action_misses(self):
+        model = high_target_map()
+        controller = backend.MonteCarloController(model)
+        controller.win_target = 75
+        context = backend.DecisionContext(
+            backend.PHASE_PATH, model.initial_state(2, 3, 15),
+            locked_effect=backend.EFFECT_ADJACENT)
+        controller._freeze_action(context, 21, True)
+        controller.win_q[controller._win_q_key(context, 21)].append(76, 75)
+        controller._sampled_contexts[controller._win_context_key(context)] = [context, 1]
+
+        def evaluate(initial, target, progress, cancelled, rollouts, win_policy=False):
+            actions = controller.legal_actions(initial)
+            reports = {action: backend.MCSampleStats() for action in actions}
+            for action, stats in reports.items():
+                for _ in range(max(1, rollouts // len(actions))):
+                    stats.append(40 if action == 20 else 30, target)
+            return reports, sum(stats.count for stats in reports.values())
+
+        with (patch.object(controller, "_refine_with_budget", return_value=0),
+              patch.object(controller, "evaluate_actions", side_effect=evaluate)):
+            controller._calibrate_successors((context,), 75, 3, 30)
+        self.assertEqual(21, controller._greedy_win_action(context))
+
+    def test_natural_effect_can_replay_paid_effect_with_one_extra_cheat(self):
+        model = high_target_map()
+        controller = backend.MonteCarloController(model)
+        for effect in backend.ALL_EFFECTS:
+            for seed in range(8):
+                with self.subTest(effect=effect, seed=seed):
+                    high_rng, low_rng = random.Random(seed), random.Random(seed)
+                    action_rng = random.Random(seed + 100)
+                    high = backend.DecisionContext(
+                        backend.PHASE_EFFECT, model.initial_state(2, 3, 15), effect)
+                    low = backend.DecisionContext(
+                        backend.PHASE_EFFECT, high.state, effect % 6 + 1)
+                    high = controller._advance(high, "keep", high_rng)
+                    low = controller._advance(low, ("cheat", effect), low_rng)
+                    while True:
+                        self.assertEqual(high.state.cheat_rem, low.state.cheat_rem + 1)
+                        self.assertEqual(
+                            (high.phase, high.observed_effect, high.locked_effect,
+                             high.state.node_idx, high.state.infected,
+                             high.state.countdown, high.state.reroll_rem),
+                            (low.phase, low.observed_effect, low.locked_effect,
+                             low.state.node_idx, low.state.infected,
+                             low.state.countdown, low.state.reroll_rem))
+                        self.assertEqual(high_rng.getstate(), low_rng.getstate())
+                        if low.phase == backend.PHASE_TERMINAL:
+                            break
+                        action = action_rng.choice(controller.legal_actions(low))
+                        self.assertIn(action, controller.legal_actions(high))
+                        high = controller._advance(high, action, high_rng)
+                        low = controller._advance(low, action, low_rng)
+
     def test_adjacent_effect_parent_evaluation_uses_calibrated_successor_policy(self):
         model = third_countdown_map()
         state = model.initial_state(cheat=1, reroll=2, countdown=0)
@@ -505,6 +665,7 @@ class CountdownMonteCarloTests(unittest.TestCase):
                                     evaluation_rollouts=10_000,
                                     min_visits=200, seed=20260802))
         recommendation = controller.recommend(context, target=5)
+        sampling_snapshot(controller)
         keep = recommendation.reports["keep"]
         keep_win = (recommendation.win_reports or recommendation.reports)["keep"]
         path_context = backend.DecisionContext(
