@@ -123,6 +123,14 @@ uv sync
 ```
 上条指令如因网络问题不可用，也可以换成其它 uv 命令，例如 `powershell -ExecutionPolicy Bypass -File scripts/uv_fallback.ps1 -Executable uvx -Arguments 'ruff check .'`。
 
+Rust 采样加速：先安装 Rust stable 工具链，再执行：
+
+```plaintext
+uv run python scripts/build_countdown_native.py
+```
+
+首次部署或修改 Rust 源码后执行一次即可；正式打包时会自动编译并包含动态库。
+
 **启动权杖**
 
 ```plaintext
