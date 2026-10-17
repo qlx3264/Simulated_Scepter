@@ -21,6 +21,7 @@ from core.simulated.config import config
 from core.simulated.utils import UniverseUtils, get_dis, set_forground, sprint
 from tool.thread import ThreadWithException
 from tool.utils.Error import NormalEndError
+from tool.utils.image_tool import find_image_by_name
 from tool.utils.minimap_util import (
     MINIMAP_RADIUS,
     deal_minimap,
@@ -548,30 +549,358 @@ class SimulatedUniverse(UniverseUtils):
         if not (self.click_text('神奇宇宙') or self.click_text('巨胃宇宙')):
             key_mouse_manager.click(0.5, 0.5)
         key_mouse_manager.click(0.5062, 0.1065)
-    # 事件界面
-    def select_event(self):
-        tx, ty = self.tx, self.ty
-        event_prior =  self.event_prior+[self.fate]
-        success = self.click_text(event_prior)
+
+    def click_event_option(self, event_name, row, from_prior=False):
+        """
+        点击一条选项（row 来自 event_option_rows），位置不在选项面板里就放弃。
+        与 click_text / click_box 一致，使用 OCR 返回的选项文本框中心作为点击点。
+        from_prior=True 表示优选项命中（正常路径）；
+        False 表示优选项都没命中、挑了一个识别到的选项兜底。
+        """
+        # 选项面板在右侧 [左, 右, 上, 下]（1920x1080 基准）：点击点必须落在里面才算点到了选项。
+        left, right, top, bottom = self.scaled_box([1320, 1850, 110, 1010])
+        x = (row["box"][0] + row["box"][1]) / 2
+        y = (row["box"][2] + row["box"][3]) / 2
+        text = row["raw_text"][1:]
+        # 事件名只在出问题（越界、退而求其次）时才读：正常命中优选项的路径不读，省一次 OCR。
+        if not (left <= x <= right and top <= y <= bottom):
+            name = event_name or self.event_name_for_log(self.screen)
+            CUS_LOGGER.error(f"「{name}」选项「{text}」位置 ({x:.0f}, {y:.0f}) 不在选项列表区域内，放弃点击")
+            return False
+        if from_prior:
+            CUS_LOGGER.debug(f"点击优选项：「{text}」")
+        else:
+            name = event_name or self.event_name_for_log(self.screen)
+            CUS_LOGGER.warning(f"「{name}」选项列表里没有优选项命中，点击「{text}」")
+        key_mouse_manager.click(1 - x / self.xx, 1 - y / self.yy)
+        return True
+
+    def click_event_prior(self, event_name, rows):
+        """
+        在已识别到的选项行里找优选项并点击，命中返回被点的那个选项，没命中返回 None。
+        返回命中的选项是为了让调用方拿它的文本框算「确定」按钮的固定偏移。
+        """
+        for text in self.event_prior + [self.fate]:
+            for row in rows:
+                if text in row["raw_text"]:
+                    if self.click_event_option(event_name, row, from_prior=True):
+                        return row
+                    return None
+        return None
+
+    def pick_fallback_option(self, rows):
+        """优选项都不在时挑一条选项兜底：先按优选项优先级挑，都命中不了就取最长的那一行。"""
+        if not rows:
+            return None
+        for text in self.event_prior + [self.fate]:
+            for row in rows:
+                if text in row["raw_text"]:
+                    return row
+        return max(rows, key=lambda row: len(row["raw_text"].strip()))
+
+    # 「确定」按钮贴在**被选中选项文本框的右下角**，优选项命中和兜底两条路共用一套定位：
+    #   1) 固定偏移：x 是屏幕常量，y = 被选中选项文本块底边 + 76。
+    #   2) 复核：OCR 右侧竖条里的「确定」文字（confirm_text_box，约 60 ms）——固定偏移那一下
+    #      没点中时按钮文字还在，按文字位置补点；所以偏移偶有失准也不会再卡死。
+    def confirm_point(self, row):
+        """
+        按被点中那条选项的文字行，推算「确定」按钮中心的键鼠比例坐标。
+        以选项文字行的底边当基准—，按钮贴在选中选项框的右下角。
+        """
+        bottom = max(line["box"][3] for line in row.get("lines") or [row])
+        # 76 是按钮中心在选项文字行底边下方的距离。
+        return 0.1135, 1 - (bottom + 76) / self.yy
+
+    def scaled_box(self, box):
+        """把 1920x1080 基准的区域框 [左,右,上,下] 缩放到当前分辨率。（现在没用）"""
+        left, right, top, bottom = box
+        if (self.xx, self.yy) == (1920, 1080):
+            return list(box)
+        return [
+            int(left * self.xx / 1920),
+            int(right * self.xx / 1920),
+            int(top * self.yy / 1080),
+            int(bottom * self.yy / 1080),
+        ]
+
+    def confirm_text_box(self):
+        """
+        在框内寻找「确定」文字，返回它的屏幕文本框 [x0,x1,y0,y1]，没有返回 None。
+        find_with_box(forward=1, re_screen=True) 会重新截一帧、只对这条竖条进行 OCR。
+        """
+        box = self.scaled_box([1590, 1830, 240, 1070])
+        for res in self.ts.find_with_box(box=box, forward=True, re_screen=True):
+            if isinstance(res, dict) and "确定" in res.get("raw_text", ""):
+                return list(res["box"])
+        return None
+
+    def click_confirm_text(self, box):
+        """点「确定」文字框的中心（与 click_text 一致，用镜像比例坐标）。"""
+        center_x = (box[0] + box[1]) / 2
+        center_y = (box[2] + box[3]) / 2
+        key_mouse_manager.click(1 - center_x / self.xx, 1 - center_y / self.yy)
+
+    def confirm_event(self, event_name=None, point=None, timeout=1.5):
+        """
+        点掉选项框右下角浮出的「确定」按钮，事件才会真的往下走；优选项命中和兜底共用。
+        point 是固定偏移算出来的按钮位置（confirm_point 的键鼠比例坐标）：选项点中后按钮必然
+        出现，先直接点这一下（不用识别，省一次 OCR）；点完再 OCR 复核一次——按钮文字还在就说明
+        固定偏移没点中，按文字位置补点。point=None（拿不到选项框）时退回纯文字轮询。
+        """
         key_mouse_manager.wait()
-        self.get_screen()
-        tm=time.time()
-        if success:
-            success=False
-            while time.time()-tm<1.5:
-                if self.check("confirm", 0.1828, 0.5000, mask="mask_event", threshold=0.965,fresh=True):
-                    success = True
-                    break
-        if success:
-            CUS_LOGGER.info("原来那浑身着火的恶魔，满脑子幻想的都是要成为「救世主」哪！")
+        if point is not None:
+            key_mouse_manager.click(*point)
+            time.sleep(0.2)  # 等游戏把「确定」按钮收掉，再复核它是不是真被点掉了
+            box = self.confirm_text_box()
+            if box is None:
+                return True
+            name = event_name or self.event_name_for_log(getattr(self, "screen", None))
+            CUS_LOGGER.warning(f"事件「{name}」按固定偏移没点中「确定」，按文字识别的位置补点")
+            self.click_confirm_text(box)
+            return True
+        tm = time.time()
+        while time.time() - tm < timeout:
+            box = self.confirm_text_box()
+            if box is not None:
+                CUS_LOGGER.debug("选项已选中，点击「确定」推进事件")
+                self.click_confirm_text(box)
+                return True
+        return False
+
+    def event_ui_label(self, img=None):
+        """读左上角界面标题栏的文字（「事件」/「奇物商店」/「祝福强化」），读不到返回空串。"""
+        if img is None:
+            img = self.get_screen()
+        if img is None:
+            return ""
+        try:
+            return self.ts.ocr_one_row(img, [93, 230, 50, 100]) or ""
+        except Exception as e:
+            CUS_LOGGER.warning(f"界面标题识别失败：{e}")
+            return ""
+
+    def read_event_name(self, img=None):
+        """读取当前事件在地图左下角显示的名字，读不到返回空串。"""
+        if img is None:
+            img = self.get_screen()
+        if img is None:
+            return ""
+        name_box = [190, 800, 960, 1000]
+        h, w = img.shape[:2]
+        if (w, h) != (1920, 1080):
+            x1, x2, y1, y2 = name_box
+            box = [int(x1 * w / 1920), int(x2 * w / 1920), int(y1 * h / 1080), int(y2 * h / 1080)]
+        else:
+            box = list(name_box)
+        try:
+            name = self.ts.ocr_one_row(img, box)
+        except Exception as e:  # OCR 失败不该拖垮事件流程，退回空串
+            CUS_LOGGER.warning(f"事件名识别失败：{e}")
+            return ""
+        if not name:
+            return ""
+        name = name.strip().replace("事件", "").replace("秘闻", "").replace("修改", "")
+        name = name.strip(" 　，,。.、·:：；;！!？?「」『』[]()（）")
+        return name if len(name) > 1 else ""
+
+    def event_name_for_log(self, screen=None):
+        """
+        事件名只在写日志时才有用，所以这里才去 OCR。
+        每次事件最多读一次（读到的存进 self.event 复用），认不出来就用「未知事件」。
+        离开选项界面（选项区一个字都读不到）时会把 self.event 清空，下一个事件重新读，
+        """
+        if not getattr(self, "event", ""):
+            name = self.read_event_name(screen)
+            if name:
+                self.event = name
+        return getattr(self, "event", "") or "未知事件"
+
+    def option_icon_names(self):
+        """
+        第一遍要匹配的选项图标模板名。模拟宇宙的选项图标只有星号（※）。
+        个别事件会给某个选项配别的图标，那种内核自己补。
+        """
+        return ("star",)
+
+    def extra_option_icon_names(self):
+        """
+        第一遍没命中优选项时，额外补认一遍的图标模板名。
+        模拟宇宙本身没有可补的图标，因此返回空元组。
+        """
+        return ()
+
+    def event_option_icons(self, names=None):
+        """
+        找出图标列里**所有**选项图标的中心，返回[{"x","y","score","icon"}]（屏幕坐标，按 y 排序，icon 是模板名）
+        check() 只能拿到全局最高分的一个位置：一帧里有 3~5 条选项时只有最靠上的那个图标会被认出来。
+        图标既是「选项出现了」的标志，也是每条选项横条的锚点，所以这里自己做多目标匹配，
+        与 check() 完全同一个搜索窗口，逐个模板取所有 > 0.95 的峰值，12 px 内只留最高的那个。
+        names：要匹配的图标模板名，默认就是 option_icon_names() 那一遍；补认的模板由
+        extra_option_icon_names() 给出，只有第一遍没命中优选项时才会走到（见 select_event）。
+        一个星号都没有说明这一帧不是选项界面，补认的模板那时也不匹配。
+        """
+        names = self.option_icon_names() if names is None else tuple(names)
+        mask_img = find_image_by_name("mask_event_icon")
+        if mask_img is None:
+            self._option_icons = []
+            return []
+        shape = (int(self.scx * mask_img.shape[0]), int(self.scx * mask_img.shape[1]))
+        anchor_x, anchor_y = 0.2865, 0.5000
+        local = self.get_local(anchor_x, anchor_y, shape)
+        left = max(0, self.xx - int(anchor_x * self.xx) - (shape[1] + 60) // 2)
+        top = max(0, self.yy - int(anchor_y * self.yy) - (shape[0] + 60) // 2)
+        icons = []
+        for name in names:
+            if name != "star" and "star" in names and not icons:
+                # 一个星号都没认到：这一帧不是选项界面，补认的模板不再匹配。
+                break
+            target = find_image_by_name(name)
+            if target is None:
+                continue
+            target = cv.resize(
+                target,
+                dsize=(int(self.scx * target.shape[1]), int(self.scx * target.shape[0])),
+            )
+            result = cv.matchTemplate(local, target, cv.TM_CCORR_NORMED)
+            ys, xs = np.where(result > 0.95)
+            for score, px, py in sorted(
+                (
+                    (float(result[py, px]), int(px), int(py))
+                    for py, px in zip(ys.tolist(), xs.tolist())
+                ),
+                reverse=True,
+            ):
+                center_x = left + px + target.shape[1] / 2
+                center_y = top + py + target.shape[0] / 2
+                if any(
+                    abs(center_x - icon["x"]) <= 12 and abs(center_y - icon["y"]) <= 12
+                    for icon in icons
+                ):
+                    continue
+                icons.append({"x": center_x, "y": center_y, "score": score, "icon": name})
+        icons.sort(key=lambda icon: icon["y"])
+        # 记下这一帧认到的图标：select_event 用「一个图标都没有」判断这一帧是不是什么都没识别到，
+        # 免得为了写那条 warning 再匹配一次。
+        self._option_icons = icons
+        return icons
+
+    def event_option_rows(self, fresh=False, names=None):
+        """
+        按每条选项左侧的图标（模拟宇宙里就是星号 ※）只 OCR 它右侧的横条，返回识别到的选项行。
+        每行 = {"raw_text": 选项文字, "box": 选项文字行的屏幕框,
+        "lines": 这一条读到的全部文字行, "icon": 图标位置}。
+        选项文字一定在图标右侧，所以只认与图标同一行的选项文字。
+        左边包含 ※ 在内：正屏 OCR 会把 ※ 和选项文字并进同一个文本框，
+        横条左缘必须容得下它，否则 box_contain 过滤不出来。
+        names：交给 event_option_icons 的图标模板名，默认 option_icon_names() 那一遍。
+        """
+        kx, ky = self.xx / 1920, self.yy / 1080
+        panel_right = int(1850 * kx)
+        rows = []
+        for icon in self.event_option_icons(names):
+            band = [
+                int(icon["x"] - 30 * kx),
+                panel_right,
+                int(icon["y"] - 30 * ky),
+                int(icon["y"] + 20 * ky),
+            ]
+            lines = [
+                res
+                for res in self.ts.find_with_box(box=band, forward=fresh, re_screen=fresh)
+                if isinstance(res, dict)
+                and len(res.get("raw_text", "").strip()) > 1
+                and "UID" not in res.get("raw_text", "")
+                and "确定" not in res.get("raw_text", "")
+            ]
+            if not lines:
+                continue
+            lines.sort(key=lambda res: res["box"][2])
+            row = dict(lines[0])  # 第一行才是选项文字，下面是说明文字
+            row["lines"] = lines
+            row["icon"] = icon
+            rows.append(row)
+        rows.sort(key=lambda row: row["box"][2])
+        return rows
+
+    # 事件界面：由左上角「事件」文字触发，一次调用把事件界面这一帧该做的事按优先级走完：
+    #   金色 ▼（对话阶段）→ 推进图标（arrow → arrow_1 → shop_herta）→ 界面标题让路（奇物商店等）
+    #   → 选项图标（选项出现的标志）→ 选项识别选择 + warning/兜底选项 + 点击「确定」
+    # 选项图标都在左侧图标列，用 mask_event_icon（窗口 180x960）。
+    # 选项区什么都读不到时就什么都不点，并补一条 warning 说明这一帧整个函数什么都没识别到。
+    # 选项图标（星号 ※）出现就代表选项出现了，它和选项文字绑定：
+    # event_option_rows 先把所有选项图标都认出来，再只 OCR 每个图标右侧的文字。
+    def select_event(self):
+        screen = self.get_screen()
+        if self.check("arrow_dialog", 0.1781, 0.3250, mask="mask_dialog"):
             key_mouse_manager.click(self.tx, self.ty)
-        elif self.click_text(text="休息区",box=[187, 289, 903, 941],click=False,warning=False):
+            return
+        for photo in ("arrow", "arrow_1", "shop_herta"):
+            if self.check(photo, 0.2865, 0.5000, mask="mask_event_icon"):
+                key_mouse_manager.click(self.tx, self.ty)
+                return
+        # 若检测到切换到奇物商店或祝福强化界面：交给对应动作处理
+        label = self.event_ui_label(screen)
+        if any(skip in label for skip in ("商店", "奇物", "祝福", "强化")):
+            if getattr(self, "_skip_label_logged", None) != label:
+                self._skip_label_logged = label
+                CUS_LOGGER.debug(f"当前界面是「{label}」，交给它的动作处理")
+            return
+        self._skip_label_logged = None
+        # 选项图标（星号 ※）出现代表选项出现
+        rows = self.event_option_rows(names=self.option_icon_names())
+        if not rows:
+            # 选项区一个字都没有：选完选项正在进战斗、或玩家已经离开事件界面时
+            CUS_LOGGER.debug(
+                f"事件「{getattr(self, 'event', '') or '未知事件'}」选项列表区域没有识别到任何文本或已退出事件，本帧不点击"
+            )
+            if not getattr(self, "_option_icons", None) and getattr(self, "_nothing_logged", None) is not True:
+                # 金色▼、推进图标、标题、选项图标、选项文字全没认到
+                self._nothing_logged = True
+                CUS_LOGGER.info("「救世主」…在命运三相神谕的语境下，这张牌意味着谐调和完美无缺。")
+            # 已经离开选项界面：忘掉上一个事件的名字，下一个事件写日志时重新读
+            self.event = ""
+            self._option_shown_at = None
+            return
+        self._nothing_logged = None
+        if getattr(self, "_option_shown_at", None) is None:
+            # 面板上第一次认到选项：记下时刻，用来等它淡入完（见下面的兜底决定）
+            self._option_shown_at = time.time()
+        # 事件名只在写日志时才需要，交给 event_name_for_log 读
+        prior = self.click_event_prior("", rows)
+        if not prior:
+            # 第一遍只认主要图标，没命中优选项时再用 extra_option_icon_names() 补认一遍。
+            extra_names = self.extra_option_icon_names()
+            if extra_names:
+                all_rows = self.event_option_rows(names=self.option_icon_names() + tuple(extra_names))
+                if len(all_rows) > len(rows):
+                    rows = all_rows
+                    prior = self.click_event_prior("", rows)
+        if not prior:
+            # 事件名先读出来：下面不管是「先等面板淡入」还是兜底，日志里都要写事件名。
+            # 读到的名字会缓存进 self.event，本帧只读这一次，后面的帧直接用缓存。
+            event_name = self.event_name_for_log(screen)
+            if self._option_shown_at is not None and time.time() - self._option_shown_at < 0.8:
+                # 选项面板是淡入的：先出选项文字、后出选项图标，在这不到 0.8 s 的窗口里按兜底点会点错。
+                # 所以本帧先不决定，也不 sleep：直接返回，下一帧重新截图重新认，
+                # 那时图标已经正常显示，优选项自然就命中了。等满 0.8 s 还没命中才照旧走兜底。
+                CUS_LOGGER.debug(f"事件「{event_name}」选项面板刚出现（图标可能还在淡入），本帧不点击")
+                return
+            # 没有战斗的事件不存在优选项
+            CUS_LOGGER.debug(f"事件「{event_name}」没有匹配到优选项，将改选识别范围内的选项")
+            picked = self.pick_fallback_option(rows)
+            if picked is None or not self.click_event_option(event_name, picked):
+                # 认到了选项图标与选项文字，但兜底选项的点击点落在选项面板外
+                CUS_LOGGER.warning(f"事件「{event_name}」的兜底选项点击点不在选项面板内，本帧不点击")
+                return
+            self.confirm_event(event_name, self.confirm_point(picked))
+            return
+
+        if self.confirm_event(point=self.confirm_point(prior)):
+            return
+        if self.click_text(text="休息区", box=[187, 289, 903, 941], click=False, warning=False):
             CUS_LOGGER.info("事已至此，我只想知道，当他们以凡人的身躯在黑潮中消散时……你为何连一滴眼泪都没有流下？")
             key_mouse_manager.click(0.1667, 0.2592)
-        else:
-            CUS_LOGGER.info("「救世主」…在命运三相神谕的语境下，这张牌意味着谐调和完美无缺。")
-            key_mouse_manager.click(tx, ty)
-            key_mouse_manager.click(0.1167, ty - 0.1139)
+
     # 选取奇物
     def select_strange(self):
         img = self.get_small_interaction_img(x=0.5000, y=0.7333, mask="mask_strange", fresh=True)
