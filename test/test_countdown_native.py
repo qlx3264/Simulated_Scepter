@@ -1,12 +1,14 @@
 """真实 Rust 库与 Python 参考实现的同种子差分验证；运行前构建内核。"""
 
+import gc
 import unittest
+import weakref
 from dataclasses import replace
 from unittest.mock import patch
 
 from test.test_countdown_backend import high_target_map, linear_map, rational_path_map
 from tool import countdown_evaluator as backend
-from tool.countdown_native import load_library
+from tool.countdown_native import NativeSession, load_library
 
 
 class PythonController(backend.MonteCarloController):
@@ -24,6 +26,8 @@ class NativeCountdownTests(unittest.TestCase):
         return backend.MonteCarloController(model, config), PythonController(model, config)
 
     def assert_training_equal(self, native, reference):
+        # 正常推荐只返回汇总；对拍显式导出完整状态，不把测试同步带回热路径。
+        native._native_session.snapshot()
         self.assertEqual(native.sampling_backend, "rust")
         self.assertEqual(reference.sampling_backend, "python")
         self.assertEqual(native.q, reference.q)
@@ -111,9 +115,9 @@ class NativeCountdownTests(unittest.TestCase):
                          reference.evaluate_actions(context, 80, cancelled=self.cancel_after(13)))
         self.assertEqual(native.total_evaluation_trials, reference.total_evaluation_trials)
         self.assertEqual(native.evaluate_actions(context, 80), reference.evaluate_actions(context, 80))
-        self.assertIsNone(native._native_session)
+        self.assertFalse(native._native_session.running)
 
-    def test_callback_exception_releases_handle_and_keeps_completed_training(self):
+    def test_callback_exception_keeps_session_and_completed_training(self):
         model = linear_map()
         native, reference = self.pair(model)
         context = backend.DecisionContext("effect", model.initial_state(2, 1, 50), 5)
@@ -130,7 +134,7 @@ class NativeCountdownTests(unittest.TestCase):
             native.refine_current_state(context, cancelled=fail)
         reference.refine_current_state(context, cancelled=self.cancel_after(3))
         self.assert_training_equal(native, reference)
-        self.assertIsNone(native._native_session)
+        self.assertFalse(native._native_session.running)
 
     def test_progress_exception_after_mean_batch_keeps_all_completed_paths(self):
         model = linear_map()
@@ -192,7 +196,7 @@ class NativeCountdownTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "重入"):
             native.refine_current_state(context, cancelled=reenter)
         self.assertEqual(native.total_control_rollouts, 0)
-        self.assertIsNone(native._native_session)
+        self.assertFalse(native._native_session.running)
         self.assertEqual(native.refine_current_state(context), 300)
 
     def test_missing_library_and_oversized_map_use_python(self):
@@ -208,6 +212,66 @@ class NativeCountdownTests(unittest.TestCase):
         context = replace(context, state=model.initial_state(2, 0, 50))
         self.assertEqual(native.evaluate_actions(context, 52), reference.evaluate_actions(context, 52))
         self.assertEqual(native.sampling_backend, "python")
+
+    def test_recommendation_keeps_all_intermediate_state_in_rust(self):
+        model = high_target_map()
+        native, reference = self.pair(model, budget=2000)
+        context = backend.DecisionContext("effect", model.initial_state(9, 2, 40), 6)
+        expected = reference.recommend(context, 80)
+        with (patch.object(NativeSession, "snapshot", side_effect=AssertionError("exported intermediate state")),
+              patch.object(backend.MonteCarloController, "_calibrate_successors",
+                           side_effect=AssertionError("Python calibration executed"))):
+            self.assertEqual(native.recommend(context, 80), expected)
+            handle = native._native_session.handle
+            # 没有为了诊断把 Q 表和冻结策略搬回 Python；下次推荐继续使用原生状态。
+            self.assertFalse(native.q)
+            self.assertFalse(native.win_q)
+            self.assertFalse(native.frozen_policy)
+            self.assertFalse(native.frozen_win_policy)
+            result = native.recommend(context, 80)
+            self.assertEqual(native._native_session.handle, handle)
+        self.assertEqual(result, reference.recommend(context, 80))
+        self.assert_training_equal(native, reference)
+
+    def test_session_is_released_with_controller(self):
+        model = linear_map()
+        native, _ = self.pair(model, budget=20)
+        context = backend.DecisionContext("effect", model.initial_state(2, 0, 50), 5)
+        native.recommend(context, 52)
+        release = native._native_session.release
+        session = weakref.ref(native._native_session)
+        del native
+        gc.collect()
+        self.assertIsNone(session())
+        self.assertFalse(release.alive)
+
+    def test_cancelled_full_recommendation_can_resume(self):
+        model = high_target_map()
+        native, _ = self.pair(model, budget=2000)
+        context = backend.DecisionContext("effect", model.initial_state(5, 2, 50), 5)
+        with self.assertRaises(InterruptedError):
+            native.recommend(context, 80, cancelled=self.cancel_after(13))
+        self.assertGreater(native.total_control_rollouts, 0)
+        self.assertFalse(native._native_session.running)
+        result = native.recommend(context, 80)
+        self.assertEqual(result.control_rollouts, 2000)
+        self.assertTrue(all(s.count > 0 for s in result.reports.values()))
+
+    def test_full_recommendations_all_effects_and_decision_phases(self):
+        model = high_target_map()
+        for effect in backend.ALL_EFFECTS:
+            with self.subTest(effect=effect):
+                native, reference = self.pair(model, seed=-123, budget=800)
+                state = model.initial_state(3, 1, 60)
+                context = backend.DecisionContext("effect", state, effect)
+                self.assertEqual(native.recommend(context, 80), reference.recommend(context, 80))
+                self.assert_training_equal(native, reference)
+        for phase, locked in (("target", 4), ("path", 3)):
+            with self.subTest(phase=phase):
+                native, reference = self.pair(model, budget=800)
+                context = backend.DecisionContext(phase, model.initial_state(2, 1, 40), locked_effect=locked)
+                self.assertEqual(native.recommend(context, 80), reference.recommend(context, 80))
+                self.assert_training_equal(native, reference)
 
 
 if __name__ == "__main__":

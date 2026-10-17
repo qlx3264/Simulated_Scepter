@@ -11,6 +11,13 @@ except ImportError:
     import countdown_backend as backend
 
 
+def sampling_snapshot(controller):
+    """仅在验证内部学习状态时导出 Rust 快照，生产推荐不做这项转换。"""
+    session = getattr(controller, "_native_session", None)
+    if session:
+        session.snapshot()
+
+
 def linear_map(infected=()):
     nodes = [
         {"idx": 0, "name": "start", "cx": 0, "cy": 0},
@@ -354,6 +361,7 @@ class CountdownMonteCarloTests(unittest.TestCase):
 
         with self.assertRaises(InterruptedError):
             controller.evaluate_current_policy(context, 100, cancelled=cancelled)
+        sampling_snapshot(controller)
         self.assertNotIn(controller._context_key(context), controller.frozen_policy)
         self.assertNotIn(controller._win_context_key(context),
                          controller.frozen_win_policy)
@@ -432,10 +440,12 @@ class CountdownMonteCarloTests(unittest.TestCase):
             locked_effect=backend.EFFECT_NOTHING)
         self.assertEqual(controller._context_key(low), controller._context_key(high))
         controller.refine_current_state(low)
+        sampling_snapshot(controller)
         sample = controller.q[controller._q_key(low, 1)]
         # 走感染节点的回报固定为 +1，而不是绝对终值。
         self.assertEqual(1.0, sample.mean)
         controller.refine_current_state(high)
+        sampling_snapshot(controller)
         self.assertEqual(1.0, controller.q[controller._q_key(high, 1)].mean)
 
     def test_current_state_refinement_balances_every_legal_root_action(self):
@@ -447,6 +457,7 @@ class CountdownMonteCarloTests(unittest.TestCase):
         context = backend.DecisionContext(
             backend.PHASE_EFFECT, state, backend.EFFECT_NOTHING)
         completed = controller.refine_current_state(context)
+        sampling_snapshot(controller)
         actions = controller.legal_actions(context)
         self.assertEqual(len(actions) * 7, completed)
         self.assertTrue(all(
@@ -654,6 +665,7 @@ class CountdownMonteCarloTests(unittest.TestCase):
                                     evaluation_rollouts=10_000,
                                     min_visits=200, seed=20260802))
         recommendation = controller.recommend(context, target=5)
+        sampling_snapshot(controller)
         keep = recommendation.reports["keep"]
         keep_win = (recommendation.win_reports or recommendation.reports)["keep"]
         path_context = backend.DecisionContext(

@@ -1,8 +1,5 @@
 use crate::rng::Random;
-use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet},
-};
+use std::{cell::RefCell, collections::HashMap};
 
 #[repr(C)]
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Hash)]
@@ -120,7 +117,6 @@ pub struct Model {
     pub q: [HashMap<Key, Stats>; 2],
     pub frozen: [HashMap<Key, u8>; 2],
     effects: RefCell<HashMap<(u32, u64), [f64; 6]>>,
-    pub dirty: HashSet<(usize, Key)>,
     pub visits: Vec<Visit>,
     visit_indices: HashMap<Key, usize>,
 }
@@ -142,7 +138,6 @@ impl Model {
             q: Default::default(),
             frozen: Default::default(),
             effects: Default::default(),
-            dirty: Default::default(),
             visits: Vec::new(),
             visit_indices: Default::default(),
         }
@@ -398,7 +393,7 @@ impl Model {
         }
     }
 
-    fn bonus(&self, c: Context, action: u8) -> f64 {
+    pub fn bonus(&self, c: Context, action: u8) -> f64 {
         if c.phase == 3 {
             self.nodes[action as usize].bonus
         } else {
@@ -460,7 +455,13 @@ impl Model {
         selected
     }
 
-    fn choose(&self, c: Context, actions: &[u8], win: bool, cache: &mut [ActionCache; 2]) -> u8 {
+    pub fn choose(
+        &self,
+        c: Context,
+        actions: &[u8],
+        win: bool,
+        cache: &mut [ActionCache; 2],
+    ) -> u8 {
         if !win {
             return self.mean_action(c, actions, cache);
         }
@@ -520,7 +521,6 @@ impl Model {
     pub fn clear_visits(&mut self) {
         self.visits.clear();
         self.visit_indices.clear();
-        self.dirty.clear();
     }
 
     pub fn rollout(
@@ -572,7 +572,6 @@ impl Model {
                 if win { value } else { value - cd as f64 },
                 if win { self.target } else { None },
             );
-            self.dirty.insert((win as usize, key));
         }
         value
     }

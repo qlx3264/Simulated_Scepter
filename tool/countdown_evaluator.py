@@ -13,7 +13,7 @@ from collections import defaultdict
 from dataclasses import dataclass, replace
 from typing import Callable, Iterable, Mapping, Optional
 
-from tool.countdown_native import get_session, sampling_session
+from tool.countdown_native import sampling_session
 
 
 EFFECT_SPREAD = 1
@@ -381,6 +381,12 @@ class MonteCarloController:
         self._sampled_contexts = {}
         self.sampling_backend = "python"
 
+    @property
+    def q_state_count(self) -> int:
+        """只返回状态数量，不为诊断把原生学习表转换成 Python 对象。"""
+        native = getattr(self, "_native_session", None)
+        return native.q_states if native else len(self.q)
+
     def _state_key(self, state: CountdownState) -> tuple:
         # 均分目标对当前 CD 线性可加；Q 回填后续累计回报后可安全去掉该维度。
         # 均分 Q 不使用目标；目标只进入独立胜率策略，不污染均分表。
@@ -546,6 +552,9 @@ class MonteCarloController:
                        policy_cache: Optional[dict] = None,
                        actions: Optional[tuple] = None,
                        context_key: Optional[tuple] = None) -> object:
+        native = getattr(self, "_native_session", None)
+        if native:
+            return native.choose(context)
         context_key = context_key or self._context_key(context)
         actions = actions or self.legal_actions(context)
         if not actions:
@@ -584,6 +593,9 @@ class MonteCarloController:
                            policy_cache: Optional[dict] = None,
                            actions: Optional[tuple] = None,
                            context_key: Optional[tuple] = None) -> object:
+        native = getattr(self, "_native_session", None)
+        if native:
+            return native.choose(context, True)
         context_key = context_key or self._context_key(context)
         actions = actions or self.legal_actions(context)
         cache_key = (True, self._win_context_key(context))
@@ -704,18 +716,6 @@ class MonteCarloController:
             seed = (base_seed + sequence * 1_000_003
                     + (900_000_007 if win_policy else 0))
             sequence += 1
-            native = get_session(self, initial)
-            if native:
-                offset = completed
-
-                def native_progress(done, _budget, _label):
-                    progress(offset + done, total, label)
-
-                result = native.run(
-                    initial, current_actions, budget, seed, int(win_policy), self.win_target,
-                    native_progress if progress else None, cancelled, label)
-                completed += result.completed
-                return
             rng = random.Random(seed)
             for index in range(budget):
                 if cancelled and cancelled():
@@ -769,14 +769,6 @@ class MonteCarloController:
         budget = self.config.evaluation_rollouts if rollouts is None else max(1, int(rollouts))
         per_action = max(1, budget // len(actions))
         total = per_action * len(actions)
-        native = get_session(self, context)
-        if native:
-            seed = self.config.seed + 500_000_003 + self.total_evaluation_trials * 130_363
-            result = native.run(context, actions, per_action, seed, 3 if win_policy else 2,
-                                target, progress, cancelled, "冻结策略独立评价")
-            reports = {action: native.stats(result.stats[index])
-                       for index, action in enumerate(actions)}
-            return reports, result.completed
         reports = {action: MCSampleStats() for action in actions}
         completed, rng, policy_cache = 0, random.Random(0), {}
         last_progress = time.perf_counter()
@@ -988,15 +980,6 @@ class MonteCarloController:
             target: Optional[float] = None) -> MCSampleStats:
         """在效果尚未出现时，等概率抽取首效果并评价冻结条件策略。"""
         context = DecisionContext(PHASE_EFFECT, state, ALL_EFFECTS[0])
-        native = get_session(self, context)
-        if native:
-            for effect in ALL_EFFECTS:
-                if first_actions[effect] not in self.legal_actions(replace(context, observed_effect=effect)):
-                    raise ValueError(f"{first_actions[effect]!r} 不是效果 {effect} 的合法动作")
-            seed = self.config.seed + 500_000_003 + self.total_evaluation_trials * 130_363
-            result = native.run(context, tuple(first_actions[effect] for effect in ALL_EFFECTS),
-                                max(1, int(rollouts)), seed, 4, target, None, None, "首效果策略评价")
-            return native.stats(result.stats[0])
         stats = MCSampleStats()
         rng, policy_cache = random.Random(0), {}
         for index in range(max(1, int(rollouts))):

@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import sys
 import traceback
+from time import perf_counter
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _PROJECT_ROOT)
@@ -87,7 +88,7 @@ class MapLoadThread(QThread):
 
 class RecommendationThread(QThread):
     progress_signal = pyqtSignal(int, int, str, int)
-    done_signal = pyqtSignal(object, int)
+    done_signal = pyqtSignal(object, int, float)
     failed_signal = pyqtSignal(str, int)
 
     def __init__(self, controller, context, target, request_id):
@@ -96,6 +97,7 @@ class RecommendationThread(QThread):
         self.target, self.request_id = target, request_id
 
     def run(self):
+        started = perf_counter()
         try:
             result = self.controller.recommend(
                 self.context, self.target,
@@ -103,7 +105,7 @@ class RecommendationThread(QThread):
                     value, total, text, self.request_id),
                 self.isInterruptionRequested)
             if not self.isInterruptionRequested():
-                self.done_signal.emit(result, self.request_id)
+                self.done_signal.emit(result, self.request_id, perf_counter() - started)
         except Exception:
             if not self.isInterruptionRequested():
                 self.failed_signal.emit(traceback.format_exc(), self.request_id)
@@ -853,16 +855,17 @@ class MainWindow(QMainWindow):
         if self.auto_pending and self.recommendation:
             QTimer.singleShot(0, self._continue_auto_step)
 
-    def _recommendation_done(self, recommendation, request_id):
+    def _recommendation_done(self, recommendation, request_id, elapsed):
         if request_id != self.request_id or not self.session or recommendation.context != self.session.context:
             return
         self.cancel_requested = False
         self.recommendation = recommendation
         self._set_busy(False, "建议已更新")
         self._log(
-            f"[MC] {PHASE_LABELS[recommendation.context.phase]} 推荐 "
+            f"[MC/{self.controller.sampling_backend}] {PHASE_LABELS[recommendation.context.phase]} 推荐 "
             f"{format_action(recommendation.context.phase, recommendation.recommended_action)}；"
-            f"控制{recommendation.control_rollouts:,}，独立评价{recommendation.evaluation_rollouts:,}。")
+            f"控制{recommendation.control_rollouts:,}，独立评价{recommendation.evaluation_rollouts:,}，"
+            f"耗时{elapsed:.2f}秒。")
         self._refresh_view()
         if self.auto_pending:
             QTimer.singleShot(0, self._continue_auto_step)

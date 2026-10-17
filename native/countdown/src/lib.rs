@@ -1,10 +1,10 @@
-//! 仅供 tool/countdown_native.py 使用的私有 C ABI。
-//! 桥接层校验并持有数组和句柄，保证同步调用期间有效且不能并发或重入。
+//! Python 仅传入地图/请求、接收根动作统计；完整计算在持久 Rust 会话内完成。
+mod evaluator;
 mod model;
 mod rng;
 
-use model::{ActionCache, Context, Model, Node, Policy, Record, Stats, Visit};
-use rng::Random;
+use evaluator::{Engine, Poll, Report, Request};
+use model::{Context, Model, Node, Policy, Record, Visit};
 use std::{
     cell::RefCell,
     ffi::{c_char, CString},
@@ -32,36 +32,14 @@ fn guarded<T: Default>(call: impl FnOnce() -> T) -> T {
 }
 
 pub struct Session {
-    model: Model,
+    engine: Engine,
     records: Vec<Record>,
+    policies: Vec<Policy>,
 }
-
-#[repr(C)]
-pub struct Job {
-    initial: Context,
-    seed: i64,
-    budget: u64,
-    epsilon_start: f64,
-    epsilon_end: f64,
-    target: f64,
-    actions: [u8; 64],
-    action_count: u32,
-    kind: u32,
-    has_target: u32,
-}
-
-#[repr(C)]
-pub struct ResultStats {
-    stats: [Stats; 64],
-    completed: u64,
-    trials: u64,
-}
-
-type Poll = extern "C" fn(u64) -> i32;
 
 #[no_mangle]
 pub extern "C" fn countdown_abi() -> u32 {
-    1
+    2
 }
 
 #[no_mangle]
@@ -69,12 +47,12 @@ pub extern "C" fn countdown_layout(index: u32) -> usize {
     [
         size_of::<Context>(),
         size_of::<Node>(),
-        size_of::<Stats>(),
+        size_of::<model::Stats>(),
         size_of::<Record>(),
         size_of::<Policy>(),
         size_of::<Visit>(),
-        size_of::<Job>(),
-        size_of::<ResultStats>(),
+        size_of::<Request>(),
+        size_of::<Report>(),
     ]
     .get(index as usize)
     .copied()
@@ -102,8 +80,9 @@ pub unsafe extern "C" fn countdown_create(
                 .all(|&edge| (edge as usize) < count));
         }
         Box::into_raw(Box::new(Session {
-            model: Model::new(nodes, reliable),
+            engine: Engine::new(Model::new(nodes, reliable)),
             records: Vec::new(),
+            policies: Vec::new(),
         }))
     })
 }
@@ -115,6 +94,7 @@ pub unsafe extern "C" fn countdown_destroy(session: *mut Session) {
     }
 }
 
+// 只用于首次接管既有 Python 状态；正常推荐不反复交换中间表。
 #[no_mangle]
 pub unsafe extern "C" fn countdown_load(
     session: *mut Session,
@@ -122,107 +102,32 @@ pub unsafe extern "C" fn countdown_load(
     count: usize,
 ) -> i32 {
     guarded(|| {
-        let model = &mut (*session).model;
         for record in slice::from_raw_parts(records, count) {
-            model.q[record.mode as usize].insert(record.key, record.stats);
+            (*session).engine.model.q[record.mode as usize].insert(record.key, record.stats);
         }
         1
     })
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn countdown_policies(
+pub unsafe extern "C" fn countdown_initialize(
     session: *mut Session,
     policies: *const Policy,
     count: usize,
+    control: u64,
+    trials: u64,
     target: f64,
     has_target: u32,
 ) -> i32 {
     guarded(|| {
-        let model = &mut (*session).model;
-        model.target = (has_target != 0).then_some(target);
-        for policy in &mut model.frozen {
-            policy.clear();
-        }
+        let engine = &mut (*session).engine;
+        engine.total_control = control;
+        engine.total_trials = trials;
+        engine.model.target = (has_target != 0).then_some(target);
         for policy in slice::from_raw_parts(policies, count) {
-            model.frozen[policy.mode as usize].insert(policy.key, policy.action as u8);
-        }
-        1
-    })
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn countdown_run(
-    session: *mut Session,
-    job: *const Job,
-    output: *mut ResultStats,
-    poll: Poll,
-) -> i32 {
-    guarded(|| {
-        let job = &*job;
-        let output = &mut *output;
-        *output = ResultStats {
-            stats: [Stats::default(); 64],
-            completed: 0,
-            trials: 0,
-        };
-        let model = &mut (*session).model;
-        let learn = job.kind < 2;
-        let win = job.kind == 1 || job.kind == 3;
-        assert!(job.kind <= 4 && (1..=64).contains(&job.action_count));
-        assert!((job.initial.node as usize) < model.nodes.len());
-        if learn {
-            model.clear_visits();
-        }
-        let mut cache = [ActionCache::new(!learn), ActionCache::new(!learn)];
-        let target = (job.has_target != 0).then_some(job.target);
-        let mut rng = Random::new(job.seed);
-        for index in 0..job.budget {
-            if learn {
-                if poll(output.completed) != 0 {
-                    return 1;
-                }
-                let fraction = index as f64 / job.budget.saturating_sub(1).max(1) as f64;
-                let epsilon = job.epsilon_start + (job.epsilon_end - job.epsilon_start) * fraction;
-                model.rollout(
-                    job.initial,
-                    job.actions[index as usize % job.action_count as usize],
-                    &mut rng,
-                    epsilon,
-                    true,
-                    win,
-                    &mut cache,
-                );
-                output.completed += 1;
-            } else {
-                let seed = job
-                    .seed
-                    .checked_add(i64::try_from(index).unwrap().checked_mul(130_363).unwrap())
-                    .unwrap();
-                let common = Random::new(seed);
-                output.trials += 1;
-                let action_count = if job.kind == 4 {
-                    1
-                } else {
-                    job.action_count as usize
-                };
-                for slot in 0..action_count {
-                    if poll(output.completed) != 0 {
-                        return 1;
-                    }
-                    rng = common.clone();
-                    let mut initial = job.initial;
-                    let action = if job.kind == 4 {
-                        initial.observed = (index % 6 + 1) as u8;
-                        job.actions[index as usize % 6]
-                    } else {
-                        job.actions[slot]
-                    };
-                    let value =
-                        model.rollout(initial, action, &mut rng, 0.0, false, win, &mut cache);
-                    output.stats[slot].append(value, target);
-                    output.completed += 1;
-                }
+            engine.model.frozen[(policy.mode & 1) as usize].insert(policy.key, policy.action as u8);
+            if policy.mode & 2 != 0 {
+                engine.hits.insert(policy.key);
             }
         }
         1
@@ -230,24 +135,80 @@ pub unsafe extern "C" fn countdown_run(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn countdown_execute(
+    session: *mut Session,
+    request: *const Request,
+    output: *mut Report,
+    poll: Poll,
+) -> i32 {
+    guarded(|| {
+        assert!(!session.is_null() && !request.is_null() && !output.is_null());
+        *output = (*session).engine.execute(&*request, poll);
+        1
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn countdown_choose(
+    session: *mut Session,
+    context: *const Context,
+    win: u32,
+) -> i32 {
+    guarded(|| {
+        (*session)
+            .engine
+            .choose(*context, win != 0)
+            .map_or(-1, i32::from)
+    })
+}
+
+// 以下快照仅供测试/显式回退使用；正常调用不访问这些导出函数。
+#[no_mangle]
 pub unsafe extern "C" fn countdown_records(
     session: *mut Session,
     count: *mut usize,
 ) -> *const Record {
     guarded(|| {
         let session = &mut *session;
-        session.records = session
-            .model
-            .dirty
-            .iter()
-            .map(|&(mode, key)| Record {
-                key,
-                stats: session.model.q[mode][&key],
-                mode: mode as u32,
-            })
-            .collect();
+        session.records.clear();
+        for (mode, table) in session.engine.model.q.iter().enumerate() {
+            session
+                .records
+                .extend(table.iter().map(|(&key, &stats)| Record {
+                    key,
+                    stats,
+                    mode: mode as u32,
+                }));
+        }
         *count = session.records.len();
         session.records.as_ptr()
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn countdown_snapshot_policies(
+    session: *mut Session,
+    count: *mut usize,
+) -> *const Policy {
+    guarded(|| {
+        let session = &mut *session;
+        session.policies.clear();
+        for (mode, table) in session.engine.model.frozen.iter().enumerate() {
+            session
+                .policies
+                .extend(table.iter().map(|(&key, &action)| Policy {
+                    key,
+                    action: action as u32,
+                    mode: mode as u32
+                        | if mode == 1 && session.engine.hits.contains(&key) {
+                            2
+                        } else {
+                            0
+                        },
+                }));
+        }
+        *count = session.policies.len();
+        session.policies.as_ptr()
     })
 }
 
@@ -256,7 +217,7 @@ pub unsafe extern "C" fn countdown_visits(
     session: *mut Session,
     count: *mut usize,
 ) -> *const Visit {
-    let visits = &(*session).model.visits;
+    let visits = &(*session).engine.model.visits;
     *count = visits.len();
     visits.as_ptr()
 }

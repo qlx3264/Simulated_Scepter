@@ -221,7 +221,7 @@ def analyze_single_map(image_path: str = None, *, nodes: list = None,
             if recommendations_by_effect else None,
         "win_rate": selected_win.win_rate,
         "target_cd": target_cd,
-        "num_q_states": len(controller.q),
+        "num_q_states": controller.q_state_count,
         "future_table": None,
     }
 
