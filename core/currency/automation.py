@@ -598,9 +598,11 @@ class SimulatedCurrency(CurrencyUtils):
         key_mouse_manager.drag(
             0.7703, 0.1569, 0.6107, 0.6306
         )
+        key_mouse_manager.sleep(0.5)
         key_mouse_manager.drag(
             0.7047, 0.1560, 0.5354, 0.6310
         )
+        key_mouse_manager.sleep(0.5)
         key_mouse_manager.drag(
             0.6396, 0.1551, 0.4617, 0.6310
         )
@@ -612,6 +614,7 @@ class SimulatedCurrency(CurrencyUtils):
         if self.prior_environment_found or not self.exit_if_no_prior:
             CUS_LOGGER.info("进入1-1，准备拖动")
             self.drag_characters()
+            key_mouse_manager.sleep(0.5)
             key_mouse_manager.click(1818, 750) # 点击出战
             key_mouse_manager.wait()
             self.update_state("startbattle")

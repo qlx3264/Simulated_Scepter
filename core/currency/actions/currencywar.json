@@ -568,7 +568,7 @@
         ]
     },
     {
-        "name": "1-1主界面",
+        "name": "1-1主界面进战",
         "trigger": {
             "text": "奖励",
             "box": [
@@ -578,7 +578,7 @@
                 103
             ],
             "redundancy": 30,
-            "condition": "1-1"
+            "interval": 3
         },
         "actions": [
             "handle_1_1_reward"
@@ -751,28 +751,6 @@
         ]
     },
     {
-        "name": "前往结算",
-        "trigger": {
-            "interval": 2,
-            "redundancy": 30,
-            "text": "前往结算",
-            "box": [
-                909,
-                1009,
-                877,
-                910
-            ]
-        },
-        "actions": [
-            {
-                "position": [
-                    958,
-                    898
-                ]
-            }
-        ]
-    },
-    {
         "name": "重开3",
         "trigger": {
             "text": "下一步",
@@ -783,7 +761,8 @@
                 912
             ],
             "interval": 2,
-            "redundancy": 30
+            "redundancy": 30,
+            "condition": "exit"
         },
         "actions": [
             {
@@ -805,7 +784,8 @@
                 913
             ],
             "interval": 2,
-            "redundancy": 30
+            "redundancy": 30,
+            "condition": "exit"
         },
         "actions": [
             {
@@ -827,7 +807,8 @@
                 913
             ],
             "interval": 2,
-            "redundancy": 30
+            "redundancy": 30,
+            "condition": "exit"
         },
         "actions": [
             {
