@@ -608,29 +608,6 @@
         ]
     },
     {
-        "name": "出战",
-        "trigger": {
-            "text": "出战",
-            "box": [
-                1784,
-                1852,
-                730,
-                770
-            ],
-            "interval": 3,
-            "redundancy": 60,
-            "condition": "currency_main"
-        },
-        "actions": [
-            {
-                "position": [
-                    1818,
-                    750
-                ]
-            }
-        ]
-    },
-    {
         "name": "战斗中",
         "trigger": {
             "text": "伤害",
@@ -715,23 +692,6 @@
         ]
     },
     {
-        "name": "大世界",
-        "trigger": {
-            "photo": "smartphone",
-            "pos": {
-                "x": 0.9833,
-                "y": 0.9380
-            },
-            "threshold": 0.96
-        },
-        "actions": [
-            {
-                "set_state": "goto_currency"
-            },
-            "goto_currency"
-        ]
-    },
-    {
         "name": "点击前往参与货币战争",
         "trigger": {
             "text": "旷宇纷争",
@@ -791,6 +751,28 @@
         ]
     },
     {
+        "name": "前往结算",
+        "trigger": {
+            "interval": 2,
+            "redundancy": 30,
+            "text": "前往结算",
+            "box": [
+                909,
+                1009,
+                877,
+                910
+            ]
+        },
+        "actions": [
+            {
+                "position": [
+                    958,
+                    898
+                ]
+            }
+        ]
+    },
+    {
         "name": "重开3",
         "trigger": {
             "text": "下一步",
@@ -801,8 +783,7 @@
                 912
             ],
             "interval": 2,
-            "redundancy": 30,
-            "condition": "exit"
+            "redundancy": 30
         },
         "actions": [
             {
@@ -824,8 +805,7 @@
                 913
             ],
             "interval": 2,
-            "redundancy": 30,
-            "condition": "exit"
+            "redundancy": 30
         },
         "actions": [
             {
@@ -847,8 +827,7 @@
                 913
             ],
             "interval": 2,
-            "redundancy": 30,
-            "condition": "exit"
+            "redundancy": 30
         },
         "actions": [
             {
@@ -857,6 +836,45 @@
                     898
                 ]
             }
+        ]
+    },
+    {
+        "name": "出战",
+        "trigger": {
+            "text": "出战",
+            "box": [
+                1784,
+                1852,
+                730,
+                770
+            ],
+            "interval": 3,
+            "redundancy": 60
+        },
+        "actions": [
+            {
+                "position": [
+                    1818,
+                    750
+                ]
+            }
+        ]
+    },
+    {
+        "name": "大世界",
+        "trigger": {
+            "photo": "smartphone",
+            "pos": {
+                "x": 0.9833,
+                "y": 0.938
+            },
+            "threshold": 0.96
+        },
+        "actions": [
+            {
+                "set_state": "goto_currency"
+            },
+            "goto_currency"
         ]
     }
 ]
