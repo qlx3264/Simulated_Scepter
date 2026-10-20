@@ -309,6 +309,17 @@ class WindowRecorderTests(unittest.TestCase):
         self.assertEqual(self.writer.stop_calls, 1)
         self.assertFalse(os.path.exists(self.output_file))
 
+    def test_remote_session_is_reported_when_recording_starts(self):
+        # 远程桌面下图形捕获明显更慢，且常驻采集会让远程端持续合成而变卡，开录时要提示一次。
+        original = self.module.is_remote_session
+        self.module.is_remote_session = lambda: True
+        self.addCleanup(setattr, self.module, "is_remote_session", original)
+
+        self.recorder.start_recording(1)
+
+        self.module.CUS_LOGGER.warning.assert_any_call(
+            "当前处于远程桌面会话：画面采集更慢，录像期间远程桌面会明显变卡")
+
     def test_stop_removes_recording_when_requested(self):
         self.recorder.stop_event.clear()
         self.write_recording()
