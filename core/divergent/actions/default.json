@@ -211,7 +211,7 @@
             "box": [92, 195, 54, 88],
             "redundancy": 30
         },
-        "actions": ["event"] 
+        "actions": ["event"]
     },
     {
         "name": "奇物大转盘",
@@ -326,7 +326,7 @@
     },
     {
         "name": "确认界面",
-        "trigger":{ 
+        "trigger":{
             "text": "确认",
             "box": [1111, 1225, 750, 792],
             "redundancy": 30
@@ -345,7 +345,7 @@
     },
     {
         "name": "确认界面",
-        "trigger":{ 
+        "trigger":{
             "text": "确认",
             "box": [1111, 1225, 648, 678],
             "redundancy": 30
@@ -364,7 +364,7 @@
     },
     {
         "name": "确认界面",
-        "trigger":{ 
+        "trigger":{
             "text": "确认",
             "box": [1152, 1206, 756, 786],
             "redundancy": 30
@@ -529,7 +529,7 @@
             }
         ]
     },
-    { 
+    {
         "name": "梦境护照",
         "trigger":{
             "text": "梦境护照",
@@ -545,21 +545,21 @@
                 "sleep": 1
             }
         ]
-    }, 
+    },
     {
         "name": "快速回复",
         "trigger":{
             "text": "快速回复",
-            "box": [885, 1016, 243, 279],
+            "box": [896, 1028, 245, 290],
             "redundancy": 60
         },
         "actions":
         [
             {
-                "position": [1188, 813]
+                "position": [1443, 744]
             },
             {
-                "sleep": 2.5
+                "position": [1176, 815]
             }
         ]
     }
