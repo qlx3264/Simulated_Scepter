@@ -441,6 +441,20 @@
         ]
     },
         {
+        "name": "角色重置",
+        "trigger":{
+            "text": "角色重置",
+            "box": [105, 201, 65, 96],
+            "redundancy": 30
+        },
+        "actions":
+        [
+            {
+                "press": "esc"
+            }
+        ]
+    },
+        {
         "name": "开始寰宇蝗灾",
         "trigger":{
             "text": "开始探索",
