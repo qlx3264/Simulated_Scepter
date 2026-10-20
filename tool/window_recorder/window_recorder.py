@@ -28,10 +28,15 @@ from tool.window_recorder.video_remux import convert_in_background
 from tool.window_recorder.wgc_capture import WgcCapture
 
 
+def is_remote_session():
+    """当前进程是否运行在远程桌面会话中。"""
+    return bool(ctypes.windll.user32.GetSystemMetrics(0x1000))  # 0x1000 = SM_REMOTESESSION
+
+
 class WindowRecorder:
     def __init__(self, output_path=PATHS["video"], handle=None, fps=30.0, window_title=None, window_class_name=None, see_time=False, is_show=False, offsets=None, overlay_map=False, map_alpha=0.7, simul_instance=None, task_owner=None):
         self.output_path = output_path
-        # 成片帧率：采集按 CAPTURE_INTERVAL 的固定节拍进行，两者之比即成片的加速倍数
+        # 成片帧率：采集按 0.1 秒固定节拍进行，两者之比即成片的加速倍数
         self.fps = fps
         self.window_title = window_title
         self.window_class_name = window_class_name
@@ -248,6 +253,10 @@ class WindowRecorder:
         output_dir = os.path.dirname(self.output_file)
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir)
+
+        # 远程桌面会话里图形捕获的取帧延迟明显升高，且常驻采集会让远程端持续合成而变卡
+        if is_remote_session():
+            CUS_LOGGER.warning("当前处于远程桌面会话：画面采集更慢，录像期间远程桌面会明显变卡")
 
         # 应用偏移后的录制区域（屏幕坐标）。区域换算成帧内坐标、宽高取偶都由采集器完成：
         # 只有拿到实际画面才知道帧的真实范围。
