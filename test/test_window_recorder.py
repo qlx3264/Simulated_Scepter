@@ -10,8 +10,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
-from PIL import Image
-
 from tool.window_recorder.recorder_writer import RecorderWriter as RealRecorderWriter
 
 FAKE_WINDOW_RECT = (623, 5, 2565, 1141)
@@ -55,23 +53,52 @@ class FakeRecorderWriter:
         return self.stop_ok
 
 
+class FakeWgcCapture:
+    """采集替身：把 frame_reader 当成窗口画面来源，记录启动与停止次数。"""
+
+    instances = []
+    # 与真实采集一致：尺寸由采集会话决定，录制器据此创建写入器
+    width = 1942
+    height = 1136
+    frame_reader = None
+    start_error = None
+
+    def __init__(self, hwnd, region, interval):
+        self.hwnd = hwnd
+        self.region = region
+        self.interval = interval
+        self.start_calls = 0
+        self.stop_calls = 0
+        FakeWgcCapture.instances.append(self)
+
+    def start(self):
+        self.start_calls += 1
+        if FakeWgcCapture.start_error is not None:
+            raise FakeWgcCapture.start_error
+
+    def read(self):
+        return FakeWgcCapture.frame_reader()
+
+    def stop(self):
+        self.stop_calls += 1
+
+
 def load_recorder_module(stubs):
     """加载录制器模块，用替身隔离 OpenCV、截图、线程与写入器实现。"""
     stub_names = {
         "cv2": stubs["cv2"],
         "numpy": stubs["numpy"],
-        "PIL": types.ModuleType("PIL"),
-        "PIL.ImageGrab": stubs["image_grab"],
         "win32gui": stubs["win32gui"],
         "win32ui": Mock(),
         "route": stubs["route"],
         "tool.log": stubs["logger"],
         "tool.thread": stubs["thread"],
         "tool.window_recorder.recorder_writer": stubs["writer"],
+        "tool.window_recorder.wgc_capture": stubs["wgc"],
         "tool.utils.game_window": stubs["game_window"],
         "tool.window_recorder.video_remux": stubs["remux"],
     }
-    # time 需要真实模块（fps 节流会调用 time.sleep），但允许替换 sleep 以便观测节奏
+    # time 需要真实模块（采集节拍会调用 time.sleep），但允许替换以便观测节奏
     if "time" in stubs:
         stub_names["time"] = stubs["time"]
     saved = {name: sys.modules.get(name) for name in stub_names}
@@ -99,6 +126,7 @@ def load_recorder_module(stubs):
         ("tool", "log"),
         ("tool", "thread"),
         ("tool.window_recorder", "recorder_writer"),
+        ("tool.window_recorder", "wgc_capture"),
         ("tool.window_recorder", "video_remux"),
         ("tool.utils", "game_window"),
     )
@@ -111,6 +139,7 @@ def load_recorder_module(stubs):
     sys.modules["tool"].log = stubs["logger"]
     sys.modules["tool"].thread = stubs["thread"]
     sys.modules["tool.window_recorder"].recorder_writer = stubs["writer"]
+    sys.modules["tool.window_recorder"].wgc_capture = stubs["wgc"]
     sys.modules["tool.window_recorder"].video_remux = stubs["remux"]
     sys.modules["tool.utils"].game_window = stubs["game_window"]
     sys.modules.update(stub_names)
@@ -152,13 +181,19 @@ class WindowRecorderTests(unittest.TestCase):
         self.test_dir = Path(__file__).resolve().parents[1]
         self.output_path = str(self.test_dir)
         FakeRecorderWriter.instances = []
+        FakeWgcCapture.instances = []
+        FakeWgcCapture.start_error = None
+
+        import numpy as np
+
+        def default_frame():
+            return np.zeros((FakeWgcCapture.height, FakeWgcCapture.width, 3), dtype=np.uint8)
+
+        FakeWgcCapture.frame_reader = default_frame
 
         cv2_stub = types.ModuleType("cv2")
-        # 采集循环把截图转成 BGR；测试只需保住形状与通道数
-        cv2_stub.COLOR_RGB2BGR = 0
-        cv2_stub.cvtColor = lambda image, code: image
-        image_grab = types.ModuleType("PIL.ImageGrab")
-        image_grab.grab = Mock()
+        wgc = types.ModuleType("tool.window_recorder.wgc_capture")
+        wgc.WgcCapture = FakeWgcCapture
 
         win32gui = types.ModuleType("win32gui")
         win32gui.FindWindow = lambda *args: 1234
@@ -198,7 +233,7 @@ class WindowRecorderTests(unittest.TestCase):
             "cv2": cv2_stub,
             # numpy 是本项目依赖且导入无副作用，直接用真实实现，避免替身缺函数掩盖问题
             "numpy": __import__("numpy"),
-            "image_grab": image_grab,
+            "wgc": wgc,
             "win32gui": win32gui,
             "game_window": game_window,
             "logger": logger,
@@ -337,10 +372,33 @@ class WindowRecorderTests(unittest.TestCase):
         self.recorder.start_recording(3)
         writer = self.writer
 
-        # 窗口 1942x1136，偏移 [0,0,0,0]（默认），宽高均为偶数
+        # 尺寸由采集会话决定（替身 1942x1136，宽高均为偶数）
         self.assertEqual((writer.width, writer.height), (1942, 1136))
         self.assertEqual(writer.fps, self.recorder.fps)
         self.assertEqual(writer.path, self.output_file)
+
+    def test_start_recording_aborts_when_capture_fails(self):
+        # 采集会话起不来（窗口最小化/已关闭）时必须快速失败：不留写入器、不留空文件
+        FakeWgcCapture.start_error = ValueError("等待窗口画面超时（5 秒）")
+
+        with self.assertRaises(ValueError):
+            self.recorder.start_recording(1)
+
+        self.assertFalse(self.recorder.recording)
+        self.assertIsNone(self.recorder.out)
+        # 写入器还没创建，失败路径只须回收采集会话
+        self.assertEqual(FakeRecorderWriter.instances, [])
+        self.assertEqual(FakeWgcCapture.instances[-1].stop_calls, 1)
+        self.assertFalse(os.path.exists(self.output_file))
+
+    def test_stop_releases_capture_even_when_thread_stuck(self):
+        # 录制线程卡在取帧里时，停止流程仍须释放采集会话，否则窗口被一直占用
+        self.write_recording(thread_alive=True)
+
+        self.recorder.stop_recording()
+
+        self.assertEqual(FakeWgcCapture.instances[-1].stop_calls, 1)
+        self.assertIsNone(self.recorder.capture)
 
     def test_recording_loop_produces_playable_fragmented_mp4(self):
         """用真实写入器跑一遍采集循环，确认整条链路产出可播放的分片 MP4。"""
@@ -369,16 +427,16 @@ class WindowRecorderTests(unittest.TestCase):
 
         captured = []
 
-        def grab(bbox=None):
-            captured.append(bbox)
+        def read_frame():
+            captured.append(True)
             # 取到若干帧后请求停止，让采集循环自行退出
-            if len(captured) >= 40:
+            if len(captured) >= 12:
                 recorder.stop_event.set()
-            pixels = np.zeros((bbox[3] - bbox[1], bbox[2] - bbox[0], 3), dtype=np.uint8)
+            pixels = np.zeros((FakeWgcCapture.height, FakeWgcCapture.width, 3), dtype=np.uint8)
             pixels[:] = (len(captured) * 7) % 256
-            return Image.fromarray(pixels, mode="RGB")
+            return pixels
 
-        self.stubs["image_grab"].grab = grab
+        FakeWgcCapture.frame_reader = read_frame
         recorder.start_recording(5)
 
         # 采集循环在测试线程里同步跑完；这里显式走一次停止流程，让写入器收尾
@@ -398,11 +456,11 @@ class WindowRecorderTests(unittest.TestCase):
             frames = sum(1 for _ in container.decode(video=0))
         self.assertGreater(frames, 0)
 
-    def test_capture_cadence_and_timeline_match_nominal_fps(self):
-        """取帧节奏与时间轴：每捕获一帧占 1/fps，与改造前一致。
+    def test_capture_cadence_and_timeline_produce_fast_motion(self):
+        """采集按固定间隔取帧，成片时间轴按同一间隔计时。
 
-        录制并非实时采集（每帧还要花时间截图，再补 sleep(1/fps)），因此一段录像的
-        播放时长等于「捕获帧数 / fps」。这条不能因为换成 fMP4 而改变。
+        一个捕获帧就是成片的一帧；采集间隔 0.1 秒、成片 30fps 时，真实 3 秒的
+        采集内容只占成片 1 秒，即 3 倍速。
         """
         import av
         import numpy as np
@@ -418,17 +476,21 @@ class WindowRecorderTests(unittest.TestCase):
         self.stubs["thread"].ThreadWithException = inline_thread
 
         intervals = []
+        clock = [time.monotonic()]
 
-        # 替换 sleep 以便观测节流间隔，同时保持循环快速推进；
-        # monotonic 仍需真实实现（录制循环用它统计已录时长）
-        real_time = time
+        # 虚拟时钟：既记录节拍，又让循环按节拍推进而不用真的等待
         fake_time = types.ModuleType("time")
-        fake_time.sleep = lambda seconds: intervals.append(seconds)
-        fake_time.monotonic = real_time.monotonic
+        fake_time.monotonic = lambda: clock[0]
+
+        def sleep(seconds):
+            intervals.append(seconds)
+            clock[0] += seconds
+
+        fake_time.sleep = sleep
         self.stubs["time"] = fake_time
         module = load_recorder_module(self.stubs)
 
-        fps = 10.0
+        fps = 30.0
         recorder = module.WindowRecorder(
             output_path=self.output_path,
             window_title="崩坏：星穹铁道",
@@ -437,37 +499,38 @@ class WindowRecorderTests(unittest.TestCase):
         )
         captured = []
 
-        def grab(bbox=None):
-            captured.append(bbox)
+        def read_frame():
+            captured.append(True)
             if len(captured) >= 30:
                 recorder.stop_event.set()
             stride = 4
-            pixels = np.zeros(
-                (bbox[3] - bbox[1], bbox[2] - bbox[0], 3), dtype=np.uint8)
+            pixels = np.zeros((FakeWgcCapture.height, FakeWgcCapture.width, 3), dtype=np.uint8)
             # 逐帧平移，避免相邻帧完全相同而影响关键帧判断
             pixels[:, (len(captured) * stride) % pixels.shape[1]:, :] = 200
-            return Image.fromarray(pixels, mode="RGB")
+            return pixels
 
-        self.stubs["image_grab"].grab = grab
+        FakeWgcCapture.frame_reader = read_frame
         recorder.start_recording(1)
         # 显式停止，确保写入器收尾并把帧全部写出
         recorder.stop_recording()
 
-        # 1) 节流间隔必须等于 1/fps
-        self.assertTrue(intervals, "采集循环没有执行帧率节流")
+        # 1) 采集节拍固定 0.1 秒（成片按 fps 播放，30fps 时即 3 倍速），
+        #    且按绝对时刻对齐，不随单帧处理耗时累积漂移。
+        self.assertTrue(intervals, "采集循环没有执行节拍控制")
         for value in intervals:
-            self.assertAlmostEqual(value, 1 / fps, places=6)
+            self.assertAlmostEqual(value, 0.1, places=6)
 
-        # 2) 时间轴：播放时长 = 捕获帧数 / fps
+        # 2) 时间轴：捕获帧按 fps 逐帧播放，所以成片时长 = 帧数 / fps。
+        #    采集间隔 0.1 秒、成片 30fps 时，这正好是 3 倍速（3 秒采集 → 1 秒成片）。
         path = recorder.output_file
         with av.open(path) as container:
             decoded = [frame for frame in container.decode(video=0)]
             # container.duration 以 av.time_base（微秒）为单位
             duration = container.duration / av.time_base
 
-        self.assertGreater(len(decoded), 0)
+        self.assertGreater(len(decoded), 10)
+        self.assertLessEqual(len(decoded), len(captured))
         self.assertAlmostEqual(duration, len(decoded) / fps, places=2)
-        self.assertAlmostEqual(duration, len(captured) / fps, places=2)
 
     def test_stop_converts_recording_for_seeking(self):
         # 分片 MP4 无法被部分播放器拖动进度条；停止后应在后台转封装成标准 MP4，
@@ -530,24 +593,22 @@ class WindowRecorderTests(unittest.TestCase):
         # 任务从一开始是活的，取到 6 帧后结束
         alive = {"value": True}
         task_thread = types.SimpleNamespace(is_alive=lambda: alive["value"])
-        grabs = []
+        reads = []
 
-        def grab(bbox=None):
-            grabs.append(bbox)
-            if len(grabs) >= 6:
+        def read_frame():
+            reads.append(True)
+            if len(reads) >= 6:
                 alive["value"] = False
-            return Image.fromarray(
-                np.zeros((bbox[3] - bbox[1], bbox[2] - bbox[0], 3), dtype=np.uint8),
-                mode="RGB")
+            return np.zeros((FakeWgcCapture.height, FakeWgcCapture.width, 3), dtype=np.uint8)
 
-        self.stubs["image_grab"].grab = grab
+        FakeWgcCapture.frame_reader = read_frame
         recorder.task_owner = task_thread
 
         recorder.start_recording(1)
         recorder.stop_recording()
 
         # 任务结束后只允许再多取一帧（死亡与检查之间的那一帧）
-        self.assertLessEqual(len(grabs), 7, f"任务结束后仍在继续取帧: {len(grabs)} 次")
+        self.assertLessEqual(len(reads), 7, f"任务结束后仍在继续取帧: {len(reads)} 次")
         self.assertFalse(recorder.recording)
         self.assertTrue(os.path.exists(recorder.output_file))
         with av.open(recorder.output_file) as container:
