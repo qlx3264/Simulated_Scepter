@@ -23,6 +23,7 @@ dependencies = [
     "pywin32>=311",
     "scipy>=1.17.1",
     "shapely>=2.1.2",
+    "windows-capture>=2.0.1",
 ]
 
 [[tool.uv.index]]

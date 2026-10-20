@@ -6,7 +6,8 @@
 
 模块划分：
 
-- `window_recorder`：窗口定位、截图循环与录制生命周期。
+- `window_recorder`：窗口定位、采集节拍与录制生命周期。
+- `wgc_capture`：用 Windows 图形捕获（WGC）按需取窗口画面。
 - `recorder_writer`：编码与写盘（独立线程 + 有界队列）。
 - `video_remux`：把分片 MP4 转封装为可跳转的标准 MP4。
 """
