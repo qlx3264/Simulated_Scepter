@@ -533,8 +533,7 @@
         "name": "确认图片",
         "trigger":{
             "photo": "yes1",
-            "pos": {"x":0.5,"y":0.5},
-            "mask":"mask_end"
+            "mask":"end"
         },
         "actions":
         [
