@@ -131,10 +131,11 @@
         ]
     },
     {
-        "name": "确认图片",
+        "name": "确认",
         "trigger":{
-            "photo": "yes1",
-            "mask":"end"
+            "text": "确认",
+            "box": [232, 1690, 154, 928],
+            "redundancy": 30
         },
         "actions":
         [
