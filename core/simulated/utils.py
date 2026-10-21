@@ -2590,7 +2590,7 @@ class UniverseUtils(StateKernel):
                     key_mouse_manager.press('s')
                     key_mouse_manager.press('e')
                     key_mouse_manager.wait()
-                    time.sleep(1.6)
+                    key_mouse_manager.sleep(1.6)
                     key_mouse_manager.press('w')
                     key_mouse_manager.press('e')
             else:
