@@ -80,8 +80,8 @@ class IronBloodUniverse(AnyFateUniverse):
             self.update_state("re_start")
         self.elapsed_time = 0  # 重置演算持续时间
         self.kill_count = 0
-        # 开局期望不在这里清零：退出流程中「点击空白结算」可能先于「结算界面」触发，
-        # 在这里清零会让本局记录丢掉「开局期望」条目。改为 end_of_university 写完记录后清零。
+        # 本局记录已写完，重置为「还没做开局识别」，避免下一局沿用本局的读数
+        self.first_plane_weight = self.MAP_ANALYSIS_NO_INIT
         self.fail_match_count=0
         self.node_count=0
         self.chaoyan_seen = False  # 新轮回重置「超验之镜」已进过标记
@@ -105,8 +105,6 @@ class IronBloodUniverse(AnyFateUniverse):
         except Exception as e:
             CUS_LOGGER.error(f"写入击杀记录文件失败{e}")
         self.run_start_time = time.time()  # 开始下一局计时
-        # 本局记录已写完，重置为「还没做开局识别」，避免下一局沿用本局的读数
-        self.first_plane_weight = self.MAP_ANALYSIS_NO_INIT
         self.need_end=False
         self.init_map()
         if self.kill_count>=40:
