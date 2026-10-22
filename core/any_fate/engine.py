@@ -1173,10 +1173,10 @@ class AnyFateUniverse(SimulatedUniverse):
         self.area = ""
 
     def calculated_roll(self):
-        self.area = ""
         if self.nodes is None or self.plane_floor==-1:
             self.click_target(find_image_by_name("inmap"), 0.9, flag=False, click=True)
             key_mouse_manager.wait()
+            self.area = ""
             return
         roll_count = match_roll_count_in_region(self.screen)
         if roll_count is not None:
@@ -1188,6 +1188,7 @@ class AnyFateUniverse(SimulatedUniverse):
             self.click_text(text="快速投掷", box=[1700, 1823, 80, 117])
         self.click_text(text="确认效果", box=[1584, 1687, 961, 994])
         self.init_map()
+        self.area = ""
         self.mini_state = 1
 
     def init_map(self):
