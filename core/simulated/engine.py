@@ -934,20 +934,6 @@ class SimulatedUniverse(UniverseUtils):
         if self.floor >= 13:
             self.update_floor(12)
 
-    def confirm_button_box(self):
-        """
-        在弹窗中找「确认」按钮的文字框 [左,右,上,下]，没认到返回 None。
-        re_screen=True 让这里每次独立截一帧；只给 forward=True 时用的是缓存帧，那就又变成「点上一帧的画面」了。
-        弹窗标题里也可能带「确认」（如「确认丢弃祝福「X」？」），按钮永远在标题下方，所以取最靠下的那一块文字。
-        """
-        rows = [
-            row for row in self.ts.find_with_box(box=[232, 1690, 154, 928], forward=True, re_screen=True)
-            if isinstance(row, dict) and "确认" in (row.get("raw_text") or "")
-        ]
-        if not rows:
-            return None
-        return list(max(rows, key=lambda row: row["box"][3])["box"])
-
     def confirm_yes(self):
         """
         点掉弹窗上的「确认」按钮。点击位置只取这一帧 OCR 到的「确认」文字块。
@@ -957,21 +943,18 @@ class SimulatedUniverse(UniverseUtils):
         if self.click_text(text="作弊", box=[923, 996, 230, 270], click=False, allow_fail=True):
             CUS_LOGGER.debug("当前处于作弊选项窗，跳过点击「确认」")
             return 0
-        box = self.confirm_button_box()
+        # 在弹窗中找「确认」按钮的文字框 [左,右,上,下]; re_screen=True 让这里每次独立截一帧。
+        rows = [
+            row for row in self.ts.find_with_box(box=[232, 1690, 154, 928], forward=True, re_screen=True)
+            if isinstance(row, dict) and "确认" in (row.get("raw_text") or "")
+        ]
+        # 弹窗标题里也可能带「确认」（如「确认丢弃祝福「X」？」），按钮永远在标题下方，所以取最靠下的那一块文字。
+        box = list(max(rows, key=lambda row: row["box"][3])["box"]) if rows else None
         if box is None:
             CUS_LOGGER.warning("没识别到弹窗的「确认」文字，等下一帧重试")
             return 0
         self.click_confirm_text(box)
         key_mouse_manager.wait()
-        # 等弹窗收起再复核：这里要的是「等画面真的变了」，所以用 time.sleep 让本线程自己
-        # 停下来重新截图，而不是走键鼠队列的等待（那不会挡住本线程继续识别）。
-        time.sleep(0.2)
-        box = self.confirm_button_box()
-        if box is not None:
-            CUS_LOGGER.warning("点了弹窗的「确认」后按钮还在，按文字识别的位置补点")
-            self.click_confirm_text(box)
-            key_mouse_manager.wait()
-            time.sleep(0.2)
         return 0
 
     def update_count(self, read=True):

@@ -546,6 +546,7 @@
         "trigger":{
             "text": "确认",
             "box": [232, 1690, 154, 928],
+            "interval": 1,
             "redundancy": 30
         },
         "actions":
