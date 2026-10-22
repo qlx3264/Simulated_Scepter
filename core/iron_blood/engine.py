@@ -74,7 +74,7 @@ class IronBloodUniverse(AnyFateUniverse):
             )
             need_del = del_time and not keep_long_run and not abnormal_first_plane_weight
             CUS_LOGGER.debug(f"是否可删除{need_del}，限制数目{self.del_record_time}，当前数目{self.kill_count}；本局演算时间{minutes:.2f}分钟，与战斗数比值{minutes_divide_kill:.2f}；开局期望{self.first_plane_weight:.2f}")
-            self.recorder.stop_recording(need_del, battle_count=self.kill_count, elapsed_minutes=minutes, first_plane_weight=self.first_plane_weight)
+            self.recorder.stop_recording(need_del, battle_count=self.kill_count, elapsed_time=self.elapsed_time, first_plane_weight=self.first_plane_weight)
             time.sleep(0.8)
             self.recorder.start_recording(self.count + 1)
             self.update_state("re_start")
