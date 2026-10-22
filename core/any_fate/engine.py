@@ -112,7 +112,7 @@ class AnyFateUniverse(SimulatedUniverse):
         self.auto_attack_breakable=self.opt.get("auto_attack_breakable", False)
         self.del_record_time=self.opt.get("del_record_time", 31)
         self.max_interact_time=self.opt.get("max_interact_time", 40)
-        self.area="战斗"
+        self.area=""
         self.now_map=-1
         self.new_node = True
         self.node_count=0
@@ -138,6 +138,7 @@ class AnyFateUniverse(SimulatedUniverse):
         self.node_count=0
         self.chaoyan_seen = False  # 新轮回重置「超验之镜」已进过标记
         self.now_area=[]
+        self.area = ""
 
     def end_of_university(self):
         super().end_of_university()
@@ -234,9 +235,10 @@ class AnyFateUniverse(SimulatedUniverse):
             self.last_interact_time = bk_lst_changed
             # 刚进图，初始化一些数据
             if not self.need_end:
-                ocr_text = self.ts.find_with_box(box=[55, 164, 12, 40],forward=True,re_screen=False)
-                self.area=merge_text(ocr_text) if len(ocr_text) else ""
-                CUS_LOGGER.debug(f"当前区域{self.area}")
+                if not self.area:
+                    ocr_text = self.ts.find_with_box(box=[55, 164, 12, 40],forward=True,re_screen=False)
+                    self.area=merge_text(ocr_text) if len(ocr_text) else ""
+                    CUS_LOGGER.debug(f"当前区域{self.area}")
                 # 当前节点为祝福扑满且非精英区域时，根据开关决定切人策略
                 pig = self.is_pig_node() and "战斗" in self.area
                 if pig:
@@ -681,6 +683,7 @@ class AnyFateUniverse(SimulatedUniverse):
         self.write_map(self.pos_predictor.assets_floor_feat, self.pos_predictor.map_num)
 
     def begin_universe(self):
+        self.area = ""
         con = self.click_text(text="继续进度",box=[1610, 1762, 937, 1023],click=False,ocr_line=False,warning=False)
         if not con:
             #点击最低难度
@@ -1029,6 +1032,7 @@ class AnyFateUniverse(SimulatedUniverse):
             self.click_text(text="进入位面", box=[907, 1009, 857, 891])
             self.node_count=0
             self.new_node = True
+            self.area = ""
         key_mouse_manager.wait()
         return
 
@@ -1166,8 +1170,10 @@ class AnyFateUniverse(SimulatedUniverse):
         else:
             self.click_text(text="确认移动", box=[1611, 1759, 964, 998])
         self.new_node=True
+        self.area = ""
 
     def calculated_roll(self):
+        self.area = ""
         if self.nodes is None or self.plane_floor==-1:
             self.click_target(find_image_by_name("inmap"), 0.9, flag=False, click=True)
             key_mouse_manager.wait()
