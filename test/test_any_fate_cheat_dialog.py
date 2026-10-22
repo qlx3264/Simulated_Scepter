@@ -305,6 +305,25 @@ class SelectCheatOptionTest(CheatDialogTest):
             self.assertAlmostEqual(y, (top + bottom) / 2)
         self.assertClicked(CIHUAI_TITLE["box"])
 
+    def test_skip_first_ocr_scrolls_before_the_first_recognition(self):
+        # 目标只可能在列表靠后的位置时，第一屏的识别是多余的：先滚一屏再认
+        engine = self.make_engine([[CIHUAI_TITLE, CIHUAI_DESC]] * 3, dialog_open=True)
+        self.assertEqual(engine.select_cheat_option(("慈怀",), skip_first_ocr=True),
+                         CIHUAI_TITLE["raw_text"])
+        # 只有进循环之前那一次滚动；跳过去之后第一屏就认到了目标
+        self.assertEqual([direct for direct, _, _ in engine.scrolls], [-15])
+        self.assertIn("跳过首次识别", self.debugs())
+        self.assertClicked(CIHUAI_TITLE["box"])
+
+    def test_skip_first_ocr_only_scans_two_more_screens(self):
+        # 跳过首屏时前面已经滚掉一屏，循环里只再扫两屏
+        engine = self.make_engine([[GUIXIN_TITLE]] * 10, dialog_open=True)
+        self.assertIsNone(engine.select_cheat_option(("慈怀",), skip_first_ocr=True))
+        # 一次跳过首屏 + 循环里两次 = 三次滚动
+        self.assertEqual([direct for direct, _, _ in engine.scrolls], [-15, -15, -15])
+        self.assertEqual(engine.clicks, [])
+        self.assertIn("未找到目标骰面效果", self.warnings())
+
     def test_select_gives_up_after_three_screens(self):
         engine = self.make_engine([[GUIXIN_TITLE]] * 10, dialog_open=True)
         self.assertIsNone(engine.select_cheat_option(("慈怀",)))
@@ -312,13 +331,6 @@ class SelectCheatOptionTest(CheatDialogTest):
         self.assertEqual([direct for direct, _, _ in engine.scrolls], [-15, -15, -15])
         self.assertEqual(engine.clicks, [])
         self.assertIn("未找到目标骰面效果", self.warnings())
-
-    def test_select_stops_when_the_dialog_closes(self):
-        engine = self.make_engine([[CIHUAI_TITLE]] * 3, dialog_open=False)
-        self.assertIsNone(engine.select_cheat_option(("慈怀",)))
-        self.assertEqual(engine.clicks, [])
-        self.assertEqual(engine.scrolls, [])
-        self.assertIn("作弊选项窗已经不在当前画面上了", self.warnings())
 
     def test_select_retries_the_click_at_most_five_times(self):
         # 点了但高亮一直不出现：同一屏最多点五次，点不到就报错收场，不再换屏幕

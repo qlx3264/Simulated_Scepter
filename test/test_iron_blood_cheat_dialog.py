@@ -489,7 +489,6 @@ class CheatFlowTest(unittest.TestCase):
         """目标行不在当前屏：滚动列表（不是盲拖），滚到目标行再点。"""
         frames = [
             [SELF_DESTRUCT_TITLE],
-            [SELF_DESTRUCT_TITLE],
             [FLESH_TITLE, FLESH_DESC],
             [FLESH_TITLE, FLESH_DESC],
         ]
@@ -499,6 +498,16 @@ class CheatFlowTest(unittest.TestCase):
         self.manager.drag.assert_not_called()
         self.assertClicked(FLESH_TITLE["box"], CONFIRM["box"])
         self.assertIsNone(engine.cheat_target)
+
+    def test_scrolls_down_once_before_the_first_recognition(self):
+        """目标一定在列表靠后的位置：进列表后先滚一屏，第一屏不做 OCR。"""
+        engine = self.make_engine([[FLESH_TITLE]] * 4, dialog_open=True)
+        engine.cheat()
+        # 只有 skip_first_ocr 那一次滚动；第一屏就认到了目标，循环里不再滚
+        self.assertEqual(self.manager.scroll.call_count, 1)
+        self.assertEqual(self.manager.scroll.call_args[0][0], -15)
+        self.assertIn("跳过首次识别", str(self.logger.debug.call_args_list))
+        self.assertClicked(FLESH_TITLE["box"], CONFIRM["box"])
 
     def test_never_uses_the_old_blind_drag_and_fixed_click(self):
         """旧的盲拖 + 盲点 (571, 622) 就是把窗点关掉的元凶：所有点击必须落在识别到的文字中心。"""

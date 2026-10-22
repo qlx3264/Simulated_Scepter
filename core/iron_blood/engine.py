@@ -372,6 +372,13 @@ class IronBloodUniverse(AnyFateUniverse):
         self.init_map()
         self.mini_state = 1
 
+    def cheat(self):
+        """
+        铁血战士的作弊目标只会是「肉体帝侯」，它在毁灭系骰面列表的最后一行，
+        第一屏必定认不到，所以跳过首次识别、先把列表往下滚一屏再认；其余流程和公共实现一样。
+        """
+        super().cheat(skip_first_ocr=True)
+
 
 def create_engine(*, script=False):
     return IronBloodUniverse()

@@ -1185,31 +1185,39 @@ class AnyFateUniverse(SimulatedUniverse):
         # 大于阈值才允许点击确认，经实测占比约 0.41~0.51，而未高亮的为 0
         return ratio >= 0.4
 
-    def select_cheat_option(self, keywords):
+    def select_cheat_option(self, keywords, skip_first_ocr=False):
         """
         在作弊界面选项列表里选中目标骰面效果并校验选中，返回被点中的那段文字；没找到返回 None。
 
         每屏一次区域 OCR 认行标题；认出目标行就点该行、再用 cheat_option_selected 高亮校验。
-        点击没选中就重试，最多五次；只有窗口自己关掉了才返回 None，由调用方收场。
+        点击没选中就在同一屏重试，最多五次；一屏没认到目标行就往下滚一屏再认。
+
+        skip_first_ocr=True 时先不认、直接把列表往下滚一屏再进循环：目标只可能在列表靠后的位置时
+        （铁血战士只用得到最后一行的「肉体帝侯」），第一屏那次识别纯属浪费。
         """
-        # 列表最多 6 行、一屏能看 3 行；滚一格约 40 px、一行约 155 px，
-        # 所以一次滚 15 格约三行，扫 3 次就够扫完整张表（到底会被夹住，多滚无害）。
-        for _ in range(3):
-            if not self.click_text(text="作弊", box=[923, 996, 230, 270], click=False, allow_fail=True):
-                CUS_LOGGER.warning("作弊选项窗已经不在当前画面上了")
-                return None
+
+        def scroll_down():
+            # 没认出目标行就把列表往下滚三行再看。用滚轮不用拖拽：拖拽松手后有惯性，
+            # 列表在截图之后还在滑，按截图坐标点击就会点偏；滚轮没有惯性，滚完等一会儿
+            # 画面就停了。落点用识别列表时那个框的中心，往列表上滚，别滚到底部按钮上。
+            left, right, top, bottom = self.scaled_box([420, 1500, 240, 960])
+            key_mouse_manager.scroll(
+                -15,
+                1 - (left + right) / 2 / self.xx,
+                1 - (top + bottom) / 2 / self.yy,
+            )
+            key_mouse_manager.wait()
+            key_mouse_manager.sleep(0.3)
+
+        # 列表最多 6 行、一屏能看 3 行；滚一格约 40 px、一行约 155 px，所以一次滚 15 格约三行，
+        # 到底会被夹住，多滚无害。不跳过首屏时从顶部往下扫 3 屏够扫完整张表；
+        # 跳过首屏时已经先滚掉一屏，扫 2 屏就够。
+        if skip_first_ocr:
+            CUS_LOGGER.debug("跳过首次识别，先把作弊列表往下滚一屏")
+            scroll_down()
+        for _ in range(2 if skip_first_ocr else 3):
             if self.find_cheat_option(keywords) is None:
-                # 没认出目标行就把列表往下滚三行再看。用滚轮不用拖拽：拖拽松手后有惯性，
-                # 列表在截图之后还在滑，按截图坐标点击就会点偏；滚轮没有惯性，滚完等一会儿
-                # 画面就停了。落点用识别列表时那个框的中心，往列表上滚，别滚到底部按钮上。
-                left, right, top, bottom = self.scaled_box([420, 1500, 240, 960])
-                key_mouse_manager.scroll(
-                    -15,
-                    1 - (left + right) / 2 / self.xx,
-                    1 - (top + bottom) / 2 / self.yy,
-                )
-                key_mouse_manager.wait()
-                key_mouse_manager.sleep(0.3)
+                scroll_down()
                 continue
             # 认出目标行后就一直在这一屏重选到选中为止
             n = 5 # 重试次数
@@ -1252,15 +1260,17 @@ class AnyFateUniverse(SimulatedUniverse):
             key_mouse_manager.wait()
         return True
 
-    def cheat(self):
+    def cheat(self, skip_first_ocr=False):
         """
         在作弊选项窗里选出作弊目标骰面效果并确认。
         点「作弊」按钮、等窗口弹出都写在各模式的 calculated_roll 里，点完直接回主循环。
         关键字用效果名本身，和列表行标题里的写法一致（如【毁灭·肉体帝侯】）；
         目标由各模式在点「作弊」按钮前写进 self.cheat_target。
+
+        skip_first_ocr 原样转给 select_cheat_option：目标只可能在列表靠后位置时省掉第一屏识别。
         """
         keywords = (self.cheat_target,) if self.cheat_target else ()
-        selected = self.select_cheat_option(keywords)
+        selected = self.select_cheat_option(keywords, skip_first_ocr)
         if selected is None:
             CUS_LOGGER.warning(f"作弊界面选项列表里没有找到目标骰面效果{keywords}，关掉作弊选项窗")
             key_mouse_manager.press("esc")

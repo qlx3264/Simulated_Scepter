@@ -576,12 +576,6 @@ class FingerSnapCheatSelectTest(unittest.TestCase):
         self.assertIn("作弊选项窗已关闭", self.debugs())
         engine.ts.find_with_box.assert_not_called()
 
-    def test_select_returns_none_when_the_window_is_gone(self):
-        engine = self.make_engine(dialog_open=False)
-        self.assertIsNone(engine.select_cheat_option(("慈怀",)))
-        self.assertEqual(engine.scrolls, [])
-        self.assertIn("作弊选项窗已经不在当前画面上了", self.warnings())
-
     # ---- 不拖拽 + calculated_roll 不再有作弊窗守卫 ----
 
     def test_the_list_only_uses_the_wheel_never_drag(self):
