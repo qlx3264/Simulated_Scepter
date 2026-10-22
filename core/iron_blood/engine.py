@@ -58,14 +58,23 @@ class IronBloodUniverse(AnyFateUniverse):
                 minutes_divide_kill = minutes/self.kill_count
             # 演算时间过长保留录制仅服务于调试
             recording_keep_long_run_threshold = self.opt.get("recording_keep_long_run_threshold", 1.2)
+            del_time = (
+                self.del_record_time
+                and self.del_record_time>self.kill_count
+            )
             keep_long_run = (
                 self.debug
                 and self.opt.get("recording_keep_long_run", False)
                 and minutes_divide_kill >= recording_keep_long_run_threshold # 演算时间过长录制保留阈值（分钟数÷战斗数）
             )
-            need_del = self.del_record_time and self.del_record_time>self.kill_count and not keep_long_run
-            CUS_LOGGER.debug(f"是否可删除{need_del}，限制数目{self.del_record_time}，当前数目{self.kill_count}；本局演算时间{minutes:.2f}分钟，与战斗数比值{minutes_divide_kill:.2f}")
-            self.recorder.stop_recording(need_del, battle_count=self.kill_count)
+            abnormal_first_plane_weight = (
+                self.debug
+                and self.opt.get("record_abnormal_first_plane_weight", False)
+                and self.first_plane_weight <= 0 # 开局期望值异常（≤0）时保留录制
+            )
+            need_del = del_time and not keep_long_run and not abnormal_first_plane_weight and (self.kill_count==0 or self.kill_count>5) # 歪比巴卜：击杀数过低的也保留视频
+            CUS_LOGGER.debug(f"是否可删除{need_del}，限制数目{self.del_record_time}，当前数目{self.kill_count}；本局演算时间{minutes:.2f}分钟，与战斗数比值{minutes_divide_kill:.2f}；开局期望{self.first_plane_weight:.2f}")
+            self.recorder.stop_recording(need_del, battle_count=self.kill_count, elapsed_minutes=minutes, first_plane_weight=self.first_plane_weight)
             time.sleep(0.8)
             self.recorder.start_recording(self.count + 1)
             self.update_state("re_start")
