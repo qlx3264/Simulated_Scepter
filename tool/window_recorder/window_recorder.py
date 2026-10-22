@@ -547,7 +547,7 @@ class WindowRecorder:
             if frame_count == 0:
                 self._abort_start()
 
-    def stop_recording(self, delete_video=False, battle_count=None):
+    def stop_recording(self, delete_video=False, battle_count=None, elapsed_time=0, first_plane_weight=0):
         """停止录制
 
         Args:
@@ -602,7 +602,10 @@ class WindowRecorder:
         if battle_count is not None:
             try:
                 head, tail = self.output_file.rsplit("次轮回-", 1)
-                new_path = f"{head}次轮回-{battle_count}战-{tail}"
+                if first_plane_weight > 0:
+                    new_path = f"{head}次轮回-{battle_count}战-用时{elapsed_time//60}分{elapsed_time%60}秒-开局期望{first_plane_weight:.2f}-{tail}"
+                else:
+                    new_path = f"{head}次轮回-{battle_count}战-用时{elapsed_time//60}分{elapsed_time%60}秒-开局期望({first_plane_weight})-{tail}"
                 os.rename(self.output_file, new_path)
                 self.output_file = new_path
             except Exception as e:
