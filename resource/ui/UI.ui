@@ -1321,6 +1321,13 @@ border:none</string>
                       </widget>
                      </item>
                      <item>
+                      <widget class="QCheckBox" name="record_abnormal_first_plane_weight">
+                       <property name="text">
+                        <string>演算开局期望值异常（≤0）时保留视频</string>
+                       </property>
+                      </widget>
+                     </item>
+                     <item>
                       <widget class="QCheckBox" name="recording_keep_long_run_checkbox">
                        <property name="text">
                         <string>演算时间异常过长时保留视频</string>
