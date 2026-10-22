@@ -85,8 +85,7 @@
         "name": "自动交互",
         "trigger":{
             "photo": "f",
-            "pos": {"x":0.4443,"y":0.4417},
-            "mask":"mask_f1",
+            "mask":"f_key",
             "threshold":0.96
         },
         "actions":
@@ -95,17 +94,29 @@
         ]
     },
     {
-        "name": "使用零食",
+        "name": "快速恢复",
         "trigger":{
             "text": "快速恢复",
-            "box": [892, 1024, 250, 286],
+            "box": [896, 1028, 245, 290],
             "redundancy": 30
         },
         "actions":
         [
-            "solve_snack"
+            {
+                "position": [1443, 744]
+            },
+            {
+                "position": [1176, 815]
+            },
+            {
+                "sleep": 0.5
+            },
+            {
+                "position": [1176, 670]
+            }
         ]
-    },{
+    },
+    {
         "name": "开始游戏",
         "trigger":{
             "text": "首次通关奖励",
@@ -412,19 +423,7 @@
         ]
     },
     {
-        "name": "确认图片",
-        "trigger":{
-            "photo": "yes1",
-            "pos": {"x":0.5,"y":0.5},
-            "mask":"mask_end"
-        },
-        "actions":
-        [
-            "confirm_yes"
-        ]
-    },
-    {
-        "name": "确认纯文本",
+        "name": "确认",
         "trigger":{
             "text": "确认",
             "box": [232, 1690, 154, 928],

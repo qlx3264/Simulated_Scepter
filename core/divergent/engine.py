@@ -25,6 +25,7 @@ from core.divergent.keyops import KeyController
 from core.divergent.utils import UniverseUtils, set_forground
 from tool.GLOBAL import key_mouse_manager
 from tool.log import CUS_LOGGER, print_exc
+from tool.mask import MASK
 from tool.public_ocr import clean_text, load_actions, merge_text
 from tool.utils.image_tool import find_image_by_name
 from tool.utils.tool import get_hwnd_and_text
@@ -528,13 +529,13 @@ class DivergentUniverse(UniverseUtils):
                 return
 
             self.get_screen()
-            # 图标都在左侧图标列（实测 x≈1367~1374）：搜索窗口 mask_event_icon
-            if self.check("arrow", 0.2865, 0.5000, mask="mask_event_icon"):
+            # 图标都在左侧图标列（实测 x≈1367~1374）：搜索窗口 MASK["event_icon"]
+            if self.check("arrow", mask=MASK["event_icon"]):
                 self.click((self.tx, self.ty))
-            elif self.check("arrow_1", 0.2865, 0.5000, mask="mask_event_icon"):
+            elif self.check("arrow_1", mask=MASK["event_icon"]):
                 self.click((self.tx, self.ty))
             # 事件选择界面
-            elif self.check("star", 0.2865, 0.5000, mask="mask_event_icon", threshold=0.95):
+            elif self.check("star", mask=MASK["event_icon"], threshold=0.95):
                 if self.debug and event_id[0] == -1:
                     CUS_LOGGER.debug(f"self.ts.res: {self.ts.res}")
                     with open('test.txt', 'a') as f:
@@ -725,17 +726,11 @@ class DivergentUniverse(UniverseUtils):
                 self.align_event(key, deep+1)
             return
 
-    def skill(self, quan=0):
+    def skill(self):
         if not self.allow_e:
             return
         self.press('e')
         time.sleep(0.4)
-        if self.click_text(text="快速恢复",box=[864, 1058, 224, 318],click=False,ocr_line=False,warning=False):
-            self.solve_snack()
-            if quan and self.allow_e:
-                time.sleep(0.4)
-            else:
-                time.sleep(1.5*self.allow_e)
 
     def check_dead(self):
         self.get_screen()
@@ -991,19 +986,19 @@ class DivergentUniverse(UniverseUtils):
                 tm = time.time()
                 while time.time() - tm < 3:
                     self.get_screen()
-                    if self.check("divergent/z",0.5771,0.9546,mask="mask_z",threshold=0.96):
+                    if self.check("divergent/z", mask=MASK["monster_info_divergent"], threshold=0.96):
                         break
                 time.sleep(0.8)
                 keyops.keyUp('w')
                 keyops.keyUp('shift')
                 if self.quan and self.allow_e:
                     for _ in range(4):
-                        self.skill(1)
+                        self.skill()
                     self.press('w')
                     time.sleep(1.5)
                 elif self.bai_e and self.allow_e:
                     for _ in range(4):
-                        self.skill(1)
+                        self.skill()
                     time.sleep(1.5)
                 else:
                     pyautogui.click()
