@@ -937,7 +937,7 @@ class SimulatedUniverse(UniverseUtils):
     def confirm_yes(self):
         """
         点掉弹窗上的「确认」按钮。点击位置只取这一帧 OCR 到的「确认」文字块。
-        这一帧没认到就不点，等下一帧重新识别；点完等弹窗收起后再复核一次，按钮文字还在就按新识别到的位置补点一次。
+        这一帧没认到就不点，等下一帧重新识别。
         """
         # 若处于作弊界面，则不点「确认」
         if self.click_text(text="作弊", box=[923, 996, 230, 270], click=False, allow_fail=True):

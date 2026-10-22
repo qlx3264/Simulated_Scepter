@@ -327,7 +327,7 @@ class FingerSnapCheatSelectTest(unittest.TestCase):
         self.assertEqual(engine.cheat_target, EFFECT_NAMES[EFFECT_SELECT])
         # 这一刻作弊还没落地（窗口没弹、行没选、确认没点），所以只记请求
         self.assertEqual(engine._cheat_requested_effect, EFFECT_SELECT)
-        self.assertEqual(engine._cheat_requested_at, 1000.0)
+        self.assertEqual(engine._cheat_requested_at, self.clock.return_value)
         self.assertIsNone(engine._pending_cheat_effect)
         self.assertEqual(engine.countdown_agent.applied, [("cheat", EFFECT_SELECT)])
         self.assertEqual(engine.countdown_agent.synced[-1]["cheat"], 2)
@@ -376,7 +376,7 @@ class FingerSnapCheatSelectTest(unittest.TestCase):
         self.assertIsNone(engine._cheat_confirmed_effect)
         # 重选又是一次「已请求」：下次 calculated_roll 不能拿旧骰面核对回显
         self.assertEqual(engine._cheat_requested_effect, EFFECT_SELECT)
-        self.assertEqual(engine._cheat_requested_at, 1000.0)
+        self.assertEqual(engine._cheat_requested_at, self.clock.return_value)
         self.assertEqual(engine.countdown_agent.recommended, [])
         self.assertEqual(engine.countdown_agent.applied, [])
 
@@ -412,7 +412,7 @@ class FingerSnapCheatSelectTest(unittest.TestCase):
         """刚点过「作弊」按钮时骰面还是旧效果，不许拿去核对回显，也不许重新决策。"""
         engine = self.make_engine(observed_text="丰饶慈怀")
         engine._cheat_requested_effect = EFFECT_SELECT
-        engine._cheat_requested_at = 1000.0
+        engine._cheat_requested_at = self.clock.return_value
         engine.calculated_roll()
         self.assertIn("等作弊窗弹出", self.debugs())
         self.assertEqual(engine.click_text_calls, [])
@@ -426,7 +426,7 @@ class FingerSnapCheatSelectTest(unittest.TestCase):
         """作弊窗一直没弹出（比如点击被吞了）：超时后清掉请求，照常重新决策。"""
         engine = self.make_engine(observed_text="丰饶慈怀")
         engine._cheat_requested_effect = EFFECT_SELECT
-        engine._cheat_requested_at = 1000.0 - 10
+        engine._cheat_requested_at = self.clock.return_value - 10
         engine.calculated_roll()
         self.assertIn("一直没打开", self.warnings())
         self.assertIsNone(engine._cheat_requested_effect)
@@ -549,6 +549,19 @@ class FingerSnapCheatSelectTest(unittest.TestCase):
         self.assertEqual(engine._pending_cheat_effect, EFFECT_SELECT)
         self.assertIsNone(engine._cheat_requested_effect)
         self.assertEqual(engine.presses, [])
+
+    def test_cheat_confirm_retried_but_still_open_is_not_marked_confirmed(self):
+        """点满两轮「确认」窗还开着：既不能当成功，也不能把目标丢掉。"""
+        engine = self.make_engine([CIHUAI_TITLE], dialog_open=True,
+                                  confirm_closes=False)
+        engine.cheat()
+        self.assertClicks(engine, CIHUAI_TITLE["box"], CONFIRM["box"], CONFIRM["box"])
+        self.assertIn("未能成功确认", self.warnings())
+        self.assertIn("作弊选项窗未正常关闭", self.warnings())
+        self.assertIsNone(engine.cheat_target)
+        self.assertIsNone(engine._cheat_confirmed_effect)
+        self.assertEqual(engine._pending_cheat_effect, EFFECT_SELECT)
+        self.assertIsNone(engine._cheat_requested_effect)
 
     def test_cheat_without_locked_effect_just_closes_the_window(self):
         engine = self.make_engine(dialog_open=True, locked_effect=None)

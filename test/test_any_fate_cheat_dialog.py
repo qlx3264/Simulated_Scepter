@@ -32,7 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # 内核在 import 时会读图像内存切片，所以要先加载图片再导入内核
 load_all_images_from_directory(str(ROOT / "resource" / "imgs"))
 
-from core.any_fate.engine import AnyFateUniverse  # noqa: E402
+from core.any_fate.engine import AnyFateUniverse
 
 
 def mirror(point, xx=1920, yy=1080):
@@ -52,7 +52,6 @@ def line(text, box):
 CONFIRM = line("确认", [1168, 1223, 811, 841])
 # 标题里也带「确认」两个字的情形：按钮在它下面，点的时候必须挑最下面那个
 CONFIRM_TITLE = line("确认丢弃祝福「无根据颂歌」？", [900, 1200, 720, 750])
-CHEAT_BUTTON = line("作弊", [1261, 1321, 761, 792])
 
 # 丰饶（弹指一挥）作弊列表里的行
 CIHUAI_TITLE = line("【丰饶·慈怀】", [470, 700, 828, 854])
@@ -66,8 +65,8 @@ JIAOGUAN_DESC = line(
 class _StubCheatEngine(AnyFateUniverse):
     """只保留作弊窗的真实逻辑，OCR 和键鼠全部换成可断言的假实现。"""
 
-    def __init__(self, list_frames, dialog_open=False, cheat_button=True,
-                 confirm_visible=True, confirm_closes=True, select_works=True,
+    def __init__(self, list_frames, dialog_open=False,
+                 confirm_visible=True, confirm_closes_after=1, select_works=True,
                  select_works_after=0, cheat_target="慈怀", highlight_fraction=1.0,
                  confirm_lines=None):
         # 不走真实 __init__：这里不需要游戏连接
@@ -77,9 +76,10 @@ class _StubCheatEngine(AnyFateUniverse):
         self.cheat_target = cheat_target
         self.confirm_lines = list(confirm_lines) if confirm_lines else [CONFIRM]
         self.dialog_open = dialog_open
-        self.cheat_button_visible = cheat_button
         self.confirm_visible = confirm_visible
-        self.confirm_closes = confirm_closes
+        # 点第几次「确认」之后窗才会关；0 表示一直不关（点确认没生效）
+        self.confirm_closes_after = confirm_closes_after
+        self.confirm_clicks = 0
         self.select_works = select_works
         self.select_works_after = select_works_after
         self.select_attempts = 0
@@ -136,15 +136,9 @@ class _StubCheatEngine(AnyFateUniverse):
     def click_text(self, text, delay=0, box=None, after_delay=0, click=True,
                    find_all=False, warning=True, ocr_line=True, need_fresh=True,
                    allow_fail=False):
-        # 窗口顶部的「作弊」标题：只探测、不点击
+        # 窗口顶部的「作弊」标题：只探测、不点击（本类只测窗口内的逻辑，不开窗）
         if text == "作弊" and box == [923, 996, 230, 270]:
             return self.dialog_open
-        # 掷骰界面上的「作弊」按钮：点了就开窗
-        if text == "作弊" and box == [1261, 1321, 761, 792]:
-            if not self.cheat_button_visible:
-                return False
-            self.dialog_open = True
-            return True
         return False
 
     # ---- 键鼠 ----
@@ -164,7 +158,8 @@ class _StubCheatEngine(AnyFateUniverse):
         px, py = (1 - x) * self.xx, (1 - y) * self.yy
         for item in self._confirm_lines():
             if self._near_point(px, py, item["box"]):
-                if self.confirm_closes:
+                self.confirm_clicks += 1
+                if self.confirm_closes_after and self.confirm_clicks >= self.confirm_closes_after:
                     self.dialog_open = False
                 return
         for item in self._all_rows():
@@ -192,7 +187,7 @@ class CheatDialogTest(unittest.TestCase):
         self.enterContext(patch("core.any_fate.engine.key_mouse_manager", self.manager))
         self.logger = Mock()
         self.enterContext(patch("core.any_fate.engine.CUS_LOGGER", self.logger))
-        # 作弊窗有淡出动画，等 0.15/0.2/0.3 秒都不用真等
+        # 作弊窗淡出（0.05 秒）与列表停稳（0.3 秒）的等待都不用真等
         self.enterContext(patch("core.any_fate.engine.time", types.SimpleNamespace(sleep=Mock())))
 
     def make_engine(self, list_frames, **kwargs):
@@ -404,6 +399,28 @@ class ConfirmCheatDialogTest(CheatDialogTest):
         self.assertAlmostEqual(clicked[0], expected[0], places=6)
         self.assertAlmostEqual(clicked[1], expected[1], places=6)
 
+    def test_confirm_clicks_again_when_the_window_is_still_fading(self):
+        """第一下点完窗还没收起（淡出动画没走完）：再点一下关掉窗，才算确认成功。"""
+        engine = self.make_engine([[CIHUAI_TITLE]] * 2, dialog_open=True,
+                                  confirm_closes_after=2)
+
+        self.assertTrue(engine.confirm_cheat_dialog())
+
+        self.assertClicked(CONFIRM["box"], CONFIRM["box"])
+        self.assertFalse(engine.dialog_open)
+        self.assertEqual(self.logger.warning.call_args_list, [])
+
+    def test_confirm_gives_up_when_the_window_never_closes(self):
+        """点满两轮窗还开着：不能当成功——返回 False 并告警，由调用方决定怎么收场。"""
+        engine = self.make_engine([[CIHUAI_TITLE]] * 2, dialog_open=True,
+                                  confirm_closes_after=0)
+
+        self.assertFalse(engine.confirm_cheat_dialog())
+
+        self.assertClicked(CONFIRM["box"], CONFIRM["box"])
+        self.assertTrue(engine.dialog_open)
+        self.assertIn("作弊选项窗未正常关闭", self.warnings())
+
 
 # ---------------------------------------------------------------- 完整流程
 class CheatFlowTest(CheatDialogTest):
@@ -415,8 +432,7 @@ class CheatFlowTest(CheatDialogTest):
         # 成功了就把目标清掉，免得下一轮又去作弊
         self.assertIsNone(engine.cheat_target)
         self.assertEqual(engine.presses, [])
-        self.assertIn("已在作弊界面选择", "".join(
-            str(call.args[0]) for call in self.logger.debug.call_args_list))
+        self.assertIn("已在作弊界面选择", self.debugs())
 
     def test_cheat_escapes_and_clears_target_when_the_row_is_missing(self):
         engine = self.make_engine([[GUIXIN_TITLE]] * 10, dialog_open=True, cheat_target="慈怀")

@@ -11,8 +11,10 @@
 才回去按老规矩各存一份，方便以后补模板。
 """
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, call, patch
 
+import cv2
 import numpy as np
 
 from importing import load_img
@@ -23,6 +25,7 @@ load_img()
 from core.any_fate.engine import AnyFateUniverse  # noqa: E402
 from tool.utils.ocr_num import (  # noqa: E402
     match_cheat_count_in_region,
+    match_locked_roll_count_in_region,
     match_roll_count_in_region,
 )
 
@@ -60,7 +63,7 @@ class ReadActionCountsTest(unittest.TestCase):
         self.locked.assert_not_called()
         self.assertIn("当前重投次数", self._messages("debug"))
         self.assertIn("当前作弊次数", self._messages("debug"))
-        self.assertNotIn("尚未解锁作弊功能", self._messages("error"))
+        self.assertNotIn("尚未解锁作弊功能", self._messages("warning"))
 
     def test_locked_cheat_is_read_from_the_centered_position(self):
         """两边都没认到、居中位置认到数字：提示没解锁作弊，作弊按 0 次算。
@@ -74,7 +77,7 @@ class ReadActionCountsTest(unittest.TestCase):
         self.roll.assert_called_once_with("screen", save_unmatched=False)
         self.cheat.assert_called_once_with("screen", save_unmatched=False)
         self.locked.assert_called_once_with("screen", save_unmatched=False)
-        self.assertIn("尚未解锁作弊功能", self._messages("error"))
+        self.assertIn("尚未解锁作弊功能", self._messages("warning"))
         self.assertIn("当前重投次数: 3", self._messages("debug"))
 
     def test_unrecognized_counts_stay_none_and_only_then_save_samples(self):
@@ -86,7 +89,7 @@ class ReadActionCountsTest(unittest.TestCase):
         self.assertEqual(self.cheat.call_args_list[-1], call("screen"))
         self.assertEqual(self.roll.call_count, 2)
         self.assertEqual(self.cheat.call_count, 2)
-        self.assertNotIn("尚未解锁作弊功能", self._messages("error"))
+        self.assertNotIn("尚未解锁作弊功能", self._messages("warning"))
         self.assertEqual(self._messages("debug"), "")
 
     def test_one_recognized_count_skips_the_locked_probe(self):
@@ -124,6 +127,31 @@ class SaveUnmatchedTest(unittest.TestCase):
 
         self.save.assert_called_once()
         self.assertIn("未识别作弊次数", str(self.logger.warning.call_args))
+
+
+class LockedRollCountRegionTest(unittest.TestCase):
+    """没解锁作弊时那个居中数字，必须真能从截图里认出来。
+
+    上面的用例把 ``match_locked_roll_count_in_region`` 打桩成返回 3，只证明了调用顺序；
+    居中区域写错一个数照样全绿，实机却会一直认不到次数、卡在骰面。
+    """
+
+    def test_centered_number_is_read_from_the_centered_region(self):
+        """把模板贴进居中区域左上角 (1490, 705)，它就该认得出这个数字。
+
+        区域是 ``tool/utils/ocr_num.py`` 里写死的 (1490, 705, 1535, 745)，改了就红。
+        """
+        template = cv2.imread(str(
+            Path(__file__).resolve().parents[1] / "resource" / "imgs" / "roll_count_num" / "3.png"))
+        self.assertIsNotNone(template)
+        image = np.zeros((1080, 1920, 3), dtype=np.uint8)
+        height, width = template.shape[:2]
+        image[705:705 + height, 1490:1490 + width] = template
+
+        self.assertEqual(match_locked_roll_count_in_region(image, save_unmatched=False), 3)
+        # 同一张图上正常那两个点位都认不到，正是没解锁作弊时的画面
+        self.assertIsNone(match_roll_count_in_region(image, save_unmatched=False))
+        self.assertIsNone(match_cheat_count_in_region(image, save_unmatched=False))
 
 
 if __name__ == "__main__":

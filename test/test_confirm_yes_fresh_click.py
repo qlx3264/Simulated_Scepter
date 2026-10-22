@@ -10,7 +10,7 @@
 
 当前生产契约（``core/simulated/engine.py`` 的 ``confirm_yes``）：
 - 先做作弊窗守卫：``click_text(text="作弊", box=[923,996,230,270], click=False, allow_fail=True)``
-  命中就 warning「当前处于作弊选项窗，跳过点击「确认」」并返回 0，**连 OCR 都不做**；
+  命中就 debug「当前处于作弊选项窗，跳过点击「确认」」并返回 0，**连 OCR 都不做**；
 - 点击位置只取**这一刻重新截图**后区域 OCR 到的「确认」文字块
   （``find_with_box(box=[232,1690,154,928], forward=True, re_screen=True)``：只给 ``forward`` 用的是
   缓存帧，那就又变成「点上一帧的画面」）；
@@ -85,8 +85,9 @@ class _StubConfirmEngine(SimulatedUniverse):
 
     def _ocr(self, box=None, redundancy=10, forward=0, mode=0, re_screen=False):
         """
-        按 core/simulated/ocr.py:284-300 的取帧规则返回落在这个框里的文字行：
-        re_screen=True 会重新截图，只有 forward=True 时用的是缓存帧 self.screen。
+        按 core/simulated/ocr.py:284-300 的取帧规则返回落在这个框里的文字行：真实实现只有
+        ``re_screen and forward`` 才在这一刻重新截图，否则 ``forward`` 读的是缓存帧 self.screen；
+        桩按 re_screen 取帧（被测调用点固定 forward=True）。
         """
         frame = self.get_screen() if re_screen else self.screen
         box = list(box or [0, self.xx, 0, self.yy])
@@ -103,6 +104,7 @@ class ConfirmYesTest(unittest.TestCase):
         self.manager = Mock()
         self.enterContext(patch("core.simulated.engine.key_mouse_manager", self.manager))
         self.logger = self.enterContext(patch("core.simulated.engine.CUS_LOGGER", Mock()))
+
     def make_engine(self, rows, **kwargs):
         self.engine = _StubConfirmEngine(rows, **kwargs)
         return self.engine
@@ -142,9 +144,10 @@ class ConfirmYesTest(unittest.TestCase):
 
         engine.ts.find_with_box.assert_called_once_with(
             box=CONFIRM_AREA_BOX, forward=True, re_screen=True)
-        # 按钮框在识别区域内，且排除右下角的「确认效果」（y 961~994）
-        self.assertGreater(CONFIRM_AREA_BOX[3], CONFIRM["box"][3])
-        self.assertLess(CONFIRM_AREA_BOX[3], 961)
+        # 识别区域的底边在按钮文字下面，且排除右下角的「确认效果」（y 961~994）
+        box = engine.ts.find_with_box.call_args.kwargs["box"]
+        self.assertGreater(box[3], CONFIRM["box"][3])
+        self.assertLess(box[3], 961)
 
     def test_does_nothing_while_the_cheat_dialog_is_open(self):
         """作弊选项窗正开着：那个「确认」属于作弊流程，状态机不能代点，连 OCR 都不该做。"""

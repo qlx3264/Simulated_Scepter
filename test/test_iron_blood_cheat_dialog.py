@@ -8,7 +8,9 @@
 窗口被误点关掉之后，后面的操作全落在空白页面上，作弊白白失败。
 
 当前生产契约（``core/iron_blood/engine.py`` 的 ``calculated_roll``）：
-- 没有「作弊窗还开着就返回」这类守卫，也不再有单独的「打开作弊窗」助手；
+- 先探窗口顶部的「作弊」标题（``click_text(text="作弊", box=[923,996,230,270], click=False,
+  allow_fail=True)``）：命中就说明作弊选项窗还开着，debug「作弊选项窗还开着，先不处理重投界面」
+  并直接返回，不读效果文本、不做决策；单独「打开作弊窗」的助手已经没有了；
 - 重投界面先读当前效果文本（``ts.find_with_box(box=[1339,1576,429,464], forward=True, re_screen=False)``），
   文本里已经带「肉体」就完全不做决策动作，直接点「确认效果」；
 - 否则用 ``check("zero")`` 分别判断「作弊」与「重投」两个按钮是否可用；
@@ -99,7 +101,11 @@ class CalculatedRollTest(unittest.TestCase):
                 return fast_rolled
             if path == "zero":
                 # 0.3046 是「作弊」按钮的位置，0.1297 是「重投」按钮的位置
-                return not (cheating if x > 0.2 else redo)
+                if (x, y) == (0.3046, 0.3324):
+                    return not cheating
+                if (x, y) == (0.1297, 0.3315):
+                    return not redo
+                raise AssertionError(f"未预料的「zero」点位：{x}, {y}")
             raise AssertionError(f"未预料的 check 调用：{path}")
         return check
 
@@ -221,7 +227,7 @@ class CalculatedRollTest(unittest.TestCase):
         self.assertClickedText(engine, text="确认效果", box=CONFIRM_EFFECT_BOX)
         self.assertIsNone(engine.cheat_target)
         self.assertEqual(engine.mini_state, 1)
-        self.assertIn("尚未解锁作弊功能", str(self.any_fate_logger.error.call_args_list))
+        self.assertIn("尚未解锁作弊功能", str(self.any_fate_logger.warning.call_args_list))
         self.assertIn("当前重投次数", self.debug_log())
         # 居中点位认到了就说明那两个点位本来就是空白，不该再回去落两张空样本
         self.assertEqual(self.roll_count.call_count, 1)
@@ -239,7 +245,7 @@ class CalculatedRollTest(unittest.TestCase):
         self.assertEqual(engine.mini_state, 1)
 
     def test_plane_floor_one_does_not_read_the_effect(self):
-        """第一、二位面以外不读当前效果文本，直接确认。"""
+        """第一位面不读当前效果文本（第二位面、第三位面才读），直接确认。"""
         engine = self.make_engine(plane_floor=1, cheating=True)
         engine.calculated_roll()
         engine.ts.find_with_box.assert_not_called()

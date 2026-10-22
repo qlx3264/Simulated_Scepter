@@ -1156,14 +1156,8 @@ class AnyFateUniverse(SimulatedUniverse):
         return entry["raw_text"]
 
     def cheat_option_selected(self, entry):
-        """
-        判断作弊界面选项列表里这一行是不是真的被选中了：被选中的行整条会高亮成紫色。
-        重新截一帧再判断（点完要等界面刷新），只看那一行卡片的颜色，不依赖 OCR。
-        """
-        self.get_screen()
-        screen = getattr(self, "screen", None)
-        if screen is None or len(getattr(screen, "shape", ())) != 3:
-            return False
+        """判断作弊界面选项列表里指定选项是不是真的被选中了：被选中的行整条会高亮成紫色。"""
+        screen = self.get_screen()
         # 高亮范围只给左右边界，scaled_box 要 4 个数，这里自己按 1920 基准缩放。
         # 行卡片左右 [470, 1450]、上下 = 标题 y-8 ~ 标题 y+88，卡片自身高约 100 px。
         left, right = [int(value * self.xx / 1920) for value in (470, 1450)]
@@ -1181,8 +1175,8 @@ class AnyFateUniverse(SimulatedUniverse):
                           np.array((145, 255, 255), dtype=np.uint8))
         ratio = float(mask.mean()) / 255
         CUS_LOGGER.debug(f"作弊效果「{entry['raw_text']}」的高亮紫色占比：{ratio:.2f}")
-        # 大于阈值才允许点击确认，经实测占比约 0.41~0.51，而未高亮的为 0
-        return ratio >= 0.4
+        # 大于阈值才允许点击确认，经实测占比约 0.41~0.51，而未高亮的为 0，故此处设为0.3
+        return ratio >= 0.3
 
     def select_cheat_option(self, keywords, skip_first_ocr=False):
         """
@@ -1219,10 +1213,10 @@ class AnyFateUniverse(SimulatedUniverse):
             if self.find_cheat_option(keywords) is None:
                 scroll_down()
                 continue
-            # 认出目标行后就一直在这一屏重选到选中为止
-            n = 5 # 重试次数
-            while not self._stop and n > 0:
-                n -= 1
+            # 认出目标行后就一直在这一屏重选到选中为止，同一屏最多重点 5 次
+            retries = 5
+            while not self._stop and retries > 0:
+                retries -= 1
                 entry = self.find_cheat_option(keywords)
                 if entry is None:
                     CUS_LOGGER.warning(f"作弊列表里又认不到目标行{keywords}了，再试一次")
@@ -1231,7 +1225,7 @@ class AnyFateUniverse(SimulatedUniverse):
                 if selected is not None and self.cheat_option_selected(entry):
                     return selected
                 CUS_LOGGER.warning(f"点了作弊效果「{selected or keywords}」但未检测到高亮，再点一次")
-            CUS_LOGGER.error("重试五次仍未点击成功，重新尝试")
+            CUS_LOGGER.error("重试五次仍未点击成功，可能是网络卡顿")
             return None
         CUS_LOGGER.warning(f"作弊界面选项列表未找到目标骰面效果{keywords}")
         return None
@@ -1258,6 +1252,11 @@ class AnyFateUniverse(SimulatedUniverse):
             y = (entry["box"][2] + entry["box"][3]) / 2
             key_mouse_manager.click(1 - x / self.xx, 1 - y / self.yy)
             key_mouse_manager.wait()
+        # 刚点完的「确认」也要等淡出，否则标题还认得出来，会被误判成没关窗
+        time.sleep(0.05)
+        if self.click_text(text="作弊", box=[923, 996, 230, 270], click=False, allow_fail=True):
+            CUS_LOGGER.warning("作弊选项窗未正常关闭，可能仍在淡出，下一轮重新处理")
+            return False
         return True
 
     def cheat(self, skip_first_ocr=False):
@@ -1365,7 +1364,7 @@ class AnyFateUniverse(SimulatedUniverse):
         if roll_count is None and cheat_count is None:
             locked_roll = match_locked_roll_count_in_region(self.screen, save_unmatched=False)
             if locked_roll is not None:
-                CUS_LOGGER.error("您当前尚未解锁作弊功能。请及时通关寰宇蝗灾以获得最佳体验")
+                CUS_LOGGER.warning("您当前尚未解锁作弊功能。请及时通关寰宇蝗灾以获得最佳体验")
                 CUS_LOGGER.debug(f"当前重投次数: {locked_roll}")
                 return locked_roll, 0
             match_roll_count_in_region(self.screen)
