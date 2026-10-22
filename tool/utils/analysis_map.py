@@ -9,6 +9,8 @@ from PIL import Image, ImageDraw, ImageFont
 from route import PATHS
 from tool.log import CUS_LOGGER
 from tool.utils.image_tool import find_image_in_folder
+from core.common.config import load_runtime_settings
+
 
 
 GREEN_HALO_HUE_MIN = 35
@@ -405,7 +407,7 @@ def evaluate_best_single_replacement(nodes, edges, start_idx, t=0.2):
         discounted_delta: 期权调整后的增量 (1-t)^k * delta
     """
     baseline_path, baseline_weight, baseline_end_idx = max_weight_path(nodes, edges, start_idx)
-    target_weight = 1.2
+    target_weight = float(load_runtime_settings().get("battle_weight", 1.2)) # 读取战斗格权重实际设定值
     steps = compute_all_max_steps(nodes, edges, start_idx)
     best_path = baseline_path
     best_weight = baseline_weight
