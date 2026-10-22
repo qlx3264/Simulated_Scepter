@@ -1160,7 +1160,6 @@ class AnyFateUniverse(SimulatedUniverse):
         判断作弊界面选项列表里这一行是不是真的被选中了：被选中的行整条会高亮成紫色。
         重新截一帧再判断（点完要等界面刷新），只看那一行卡片的颜色，不依赖 OCR。
         """
-        time.sleep(0.15)
         self.get_screen()
         screen = getattr(self, "screen", None)
         if screen is None or len(getattr(screen, "shape", ())) != 3:
@@ -1212,6 +1211,7 @@ class AnyFateUniverse(SimulatedUniverse):
         # 列表最多 6 行、一屏能看 3 行；滚一格约 40 px、一行约 155 px，所以一次滚 15 格约三行，
         # 到底会被夹住，多滚无害。不跳过首屏时从顶部往下扫 3 屏够扫完整张表；
         # 跳过首屏时已经先滚掉一屏，扫 2 屏就够。
+        CUS_LOGGER.debug(f"作弊：目标骰面{keywords}")
         if skip_first_ocr:
             CUS_LOGGER.debug("跳过首次识别，先把作弊列表往下滚一屏")
             scroll_down()
@@ -1239,8 +1239,8 @@ class AnyFateUniverse(SimulatedUniverse):
     def confirm_cheat_dialog(self, tries=2):
         """点作弊窗的「确认」按钮。"""
         for _ in range(tries):
-            # 作弊窗收起有淡出动画，等够再检查
-            time.sleep(0.2)
+            # 作弊窗收起有淡出动画，实测必须等 0.05 秒
+            time.sleep(0.05)
             if not self.click_text(text="作弊", box=[923, 996, 230, 270], click=False, allow_fail=True):
                 CUS_LOGGER.debug("作弊选项窗已关闭")
                 return True
