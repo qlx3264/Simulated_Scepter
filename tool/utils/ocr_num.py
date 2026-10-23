@@ -78,8 +78,13 @@ def _action_count_template_value(filename):
 
 
 def _match_action_count_in_region(or_image, region, count_name, threshold=0.9,
-                                  template_dir=None, unmatched_dir=None):
-    """Recognize one action count using the shared count-digit templates."""
+                                  template_dir=None, unmatched_dir=None,
+                                  save_unmatched=True):
+    """Recognize one action count using the shared count-digit templates.
+
+    ``save_unmatched=False`` 时认不到就安静返回 None：既不落样本也不打告警。
+    给「先探一遍、确认确实认不到才存样本」的调用方用。
+    """
     x1, y1, x2, y2 = region
     if or_image is None or or_image.shape[0] < y2 or or_image.shape[1] < x2:
         CUS_LOGGER.warning(f"{count_name}次数识别失败：截图尺寸不足，无法裁剪指定区域")
@@ -105,6 +110,9 @@ def _match_action_count_in_region(or_image, region, count_name, threshold=0.9,
     if best_value is not None and best_score >= threshold:
         return best_value
 
+    if not save_unmatched:
+        return None
+
     save_path = _save_unmatched_roll_count(crop, unmatched_dir)
     if save_path:
         CUS_LOGGER.warning(
@@ -116,7 +124,7 @@ def _match_action_count_in_region(or_image, region, count_name, threshold=0.9,
 
 
 def match_roll_count_in_region(or_image, threshold=0.9, template_dir=None,
-                               unmatched_dir=None):
+                               unmatched_dir=None, save_unmatched=True):
     """Recognize the reroll count in [1660, 707, 1700, 740]."""
     return _match_action_count_in_region(
         or_image,
@@ -125,11 +133,12 @@ def match_roll_count_in_region(or_image, threshold=0.9, template_dir=None,
         threshold,
         template_dir,
         unmatched_dir,
+        save_unmatched,
     )
 
 
 def match_cheat_count_in_region(or_image, threshold=0.9, template_dir=None,
-                                unmatched_dir=None):
+                                unmatched_dir=None, save_unmatched=True):
     """Recognize the cheat count in [1325, 707, 1365, 740]."""
     return _match_action_count_in_region(
         or_image,
@@ -138,6 +147,26 @@ def match_cheat_count_in_region(or_image, threshold=0.9, template_dir=None,
         threshold,
         template_dir,
         unmatched_dir,
+        save_unmatched,
+    )
+
+
+def match_locked_roll_count_in_region(or_image, threshold=0.9, template_dir=None,
+                                      unmatched_dir=None, save_unmatched=True):
+    """没解锁作弊功能时认「重投次数」的数字。
+
+    作弊功能要通关寰宇蝗灾才解锁，没解锁时骰面界面只剩「重投次数」一项、
+    而且整行居中显示，正常那两个点位（作弊在左边、重投在右边）都认不到数字，
+    数字落在两个点位中间的空白处，所以这里单独按居中那个位置裁一次。
+    """
+    return _match_action_count_in_region(
+        or_image,
+        (1490, 705, 1535, 745),
+        "重投",
+        threshold,
+        template_dir,
+        unmatched_dir,
+        save_unmatched,
     )
 
 

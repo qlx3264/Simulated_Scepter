@@ -18,14 +18,12 @@ from tool.utils.analysis_map import evaluate_best_single_replacement
 from tool.utils.image_tool import find_image_by_name
 from tool.utils.ocr_num import (
     extract_number,
-    match_cheat_count_in_region,
     match_numbers_in_region,
-    match_roll_count_in_region,
 )
 
 
 class IronBloodUniverse(AnyFateUniverse):
-    """铁血战士：毁灭命途专属，累计「肉体帝候」击杀数达成成就。"""
+    """铁血战士：毁灭命途专属，累计40击杀数以达成成就。"""
 
     def __init__(self):
         super().__init__()
@@ -344,16 +342,17 @@ class IronBloodUniverse(AnyFateUniverse):
         self.new_node=True
 
     def calculated_roll(self):
+        # 点过「作弊」按钮后窗口约 0.3 s 才弹出来，这期间「重投界面」还会反复触发，
+        # 那时背景的「确认效果」照样认得到。不在这里挡住，就会再点一次「作弊」，
+        # 而那一下会落到已经打开的列表上，可能选中别的骰面。
+        if self.click_text(text="作弊", box=[923, 996, 230, 270], click=False, allow_fail=True):
+            CUS_LOGGER.debug("作弊选项窗还开着，先不处理重投界面")
+            return
         if self.nodes is None or self.plane_floor==-1:
             self.click_target(find_image_by_name("inmap"), 0.9, flag=False, click=True)
             key_mouse_manager.wait()
             return
-        roll_count = match_roll_count_in_region(self.screen)
-        if roll_count is not None:
-            CUS_LOGGER.debug(f"当前重投次数: {roll_count}")
-        cheat_count = match_cheat_count_in_region(self.screen)
-        if cheat_count is not None:
-            CUS_LOGGER.debug(f"当前作弊次数: {cheat_count}")
+        _, cheat_count = self.read_action_counts()
         if not self.check("fast_roll", 0.1281,0.9074, threshold=0.9):
             self.click_text(text="快速投掷", box=[1700, 1823, 80, 117])
         if self.plane_floor in [2,3]:
@@ -362,6 +361,9 @@ class IronBloodUniverse(AnyFateUniverse):
             CUS_LOGGER.info(f"拿去吧…我背负的一切。(当前效果{text})")
             if "肉体" not in text:
                 cheating =not self.check("zero", 0.3046,0.3324, threshold=0.95)
+                if cheat_count == 0:
+                    # 作弊次数 0（含没解锁作弊功能）就没法作弊，别去点那个不存在的「作弊」按钮
+                    cheating = False
                 redo=not self.check("zero", 0.1297,0.3315, threshold=0.95)
                 CUS_LOGGER.debug(f"决策可用动作{cheating},{redo}")
                 if cheating or redo:
@@ -372,7 +374,9 @@ class IronBloodUniverse(AnyFateUniverse):
                         if best_path[1]['idx'] == self.replace_idx or self.plane_floor == 3:
                             CUS_LOGGER.debug(f"期权最佳代替节点{self.replace_idx},替换后最佳路径{best_path}")
                             if cheating:
-                                self.click_text(text="作弊", box=[1261, 1321, 761, 792])
+                                self.cheat_target = "肉体帝侯"
+                                if not self.click_text(text="作弊", box=[1261, 1321, 761, 792], allow_fail=True):
+                                    CUS_LOGGER.warning("没点到「作弊」按钮，等下一轮重新决策")
                                 return
                             elif redo:
                                 self.click_text(text="重投", box=[1599, 1657, 760, 795])
@@ -380,6 +384,13 @@ class IronBloodUniverse(AnyFateUniverse):
         self.click_text(text="确认效果", box=[1584, 1687, 961, 994])
         self.init_map()
         self.mini_state = 1
+
+    def cheat(self):
+        """
+        铁血战士的作弊目标只会是「肉体帝侯」，它在毁灭系骰面列表的最后一行，
+        第一屏必定认不到，所以跳过首次识别、先把列表往下滚一屏再认；其余流程和公共实现一样。
+        """
+        super().cheat(skip_first_ocr=True)
 
 
 def create_engine(*, script=False):

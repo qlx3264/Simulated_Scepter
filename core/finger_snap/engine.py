@@ -14,7 +14,6 @@ from tool.countdown_evaluator import (
     DECISION_MC,
     DECISION_WIN_RATE,
     DECISION_WIN_RATE_DP,
-    EFFECT_CHEAT_TEXT,
     EFFECT_NAMES,
     EFFECT_NOTHING,
     EFFECT_SELECT,
@@ -41,13 +40,13 @@ from tool.utils.Error import NoMatchError
 from tool.utils.image_tool import find_image_by_name
 from tool.utils.ocr_num import (
     extract_number,
-    match_cheat_count_in_region,
     match_numbers_in_region,
-    match_roll_count_in_region,
 )
 
 
 class FingerSnap(AnyFateUniverse):
+    """弹指一挥：丰饶命途专属，累计80倒计时以达成成就。"""
+
     def __init__(self):
         super().__init__()
         self.fate = "丰饶"
@@ -66,6 +65,9 @@ class FingerSnap(AnyFateUniverse):
         self._cheat_count = self._reroll_count = 0
         self._pending_target = None
         self._pending_cheat_effect = None
+        self._cheat_confirmed_effect = None
+        self._cheat_requested_effect = None
+        self._cheat_requested_at = 0.0
         self._target_decided = False
         CUS_LOGGER.info("令她感伤的是，永恒的生命没能让她积累无穷的智慧，反倒是那些曾被她视作珍瑰的事物，开始变得模糊，一去不返。。。")
         event_finger_snap = resource_path(__file__, "config/event_finger_snap.json")
@@ -85,11 +87,15 @@ class FingerSnap(AnyFateUniverse):
         self._cheat_count = self._reroll_count = 0
         self._pending_target = None
         self._pending_cheat_effect = None
+        self._cheat_confirmed_effect = None
+        self._cheat_requested_effect = None
+        self._cheat_requested_at = 0.0
         self._target_decided = False
         self.fail_match_count=0
         self.node_count = 0
         self._ruanmei_er2_seen = False
         self.now_area=[]
+        self.cheat_target = None  # 新轮回清掉上一轮留下的作弊目标
     def select_fate(self):
         self.click_text(text="丰饶", box=[824, 877, 784, 814])
     def update_count(self, read=True):
@@ -457,14 +463,19 @@ class FingerSnap(AnyFateUniverse):
             self.click_target(find_image_by_name("inmap"), 0.9, flag=False, click=True)
             key_mouse_manager.wait()
             return
-        roll_count = match_roll_count_in_region(self.screen)
+        if self._cheat_requested_effect is not None:
+            # 刚点过「作弊」按钮、作弊还没落地（等作弊窗弹出、选行、确认）。这期间骰面还是旧效果，
+            # 既不能拿去核对回显（会误判成回显不一致），也不能重新决策。
+            if time.time() - self._cheat_requested_at < 5:
+                CUS_LOGGER.debug("已点「作弊」按钮，等作弊窗弹出")
+                return
+            CUS_LOGGER.warning("点了「作弊」按钮但作弊窗一直没打开，清掉这次请求重新决策")
+            self._cheat_requested_effect = None
+        roll_count, cheat_count = self.read_action_counts()
         if roll_count is not None:
             self._reroll_count = int(roll_count)
-            CUS_LOGGER.debug(f"当前重投次数: {roll_count}")
-        cheat_count = match_cheat_count_in_region(self.screen)
         if cheat_count is not None:
             self._cheat_count = int(cheat_count)
-            CUS_LOGGER.debug(f"当前作弊次数: {cheat_count}")
         self.countdown_agent.sync_facts(
             countdown=self.countdown, cheat=self._cheat_count,
             reroll=self._reroll_count)
@@ -482,17 +493,28 @@ class FingerSnap(AnyFateUniverse):
                 CUS_LOGGER.warning(
                     f"等待作弊效果“{EFFECT_NAMES[pending_effect]}”回显，当前效果无法识别")
                 return
-            self._pending_cheat_effect = None
             if observed == pending_effect:
-                CUS_LOGGER.debug(
-                    f"作弊效果“{EFFECT_NAMES[pending_effect]}”已回显，直接确认，不重复决策")
+                self._pending_cheat_effect = None
+                CUS_LOGGER.debug(f"作弊效果“{EFFECT_NAMES[pending_effect]}”已回显，直接确认，不重复决策")
                 self.click_text(text="确认效果", box=[1584, 1687, 961, 994])
                 self.init_map()
                 self.mini_state = 1
                 return
-            CUS_LOGGER.warning(
-                f"作弊效果回显不一致：预期“{EFFECT_NAMES[pending_effect]}”，"
-                f"实际“{EFFECT_NAMES[observed]}”，取消锁定并按实际效果重新决策")
+            expected = EFFECT_NAMES[pending_effect]
+            actual = EFFECT_NAMES[observed]
+            if self._cheat_count > 0:
+                # 每次确认都真实消耗 1 次作弊次数：还有余额就按同一目标重新选一次，并保留 _pending_cheat_effect
+                # 让下一轮继续核对同一个目标的回显。这里只把目标重新锁回去、点开「作弊」按钮就回主循环，
+                # 选行交给紧接着的「作弊界面」状态触发的 cheat()。
+                CUS_LOGGER.warning(f"作弊效果回显不一致：预期“{expected}”，实际“{actual}”，作弊次数还剩{self._cheat_count}次，重新选择")
+                self.countdown_agent.locked_effect = pending_effect
+                self._cheat_confirmed_effect = None
+                if self.click_text(text="作弊", box=[1261, 1321, 761, 792], allow_fail=True):
+                    self._cheat_requested_effect = pending_effect
+                    self._cheat_requested_at = time.time()
+                return
+            self._pending_cheat_effect = None
+            CUS_LOGGER.warning(f"作弊效果回显不一致：预期“{expected}”，实际“{actual}”，取消锁定并按实际效果重新决策")
             self.countdown_agent.locked_effect = None
         if observed is None:
             CUS_LOGGER.warning("无法确认骰子效果，本次不消耗资源并按无效果继续")
@@ -530,9 +552,19 @@ class FingerSnap(AnyFateUniverse):
             self._reroll_count = self.countdown_agent.state.reroll_rem
             return
         if isinstance(action, tuple) and action[0] == "cheat":
-            self.click_text(text="作弊", box=[1261, 1321, 761, 792])
+            target_name = EFFECT_NAMES.get(action[1], action[1])
+            if not self.click_text(text="作弊", box=[1261, 1321, 761, 792], allow_fail=True):
+                CUS_LOGGER.warning(f"没点到「作弊」按钮（当前骰面效果：{parsed}，目标效果：{target_name}），等下一轮重新决策")
+                return
+            # 「作弊」按钮点下去后窗口约 0.3 s 弹出，这里记完账就回主循环：
+            # 状态机认到「作弊界面」标题后会用 cheat_target 调 cheat() 去选行。
+            # 这一刻作弊还没落地（窗口没弹、行没选、确认没点），所以只记「已请求」，
+            # 等 cheat() 真的确认了才记 _pending_cheat_effect 去核对回显。
+            self.cheat_target = target_name
             self.countdown_agent.apply_effect_action(observed, action)
-            self._pending_cheat_effect = int(action[1])
+            self._cheat_requested_effect = int(action[1])
+            self._cheat_requested_at = time.time()
+            self._cheat_confirmed_effect = None
             self._cheat_count = self.countdown_agent.state.cheat_rem
             return
 
@@ -542,29 +574,49 @@ class FingerSnap(AnyFateUniverse):
         self.mini_state = 1
 
     def cheat(self):
-        """在作弊界面选择评估模型已决定的具体效果。"""
+        """
+        在作弊选项窗里选中评估模型已决定的具体效果，只在「作弊界面」状态触发时进这里。
+        定位关键字一律用效果名本身，和列表行标题里的写法一致（如【丰饶·慈怀】）。
+        """
         effect = self.countdown_agent.locked_effect
         if effect is None:
             CUS_LOGGER.error("进入作弊界面时没有待应用的模型效果")
+            self.cheat_target = None
+            self._cheat_requested_effect = None
             key_mouse_manager.press("esc")
+            key_mouse_manager.wait()
             return
         name = EFFECT_NAMES[effect]
-        candidates = (EFFECT_CHEAT_TEXT[effect],)
-        selected = None
-        for attempt in range(2):
-            selected = next((candidate for candidate in candidates
-                             if self.click_text(text=candidate, allow_fail=True,need_fresh=True)), None)
-            if selected:
-                break
-            key_mouse_manager.drag(0.5, 0.4, 0.5, 0.6)
-            key_mouse_manager.wait()
-        if not selected:
-            CUS_LOGGER.error(f"作弊界面未找到推荐效果“{name}”，重试")
-            self._pending_cheat_effect = None
-            self.countdown_agent.locked_effect = None
-            key_mouse_manager.press("esc")
+        self.cheat_target = name
+        # 防状态机重复触发
+        if self._cheat_confirmed_effect == effect:
+            CUS_LOGGER.debug(f"作弊效果“{name}”已经确认过，忽略重复触发")
+            self.cheat_target = None
             return
-        self.click_text("确认", box=[1168, 1223, 811, 841], allow_fail=True)
+        selected = self.select_cheat_option((name,))
+        if selected is None:
+            # 没选中就不能点确认：确认一个没选中的窗口就是白扔一次作弊次数，
+            # 按 esc 关窗不消耗次数，等下一轮重新决策。
+            CUS_LOGGER.error(f"作弊选项窗里没选中目标效果“{name}”，取消这次作弊")
+            self._pending_cheat_effect = None
+            self._cheat_requested_effect = None
+            self.countdown_agent.locked_effect = None
+            self.cheat_target = None
+            key_mouse_manager.press("esc")
+            key_mouse_manager.wait()
+            return
+        if not self.confirm_cheat_dialog():
+            # 没确认成功就是作弊没落地，但行已经点中、次数也可能已经扣了，所以照样按预期效果
+            # 记下 pending，下一轮按骰面回显核对；请求标记要清掉，否则会被当成还在等窗口弹出。
+            CUS_LOGGER.warning(f"已点中作弊效果“{selected}”，但未能成功确认，等骰面回显核对")
+            self._pending_cheat_effect = effect
+            self._cheat_requested_effect = None
+            self.cheat_target = None
+            return
+        self._pending_cheat_effect = effect
+        self._cheat_confirmed_effect = effect
+        self._cheat_requested_effect = None
+        self.cheat_target = None
         CUS_LOGGER.debug(f"已在作弊界面选择：{selected}")
 
     def _log_decision(self, advice):

@@ -5,6 +5,7 @@ import sqlite3
 import time
 
 import cv2 as cv
+import numpy as np
 
 from route import PATHS
 from tool.settings import load_settings
@@ -38,6 +39,7 @@ from tool.utils.minimap_util import (
 )
 from tool.utils.ocr_num import (
     match_cheat_count_in_region,
+    match_locked_roll_count_in_region,
     match_roll_count_in_region,
 )
 from tool.utils.tool import find_latest_modified_file
@@ -127,6 +129,7 @@ class AnyFateUniverse(SimulatedUniverse):
         self.start_nodes = None # 当前路径起始节点，try_analysis_map中更新
         self.silver_wolf_manager = SilverWolfManager(self)
         self.now_area=[]
+        self.cheat_target = None  # 本次作弊要选的骰面效果名，由各模式在点「作弊」按钮前写入
         CUS_LOGGER.info("宇宙的中心有一团火种,它愈烧愈旺,直至燃尽整片星河。")
 
     def restart_recording(self):
@@ -139,6 +142,7 @@ class AnyFateUniverse(SimulatedUniverse):
         self.node_count=0
         self.chaoyan_seen = False  # 新轮回重置「超验之镜」已进过标记
         self.now_area=[]
+        self.cheat_target = None  # 新轮回清掉上一轮留下的作弊目标
 
     def end_of_university(self):
         super().end_of_university()
@@ -1101,10 +1105,187 @@ class AnyFateUniverse(SimulatedUniverse):
                 key_mouse_manager.click(0.1365, 0.1093)
                 key_mouse_manager.wait()
 
-    def cheat(self):
-        key_mouse_manager.drag(0.5,0.4,0.5,0.8)
-        key_mouse_manager.click(571,622)
-        self.click_text("确认",box=[1168, 1223, 811, 841],allow_fail=True)
+    # 作弊选项窗：点击「作弊」按钮后弹出的窗口。寰宇蝗灾中各命途骰面效果不一样，但窗口布局一致；
+    # 要选哪个效果由各模式在点「作弊」按钮前写进 self.cheat_target。
+    # 「窗口还在不在」一律现查一次：click_text(text="作弊", box=[923, 996, 230, 270],
+    # click=False, allow_fail=True) 只 OCR 窗口顶部标题那一小块、不会点击；
+    # 窗口开着的整个期间状态机会反复触发，所以这个判断不能缓存。
+
+    def cheat_option_entries(self):
+        """
+        识别作弊列表里每个骰面效果的标题（以「【」开头，如【丰饶·慈怀】）；
+        返回 [{"raw_text": ..., "box": [左,右,上,下]}]（按阅读顺序）。
+        只对窗口内的列表区域做一次区域 OCR，返回的 box 是窗口内的实际像素。
+        """
+        entries = []
+        # 列表区域：窗口内的效果列表（可滚动），连同底部按钮都在框内，不用再细分
+        for res in self.ts.find_with_box(
+                box=self.scaled_box([420, 1500, 240, 960]), forward=True, re_screen=True):
+            if not isinstance(res, dict):
+                continue
+            text = (res.get("raw_text") or "").strip()
+            # 只认行标题，说明文字一律不要
+            if not text.startswith("【"):
+                continue
+            entries.append({"raw_text": text, "box": [int(v) for v in res["box"]]})
+        return entries
+
+    def find_cheat_option(self, keywords):
+        """
+        在作弊界面选项列表里找目标骰面效果那一行的标题，找不到返回 None。
+        """
+        keywords = tuple(k for k in keywords if k)
+        if not keywords:
+            return None
+        for entry in self.cheat_option_entries():
+            if any(k in entry["raw_text"] for k in keywords):
+                return entry
+        return None
+
+    def click_cheat_option(self, entry):
+        """
+        点作弊效果那一行的文字中心，返回被点中的文字（与 click_event_option 一样用镜像比例坐标）。
+        位置落在作弊界面选项列表区域外就放弃。
+        """
+        x = (entry["box"][0] + entry["box"][1]) / 2
+        y = (entry["box"][2] + entry["box"][3]) / 2
+        # 列表区域，和 cheat_option_entries 里识别时用的同一个框
+        left, right, top, bottom = self.scaled_box([420, 1500, 240, 960])
+        if not (left <= x <= right and top <= y <= bottom):
+            CUS_LOGGER.error(f"作弊效果「{entry['raw_text']}」位置 ({x:.0f}, {y:.0f}) 不在作弊界面选项列表区域内，放弃点击")
+            return None
+        CUS_LOGGER.debug(f"点击作弊效果：「{entry['raw_text']}」")
+        key_mouse_manager.click(1 - x / self.xx, 1 - y / self.yy)
+        key_mouse_manager.wait()
+        return entry["raw_text"]
+
+    def cheat_option_selected(self, entry):
+        """判断作弊界面选项列表里指定选项是不是真的被选中了：被选中的行整条会高亮成紫色。"""
+        screen = self.get_screen()
+        # 高亮范围只给左右边界，scaled_box 要 4 个数，这里自己按 1920 基准缩放。
+        # 行卡片左右 [470, 1450]、上下 = 标题 y-8 ~ 标题 y+88，卡片自身高约 100 px。
+        left, right = [int(value * self.xx / 1920) for value in (470, 1450)]
+        x0 = max(int(left), 0)
+        x1 = min(int(right), int(screen.shape[1]))
+        title_top = int(entry["box"][2])
+        y0 = max(int(title_top - 8 * self.yy / 1080), 0)
+        y1 = min(int(title_top + 88 * self.yy / 1080), int(screen.shape[0]))
+        if x1 - x0 < 10 or y1 - y0 < 10:
+            return False
+        patch = np.ascontiguousarray(screen[y0:y1, x0:x1])
+        hsv = cv.cvtColor(patch, cv.COLOR_BGR2HSV)
+        # 高亮紫在 HSV 里的下界/上界
+        mask = cv.inRange(hsv, np.array((120, 60, 60), dtype=np.uint8),
+                          np.array((145, 255, 255), dtype=np.uint8))
+        ratio = float(mask.mean()) / 255
+        CUS_LOGGER.debug(f"作弊效果「{entry['raw_text']}」的高亮紫色占比：{ratio:.2f}")
+        # 大于阈值才允许点击确认，经实测占比约 0.41~0.51，而未高亮的为 0，故此处设为0.3
+        return ratio >= 0.3
+
+    def select_cheat_option(self, keywords, skip_first_ocr=False):
+        """
+        在作弊界面选项列表里选中目标骰面效果并校验选中，返回被点中的那段文字；没找到返回 None。
+
+        每屏一次区域 OCR 认行标题；认出目标行就点该行、再用 cheat_option_selected 高亮校验。
+        点击没选中就在同一屏重试，最多五次；一屏没认到目标行就往下滚一屏再认。
+
+        skip_first_ocr=True 时先不认、直接把列表往下滚一屏再进循环：目标只可能在列表靠后的位置时
+        （铁血战士只用得到最后一行的「肉体帝侯」），第一屏那次识别纯属浪费。
+        """
+
+        def scroll_down():
+            # 没认出目标行就把列表往下滚三行再看。用滚轮不用拖拽：拖拽松手后有惯性，
+            # 列表在截图之后还在滑，按截图坐标点击就会点偏；滚轮没有惯性，滚完等一会儿
+            # 画面就停了。落点用识别列表时那个框的中心，往列表上滚，别滚到底部按钮上。
+            left, right, top, bottom = self.scaled_box([420, 1500, 240, 960])
+            key_mouse_manager.scroll(
+                -15,
+                1 - (left + right) / 2 / self.xx,
+                1 - (top + bottom) / 2 / self.yy,
+            )
+            key_mouse_manager.wait()
+            key_mouse_manager.sleep(0.3)
+
+        # 列表最多 6 行、一屏能看 3 行；滚一格约 40 px、一行约 155 px，所以一次滚 15 格约三行，
+        # 到底会被夹住，多滚无害。不跳过首屏时从顶部往下扫 3 屏够扫完整张表；
+        # 跳过首屏时已经先滚掉一屏，扫 2 屏就够。
+        CUS_LOGGER.debug(f"作弊：目标骰面{keywords}")
+        if skip_first_ocr:
+            CUS_LOGGER.debug("跳过首次识别，先把作弊列表往下滚一屏")
+            scroll_down()
+        for _ in range(2 if skip_first_ocr else 3):
+            if self.find_cheat_option(keywords) is None:
+                scroll_down()
+                continue
+            # 认出目标行后就一直在这一屏重选到选中为止，同一屏最多重点 5 次
+            retries = 5
+            while not self._stop and retries > 0:
+                retries -= 1
+                entry = self.find_cheat_option(keywords)
+                if entry is None:
+                    CUS_LOGGER.warning(f"作弊列表里又认不到目标行{keywords}了，再试一次")
+                    continue
+                selected = self.click_cheat_option(entry)
+                if selected is not None and self.cheat_option_selected(entry):
+                    return selected
+                CUS_LOGGER.warning(f"点了作弊效果「{selected or keywords}」但未检测到高亮，再点一次")
+            CUS_LOGGER.error("重试五次仍未点击成功，可能是网络卡顿")
+            return None
+        CUS_LOGGER.warning(f"作弊界面选项列表未找到目标骰面效果{keywords}")
+        return None
+
+    def confirm_cheat_dialog(self, tries=2):
+        """点作弊窗的「确认」按钮。"""
+        for _ in range(tries):
+            # 作弊窗收起有淡出动画，实测必须等 0.05 秒
+            time.sleep(0.05)
+            if not self.click_text(text="作弊", box=[923, 996, 230, 270], click=False, allow_fail=True):
+                CUS_LOGGER.debug("作弊选项窗已关闭")
+                return True
+            entry = None
+            # 底部「确认」的区域；左侧「取消」不在框内
+            for res in self.ts.find_with_box(box=self.scaled_box([900, 1520, 700, 1030]), forward=True, re_screen=True):
+                if not isinstance(res, dict) or "确认" not in (res.get("raw_text") or ""):
+                    continue
+                if entry is None or res["box"][3] > entry["box"][3]:
+                    entry = res      # 取框内最下面那个「确认」：按钮在窗口底部
+            if entry is None:
+                CUS_LOGGER.warning("作弊选项窗里没识别到「确认」按钮，窗口可能已关闭")
+                return False
+            x = (entry["box"][0] + entry["box"][1]) / 2
+            y = (entry["box"][2] + entry["box"][3]) / 2
+            key_mouse_manager.click(1 - x / self.xx, 1 - y / self.yy)
+            key_mouse_manager.wait()
+        # 刚点完的「确认」也要等淡出，否则标题还认得出来，会被误判成没关窗
+        time.sleep(0.05)
+        if self.click_text(text="作弊", box=[923, 996, 230, 270], click=False, allow_fail=True):
+            CUS_LOGGER.warning("作弊选项窗未正常关闭，可能仍在淡出，下一轮重新处理")
+            return False
+        return True
+
+    def cheat(self, skip_first_ocr=False):
+        """
+        在作弊选项窗里选出作弊目标骰面效果并确认。
+        点「作弊」按钮、等窗口弹出都写在各模式的 calculated_roll 里，点完直接回主循环。
+        关键字用效果名本身，和列表行标题里的写法一致（如【毁灭·肉体帝侯】）；
+        目标由各模式在点「作弊」按钮前写进 self.cheat_target。
+
+        skip_first_ocr 原样转给 select_cheat_option：目标只可能在列表靠后位置时省掉第一屏识别。
+        """
+        keywords = (self.cheat_target,) if self.cheat_target else ()
+        selected = self.select_cheat_option(keywords, skip_first_ocr)
+        if selected is None:
+            CUS_LOGGER.warning(f"作弊界面选项列表里没有找到目标骰面效果{keywords}，关掉作弊选项窗")
+            key_mouse_manager.press("esc")
+            key_mouse_manager.wait()
+            self.cheat_target = None
+            return
+        if self.confirm_cheat_dialog():
+            CUS_LOGGER.debug(f"已在作弊界面选择：{selected}")
+            self.cheat_target = None
+        else:
+            # 点中了但没确认成功：保留目标，窗口若还开着等下一轮再确认
+            CUS_LOGGER.warning(f"作弊效果「{selected}」已点中，但没确认成功")
 
     def select_doing(self):
         text = self.ts.find_with_box(box=[557, 747, 447, 474], forward=True, re_screen=False)
@@ -1169,17 +1350,39 @@ class AnyFateUniverse(SimulatedUniverse):
             self.click_text(text="确认移动", box=[1611, 1759, 964, 998])
         self.new_node=True
 
+    def read_action_counts(self):
+        """
+        读骰面界面右下角的「重投次数」「作弊次数」，返回 (重投次数, 作弊次数)，认不到的为 None。
+
+        作弊功能要通关寰宇蝗灾才解锁。没解锁时界面上只剩「重投次数」一项、整行居中显示，
+        正常那两个点位都认不到数字，所以两边都没认到时再在居中那个位置认一次：
+        认到了就是没解锁——提示玩家，然后按 0 次作弊、识别到的重投次数继续往下走。
+
+        先只认不落样本：居中点位认到了就说明那两个点位本来就是空白，不该给模板目录
+        添两张空图；三个点位都认不到才回去按老规矩各存一份，方便以后补模板。
+        """
+        roll_count = match_roll_count_in_region(self.screen, save_unmatched=False)
+        cheat_count = match_cheat_count_in_region(self.screen, save_unmatched=False)
+        if roll_count is None and cheat_count is None:
+            locked_roll = match_locked_roll_count_in_region(self.screen, save_unmatched=False)
+            if locked_roll is not None:
+                CUS_LOGGER.warning("您当前尚未解锁作弊功能。请及时通关寰宇蝗灾以获得最佳体验")
+                CUS_LOGGER.debug(f"当前重投次数: {locked_roll}")
+                return locked_roll, 0
+            match_roll_count_in_region(self.screen)
+            match_cheat_count_in_region(self.screen)
+        if roll_count is not None:
+            CUS_LOGGER.debug(f"当前重投次数: {roll_count}")
+        if cheat_count is not None:
+            CUS_LOGGER.debug(f"当前作弊次数: {cheat_count}")
+        return roll_count, cheat_count
+
     def calculated_roll(self):
         if self.nodes is None or self.plane_floor==-1:
             self.click_target(find_image_by_name("inmap"), 0.9, flag=False, click=True)
             key_mouse_manager.wait()
             return
-        roll_count = match_roll_count_in_region(self.screen)
-        if roll_count is not None:
-            CUS_LOGGER.debug(f"当前重投次数: {roll_count}")
-        cheat_count = match_cheat_count_in_region(self.screen)
-        if cheat_count is not None:
-            CUS_LOGGER.debug(f"当前作弊次数: {cheat_count}")
+        self.read_action_counts()
         if not self.check("fast_roll", 0.1281,0.9074, threshold=0.9):
             self.click_text(text="快速投掷", box=[1700, 1823, 80, 117])
         self.click_text(text="确认效果", box=[1584, 1687, 961, 994])
