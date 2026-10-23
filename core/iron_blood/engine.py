@@ -367,7 +367,6 @@ class IronBloodUniverse(AnyFateUniverse):
                                 return
         self.click_text(text="确认效果", box=[1584, 1687, 961, 994])
         self.init_map()
-        self.area = ""
         self.mini_state = 1
 
 

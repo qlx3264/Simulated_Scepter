@@ -489,7 +489,6 @@ class FingerSnap(AnyFateUniverse):
                     f"作弊效果“{EFFECT_NAMES[pending_effect]}”已回显，直接确认，不重复决策")
                 self.click_text(text="确认效果", box=[1584, 1687, 961, 994])
                 self.init_map()
-                self.area = ""
                 self.mini_state = 1
                 return
             CUS_LOGGER.warning(
@@ -501,7 +500,6 @@ class FingerSnap(AnyFateUniverse):
             self.click_text(text="确认效果", box=[1584, 1687, 961, 994])
             self.countdown_agent.apply_effect_action(EFFECT_NOTHING, "keep")
             self.init_map()
-            self.area = ""
             self.mini_state = 1
             return
 
@@ -542,7 +540,6 @@ class FingerSnap(AnyFateUniverse):
         self.click_text(text="确认效果", box=[1584, 1687, 961, 994])
         self.countdown_agent.apply_effect_action(observed, action)
         self.init_map()
-        self.area = ""
         self.mini_state = 1
 
     def cheat(self):

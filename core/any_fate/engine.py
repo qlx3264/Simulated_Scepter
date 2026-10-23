@@ -1169,7 +1169,6 @@ class AnyFateUniverse(SimulatedUniverse):
         else:
             self.click_text(text="确认移动", box=[1611, 1759, 964, 998])
         self.new_node=True
-        self.area = ""
 
     def calculated_roll(self):
         if self.nodes is None or self.plane_floor==-1:
@@ -1187,7 +1186,6 @@ class AnyFateUniverse(SimulatedUniverse):
             self.click_text(text="快速投掷", box=[1700, 1823, 80, 117])
         self.click_text(text="确认效果", box=[1584, 1687, 961, 994])
         self.init_map()
-        self.area = ""
         self.mini_state = 1
 
     def init_map(self):
@@ -1198,8 +1196,10 @@ class AnyFateUniverse(SimulatedUniverse):
         CUS_LOGGER.debug(f"是否新节点: {self.new_node}")
         if self.new_node:
             self.node_count+=1
-            self.now_area.append(self.area)
+            if self.area:
+                self.now_area.append(self.area)
             CUS_LOGGER.debug(f"已走过: {self.now_area}")
+            self.area = ""
             self.new_node=False
 
     def strange_shop(self):
