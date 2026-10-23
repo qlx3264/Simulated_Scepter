@@ -1174,7 +1174,6 @@ class AnyFateUniverse(SimulatedUniverse):
         if self.nodes is None or self.plane_floor==-1:
             self.click_target(find_image_by_name("inmap"), 0.9, flag=False, click=True)
             key_mouse_manager.wait()
-            self.area = ""
             return
         roll_count = match_roll_count_in_region(self.screen)
         if roll_count is not None:
