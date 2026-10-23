@@ -42,6 +42,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from route import PATHS  # noqa: E402
+from tool.mask import MASK  # noqa: E402
 from tool.screenshot import Screen  # noqa: E402
 from tool.utils.game_window import (  # noqa: E402
     find_game_window,
@@ -59,9 +60,7 @@ from tool.utils.minimap_util import (  # noqa: E402
 )
 from tool.utils.mminimap import PositionPredict  # noqa: E402
 
-# F 提示检测参数（与 UniverseUtils.check("f", 0.4443, 0.4417, mask="mask_f1") 一致）
-F_X = 0.4443
-F_Y = 0.4417
+# F 提示检测参数（识别区域与 UniverseUtils.check("f", mask=MASK["f_key"]) 一致）
 F_THRESHOLD = 0.96
 # big_world 图标：位于界面左上角，仅在"可自由行动"时可见，用于暂停录制
 WORLD_X = 0.0245
@@ -83,26 +82,23 @@ MAP_ROOTS = {
 }
 
 
-def check_icon(screen, name, x, y, threshold, mask_name=None):
-    """检测画面指定位置是否出现目标图标。返回 (是否出现, 相似度)。"""
+def check_icon(screen, name, threshold, x=None, y=None, region=None):
+    """检测画面指定位置或识别区域是否出现目标图标。返回 (是否出现, 相似度)。"""
     target = find_image_by_name(name)
     if target is None:
         return False, -1.0
-    if mask_name is not None:
-        mask_img = find_image_by_name(mask_name)
-        if mask_img is None:
-            return False, -1.0
-        height, width = mask_img.shape[0], mask_img.shape[1]
+    if region is not None:
+        local = screen[region[2]: region[3], region[0]: region[1], :]
     else:
         height, width = target.shape[0], target.shape[1]
-    sx, sy = height + CROP_PAD, width + CROP_PAD
-    bx = SCREEN_W - int(x * SCREEN_W)
-    by = SCREEN_H - int(y * SCREEN_H)
-    local = screen[
-        max(0, by - sx // 2): min(SCREEN_H, by + sx // 2),
-        max(0, bx - sy // 2): min(SCREEN_W, bx + sy // 2),
-        :,
-    ]
+        sx, sy = height + CROP_PAD, width + CROP_PAD
+        bx = SCREEN_W - int(x * SCREEN_W)
+        by = SCREEN_H - int(y * SCREEN_H)
+        local = screen[
+            max(0, by - sx // 2): min(SCREEN_H, by + sx // 2),
+            max(0, bx - sy // 2): min(SCREEN_W, bx + sy // 2),
+            :,
+        ]
     result = cv.matchTemplate(local, target, cv.TM_CCORR_NORMED)
     _, max_val, _, _ = cv.minMaxLoc(result)
     return max_val > threshold, max_val
@@ -274,7 +270,7 @@ def main():
     while True:
         screen = capture()
         in_world, _ = check_icon(
-            screen, "big_world", WORLD_X, WORLD_Y, WORLD_THRESHOLD
+            screen, "big_world", WORLD_THRESHOLD, WORLD_X, WORLD_Y
         )
         elapsed = int(time.time() - start_time)
         if not in_world:
@@ -304,7 +300,7 @@ def main():
                     predictor.map_num, end_pos,
                 )
             found_f, f_sim = check_icon(
-                screen, "f", F_X, F_Y, F_THRESHOLD, mask_name="mask_f1"
+                screen, "f", F_THRESHOLD, region=MASK["f_key"]
             )
             if not found_f:
                 # F 提示消失后，才允许认下一个 F（防止同一提示被重复记录）

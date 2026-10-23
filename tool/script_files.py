@@ -6,6 +6,7 @@ from pathlib import Path
 
 from route import PATHS
 from tool.log import CUS_LOGGER
+from tool.mask import MASK
 from tool.storage import write_data
 
 
@@ -41,6 +42,11 @@ def validate_script(data):
             raise ValueError(f"{label} 需要文本、图片或纯状态触发条件")
         if trigger.get("text") and "box" not in trigger:
             raise ValueError(f"{label} 的文本触发需要 box 识别范围")
+        mask_name = trigger.get("mask")
+        if mask_name is not None and mask_name not in MASK:
+            raise ValueError(
+                f"{label} 的 mask 需要 tool/mask.py 中已定义的识别区域名称，可选：{'、'.join(MASK)}"
+            )
         steps = event.get("actions")
         if not isinstance(steps, list):
             raise ValueError(f"{label} 的 actions 必须是动作列表")

@@ -649,6 +649,7 @@ class MainWindow(QMainWindowLog):
         self.recording_checkBox2.setChecked(data.get("recording_iron_blood", False))
         self.recording_time_input.setText(str(data.get("del_record_time", 14)))
         self.record_event_map_checkbox.setChecked(data.get("record_event_map", False))
+        self.record_abnormal_first_plane_weight.setChecked(data.get("record_abnormal_first_plane_weight", False))
         self.recording_keep_long_run_checkbox.setChecked(data.get("recording_keep_long_run", False))
         self.recording_keep_long_run_threshold_input.setText(str(data.get("recording_keep_long_run_threshold", 1.2)))
         self.recording_label_checkbox.setChecked(data.get("record_add_label", True))
@@ -1228,6 +1229,7 @@ class MainWindow(QMainWindowLog):
                 "recording_iron_blood": self.recording_checkBox2.isChecked(),
                 "del_record_time": int(self.recording_time_input.text()),
                 "record_event_map": self.record_event_map_checkbox.isChecked(),
+                "record_abnormal_first_plane_weight": self.record_abnormal_first_plane_weight.isChecked(),
                 "recording_keep_long_run": self.recording_keep_long_run_checkbox.isChecked(),
                 "recording_keep_long_run_threshold": float(self.recording_keep_long_run_threshold_input.text()),
                 "record_add_label": self.recording_label_checkbox.isChecked(),

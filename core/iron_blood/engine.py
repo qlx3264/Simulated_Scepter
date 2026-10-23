@@ -58,21 +58,33 @@ class IronBloodUniverse(AnyFateUniverse):
                 minutes_divide_kill = minutes/self.kill_count
             # 演算时间过长保留录制仅服务于调试
             recording_keep_long_run_threshold = self.opt.get("recording_keep_long_run_threshold", 1.2)
+            del_time = (
+                self.del_record_time
+                and self.del_record_time>self.kill_count
+            )
             keep_long_run = (
                 self.debug
                 and self.opt.get("recording_keep_long_run", False)
                 and minutes_divide_kill >= recording_keep_long_run_threshold # 演算时间过长录制保留阈值（分钟数÷战斗数）
             )
-            need_del = self.del_record_time and self.del_record_time>self.kill_count and not keep_long_run
-            CUS_LOGGER.debug(f"是否可删除{need_del}，限制数目{self.del_record_time}，当前数目{self.kill_count}；本局演算时间{minutes:.2f}分钟，与战斗数比值{minutes_divide_kill:.2f}")
-            self.recorder.stop_recording(need_del, battle_count=self.kill_count)
+            abnormal_first_plane_weight = (
+                self.debug
+                and self.opt.get("record_abnormal_first_plane_weight", False)
+                and self.first_plane_weight <= 0 # 开局期望值异常（≤0）时保留录制
+            )
+            need_del = del_time and not keep_long_run and not abnormal_first_plane_weight
+            if self.first_plane_weight > 0:
+                CUS_LOGGER.debug(f"是否可删除{need_del}，限制数目{self.del_record_time}，当前数目{self.kill_count}；本局演算时间{minutes:.2f}分钟，与战斗数比值{minutes_divide_kill:.2f}；开局期望{self.first_plane_weight:.2f}")
+            else:
+                CUS_LOGGER.debug(f"是否可删除{need_del}，限制数目{self.del_record_time}，当前数目{self.kill_count}；本局演算时间{minutes:.2f}分钟，与战斗数比值{minutes_divide_kill:.2f}；开局期望{self.first_plane_weight}")
+            self.recorder.stop_recording(need_del, battle_count=self.kill_count, elapsed_time=self.elapsed_time, first_plane_weight=self.first_plane_weight)
             time.sleep(0.8)
             self.recorder.start_recording(self.count + 1)
             self.update_state("re_start")
         self.elapsed_time = 0  # 重置演算持续时间
         self.kill_count = 0
-        # 开局期望不在这里清零：退出流程中「点击空白结算」可能先于「结算界面」触发，
-        # 在这里清零会让本局记录丢掉「开局期望」条目。改为 end_of_university 写完记录后清零。
+        # 本局记录已写完，重置为「还没做开局识别」，避免下一局沿用本局的读数
+        self.first_plane_weight = self.MAP_ANALYSIS_NO_INIT
         self.fail_match_count=0
         self.node_count=0
         self.chaoyan_seen = False  # 新轮回重置「超验之镜」已进过标记
@@ -90,14 +102,15 @@ class IronBloodUniverse(AnyFateUniverse):
             total_min = self.elapsed_time // 60
             total_sec = self.elapsed_time % 60
             # 「开局期望」一律写入：确认识别到写真实值（0 也是真读数），识别失败或本局没做识别写负数原因码
-            line = f"轮回次数:{self.count}, 开始时间:{start_time_str}, 用时:{total_min}分{total_sec}秒, 击杀数:{self.kill_count:02d}, 开局期望:{self.first_plane_weight:.2f}"
+            if self.first_plane_weight > 0:
+                line = f"轮回次数:{self.count}, 开始时间:{start_time_str}, 用时:{total_min}分{total_sec}秒, 击杀数:{self.kill_count:02d}, 开局期望:{self.first_plane_weight:.2f}"
+            else:
+                line = f"轮回次数:{self.count}, 开始时间:{start_time_str}, 用时:{total_min}分{total_sec}秒, 击杀数:{self.kill_count:02d}, 开局期望:{self.first_plane_weight}"
             with open(record_file, "a", encoding="utf-8") as file:
                 file.write(line + "\n")
         except Exception as e:
             CUS_LOGGER.error(f"写入击杀记录文件失败{e}")
         self.run_start_time = time.time()  # 开始下一局计时
-        # 本局记录已写完，重置为「还没做开局识别」，避免下一局沿用本局的读数
-        self.first_plane_weight = self.MAP_ANALYSIS_NO_INIT
         self.need_end=False
         self.init_map()
         if self.kill_count>=40:

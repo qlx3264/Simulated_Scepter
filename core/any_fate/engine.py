@@ -14,6 +14,7 @@ from tool.storage import resource_path
 from core.simulated.engine import SimulatedUniverse
 from tool.GLOBAL import factor, key_mouse_manager
 from tool.log import CUS_LOGGER, log_emitter
+from tool.mask import MASK
 from tool.public_ocr import load_actions, merge_text
 from core.simulated.config import config
 from core.simulated.text_key import text_keys
@@ -1050,7 +1051,7 @@ class AnyFateUniverse(SimulatedUniverse):
         return
 
     def select_strange(self):
-        img = self.get_small_interaction_img(x=0.5000, y=0.7333, mask="mask_strange", fresh=True)
+        img = self.get_small_interaction_img(MASK["strange_name"], fresh=True)
         res = self.ts.split_strange(img)
         if len(res[0])==0:
             CUS_LOGGER.warning("那黄金的血液,救世的希望,原来......")
@@ -1081,19 +1082,19 @@ class AnyFateUniverse(SimulatedUniverse):
                     black_first = i
         if strange_index!=-1:
             CUS_LOGGER.debug(f"优先选择第{strange_index}个奇物")
-            key_mouse_manager.click(*self.calc_point((0.5000, 0.7333), res[0][strange_index]))
+            key_mouse_manager.click(*self.calc_point(MASK["strange_name"], res[0][strange_index]))
             key_mouse_manager.click(0.1365, 0.1093)
             key_mouse_manager.wait()
         else:
             can_use_list=[i for i in range(len(res[0])) if i not in black_index_list]
             if len(can_use_list)>0:
                 CUS_LOGGER.debug(f"任意选择第{can_use_list[0]}个奇物")
-                key_mouse_manager.click(*self.calc_point((0.5000, 0.7333), res[0][can_use_list[0]]))
+                key_mouse_manager.click(*self.calc_point(MASK["strange_name"], res[0][can_use_list[0]]))
                 key_mouse_manager.click(0.1365, 0.1093)
                 key_mouse_manager.wait()
             else:
                 CUS_LOGGER.warning(f"极差情况，选择第{black_first}个奇物,齿轮或大乐透")
-                key_mouse_manager.click(*self.calc_point((0.5000, 0.7333), res[0][black_first]))
+                key_mouse_manager.click(*self.calc_point(MASK["strange_name"], res[0][black_first]))
                 key_mouse_manager.click(0.1365, 0.1093)
                 key_mouse_manager.wait()
 
@@ -1114,32 +1115,30 @@ class AnyFateUniverse(SimulatedUniverse):
 
     def choose_bless(self):
         for _ in range(4):
-            img_down = self.get_small_interaction_img(x=0.5042, y=0.3204, mask="mask", fresh=True)
+            img_down = self.get_small_interaction_img(MASK["bless_path"], fresh=True)
             if self.ts.split_and_find(self.tk.fates, img_down)[1] or self._stop:
                 break
             CUS_LOGGER.debug("未识别到命途")
             if not self.click_text(text="选择祝福",box=[60, 222, 0, 113],click=False,ocr_line=False,warning=False):
                 return 1
-        img_up = self.get_small_interaction_img(x=0.5047, y=0.5491, mask="mask_bless", fresh=True)
+        img_up = self.get_small_interaction_img(MASK["bless_name"], fresh=True)
         res_up = self.ts.split_and_find(self.tk.prior_bless, img_up, bless_skip=self.tk.skip)
-        img_down = self.get_small_interaction_img(x=0.5042, y=0.3204, mask="mask")
+        img_down = self.get_small_interaction_img(MASK["bless_path"])
         res_down = self.ts.split_and_find(self.tk.secondary, img_down, mode="bless")
         if res_up[1] == 2:
             CUS_LOGGER.debug("识别到具体祝福")
-            key_mouse_manager.click(*self.calc_point((0.5047, 0.5491), res_up[0]))
+            key_mouse_manager.click(*self.calc_point(MASK["bless_name"], res_up[0]))
             key_mouse_manager.wait()
         elif res_down[1] >= 2:
             CUS_LOGGER.debug("识别到匹配命途")
-            key_mouse_manager.click(*self.calc_point((0.5042, 0.3204), res_down[0]))
+            key_mouse_manager.click(*self.calc_point(MASK["bless_path"], res_down[0]))
             key_mouse_manager.wait()
         elif self.click_text(text="选择祝福",box=[60, 222, 0, 113],click=False,ocr_line=False,warning=False,allow_fail=True):
             CUS_LOGGER.debug("未识别到具体祝福,随便选一个")
-            key_mouse_manager.click(*self.calc_point((0.5047, 0.5491), res_up[0]))
+            key_mouse_manager.click(*self.calc_point(MASK["bless_name"], res_up[0]))
             key_mouse_manager.wait()
         self.click_text(text="确认",box=[1663, 1719, 949, 979],need_fresh=False,ocr_line=True,warning=True)
         key_mouse_manager.wait()
-        if self.quan:
-            self.use_e()
         return 1
 
     def select_go(self):
@@ -1197,7 +1196,7 @@ class AnyFateUniverse(SimulatedUniverse):
             self.new_node=False
 
     def strange_shop(self):
-        img = self.get_small_interaction_img(x=0.5000, y=0.7333, mask="mask_strange", fresh=True)
+        img = self.get_small_interaction_img(MASK["strange_name"], fresh=True)
         res=self.ts.split_strange(img)
         strange_index_list=[]
         black_index_list=[]
@@ -1211,7 +1210,7 @@ class AnyFateUniverse(SimulatedUniverse):
             elif '齿星系' in strange or '分裂咕咕钟' in strange or '血锦之纪' in strange or '星际大乐透' in strange or '机械齿轮' in strange:
                 black_index_list.append(i)
         for i in strange_index_list:
-            key_mouse_manager.click(*self.calc_point((0.5000, 0.7333), res[0][i]))
+            key_mouse_manager.click(*self.calc_point(MASK["strange_name"], res[0][i]))
             key_mouse_manager.click(0.1365, 0.1093)
             key_mouse_manager.wait()
             for _ in range(5):
@@ -1222,17 +1221,17 @@ class AnyFateUniverse(SimulatedUniverse):
     # 事件路径的「确定」贴在会折行的选项文本下方，两处不能共用一个偏移，见 SimulatedUniverse.confirm_point
     def select_secret(self):
         # 点击优先级：对话条金色 ▼ →「选择」栏白色箭头 → 命途选项卡 → 都不在时点「秘闻」
-        if self.check("arrow_dialog", 0.1781, 0.3250, mask="mask_dialog", fresh=True):
+        if self.check("arrow_dialog", mask=MASK["dialog"], fresh=True):
             key_mouse_manager.click(self.tx, self.ty)
             return
         # 图标（白色右箭头、命途选项卡）都在左侧图标列，与 select_event 用同一套区域
-        if self.check("arrow", 0.2865, 0.5000, mask="mask_event_icon", fresh=True):
+        if self.check("arrow", mask=MASK["event_icon"], fresh=True):
             key_mouse_manager.click(self.tx, self.ty)
             return
         success = False
         CUS_LOGGER.info("没错，我们会尽己所能将其诠释：比世界的命运更为沉重之物……")
         for i in range(1,9):
-            if self.check(f"fate{i}", 0.2865, 0.5000, mask="mask_event_icon", threshold=0.95, fresh=True):
+            if self.check(f"fate{i}", mask=MASK["event_icon"], threshold=0.95, fresh=True):
                 success=True
                 break
         if not success:

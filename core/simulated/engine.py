@@ -16,6 +16,7 @@ from tool.settings import load_settings
 from tool import GLOBAL
 from tool.GLOBAL import factor, key_mouse_manager
 from tool.log import CUS_LOGGER
+from tool.mask import MASK, crop_region
 from core.simulated.config import config
 from core.simulated.utils import UniverseUtils, get_dis, set_forground, sprint
 from tool.thread import ThreadWithException
@@ -393,21 +394,21 @@ class SimulatedUniverse(UniverseUtils):
         chose = 0
         if self.click_text(text="重置祝福",box=[1268, 1444, 929, 1025],click=False,warning=False):
             for _ in range(4):
-                img_down = self.get_small_interaction_img(x=0.5042, y=0.3204, mask="mask", fresh=True)
+                img_down = self.get_small_interaction_img(MASK["bless_path"], fresh=True)
                 if self.ts.split_and_find(self.tk.fates, img_down, mode="bless")[1] or self._stop:
                     break
                 if not self.click_text(text="选择祝福",box=[60, 222, 0, 113],click=False,ocr_line=False,warning=False):
                     return 1
-            img_up = self.get_small_interaction_img(x=0.5047, y=0.5491, mask="mask_bless", fresh=True)
+            img_up = self.get_small_interaction_img(MASK["bless_name"], fresh=True)
             res_up = self.ts.split_and_find(self.tk.prior_bless, img_up, mode="bless_skip=self.tk.skip")
-            img_down = self.get_small_interaction_img(x=0.5042, y=0.3204, mask="mask")
+            img_down = self.get_small_interaction_img(MASK["bless_path"])
             res_down = self.ts.split_and_find([self.fate], img_down, mode="bless")
             if res_up[1] == 2:
-                key_mouse_manager.click(*self.calc_point((0.5047, 0.5491), res_up[0]))
+                key_mouse_manager.click(*self.calc_point(MASK["bless_name"], res_up[0]))
                 key_mouse_manager.wait()
                 chose = 1
             elif res_down[1] == 2:
-                key_mouse_manager.click(*self.calc_point((0.5042, 0.3204), res_down[0]))
+                key_mouse_manager.click(*self.calc_point(MASK["bless_path"], res_down[0]))
                 key_mouse_manager.wait()
                 chose = 1
             if not chose:
@@ -416,43 +417,41 @@ class SimulatedUniverse(UniverseUtils):
         # 未匹配到优先祝福，刷新祝福并再次匹配
         if not chose:
             for _ in range(4):
-                img_down = self.get_small_interaction_img(x=0.5042, y=0.3204, mask="mask", fresh=True)
+                img_down = self.get_small_interaction_img(MASK["bless_path"], fresh=True)
                 if self.ts.split_and_find(self.tk.fates, img_down)[1] or self._stop:
                     break
                 CUS_LOGGER.debug("未识别到命途")
                 if not self.click_text(text="选择祝福",box=[60, 222, 0, 113],click=False,ocr_line=False,warning=False):
                     return 1
-            img_up = self.get_small_interaction_img(x=0.5047, y=0.5491, mask="mask_bless", fresh=True)
+            img_up = self.get_small_interaction_img(MASK["bless_name"], fresh=True)
             res_up = self.ts.split_and_find(self.tk.prior_bless, img_up, bless_skip=self.tk.skip)
-            img_down = self.get_small_interaction_img(x=0.5042, y=0.3204, mask="mask")
+            img_down = self.get_small_interaction_img(MASK["bless_path"])
             res_down = self.ts.split_and_find(self.tk.secondary, img_down, mode="bless")
             if res_up[1] == 2:
                 CUS_LOGGER.debug("识别到具体祝福")
-                key_mouse_manager.click(*self.calc_point((0.5047, 0.5491), res_up[0]))
+                key_mouse_manager.click(*self.calc_point(MASK["bless_name"], res_up[0]))
                 key_mouse_manager.wait()
             elif res_down[1] >= 2:
                 CUS_LOGGER.debug("识别到匹配命途")
-                key_mouse_manager.click(*self.calc_point((0.5042, 0.3204), res_down[0]))
+                key_mouse_manager.click(*self.calc_point(MASK["bless_path"], res_down[0]))
                 key_mouse_manager.wait()
             elif self.click_text(text="选择祝福",box=[60, 222, 0, 113],click=False,ocr_line=False,warning=False,allow_fail=True):
                 CUS_LOGGER.debug("未识别到具体祝福,随便选一个")
-                key_mouse_manager.click(*self.calc_point((0.5047, 0.5491), res_up[0]))
+                key_mouse_manager.click(*self.calc_point(MASK["bless_name"], res_up[0]))
                 key_mouse_manager.wait()
         self.click_text(text="确认",box=[1663, 1719, 949, 979],need_fresh=False,ocr_line=True,warning=True)
         key_mouse_manager.wait()
-        if self.quan:
-            self.use_e()
         return 1
     # F交互界面
     def do_interaction(self):
         # is_killed：是否是禁用的交互（沉浸奖励、复活装置、下载装置）
         is_killed = False
-        if self.check("f", 0.4443, 0.4417, mask="mask_f1", threshold=0.96, fresh=True):
+        if self.check("f", mask=MASK["f_key"], threshold=0.96, fresh=True):
             for _ in range(4):
-                img = self.get_small_interaction_img(x=0.3181, y=0.4324, mask="mask_f")
+                img = self.get_small_interaction_img(MASK["f_text"])
                 text = self.ts.similar_list(self.tk.interacts, img)
                 if text is None:
-                    img = self.get_small_interaction_img(x=0.3365, y=0.4231, mask="mask_f")
+                    img = self.get_small_interaction_img(MASK["f_text_2"])
                     text = self.ts.similar_list(self.tk.interacts, img)
                 if text is not None:
                     break
@@ -521,7 +520,7 @@ class SimulatedUniverse(UniverseUtils):
         n = 4  # 重试次数
         res = None
         while n:
-            img = self.get_small_interaction_img(x=0.4969, y=0.3750, mask="mask_fate", fresh=True)
+            img = self.get_small_interaction_img(MASK["fate"], fresh=True)
             res = self.ts.split_and_find([self.fate], img)
             if res[1] == 1 and n:
                 # 没有找到命途
@@ -531,7 +530,7 @@ class SimulatedUniverse(UniverseUtils):
                 continue
             else:
                 break
-        key_mouse_manager.click(*self.calc_point((0.4969, 0.3750), res[0]))
+        key_mouse_manager.click(*self.calc_point(MASK["fate"], res[0]))
     def select_bless(self):
         if not (self.click_text('神奇宇宙') or self.click_text('巨胃宇宙')):
             key_mouse_manager.click(0.5, 0.5)
@@ -721,21 +720,15 @@ class SimulatedUniverse(UniverseUtils):
         找出图标列里**所有**选项图标的中心，返回[{"x","y","score","icon"}]（屏幕坐标，按 y 排序，icon 是模板名）
         check() 只能拿到全局最高分的一个位置：一帧里有 3~5 条选项时只有最靠上的那个图标会被认出来。
         图标既是「选项出现了」的标志，也是每条选项横条的锚点，所以这里自己做多目标匹配，
-        与 check() 完全同一个搜索窗口，逐个模板取所有 > 0.95 的峰值，12 px 内只留最高的那个。
+        与 check() 完全同一个搜索区域（MASK["event_icon"]），逐个模板取所有 > 0.95 的峰值，12 px 内只留最高的那个。
         names：要匹配的图标模板名，默认就是 option_icon_names() 那一遍；补认的模板由
         extra_option_icon_names() 给出，只有第一遍没命中优选项时才会走到（见 select_event）。
         一个星号都没有说明这一帧不是选项界面，补认的模板那时也不匹配。
         """
         names = self.option_icon_names() if names is None else tuple(names)
-        mask_img = find_image_by_name("mask_event_icon")
-        if mask_img is None:
-            self._option_icons = []
-            return []
-        shape = (int(self.scx * mask_img.shape[0]), int(self.scx * mask_img.shape[1]))
-        anchor_x, anchor_y = 0.2865, 0.5000
-        local = self.get_local(anchor_x, anchor_y, shape)
-        left = max(0, self.xx - int(anchor_x * self.xx) - (shape[1] + 60) // 2)
-        top = max(0, self.yy - int(anchor_y * self.yy) - (shape[0] + 60) // 2)
+        region = MASK["event_icon"]
+        local = crop_region(self.screen, region)
+        left, top = region[0], region[2]
         icons = []
         for name in names:
             if name != "star" and "star" in names and not icons:
@@ -812,17 +805,17 @@ class SimulatedUniverse(UniverseUtils):
     # 事件界面：由左上角「事件」文字触发，一次调用把事件界面这一帧该做的事按优先级走完：
     #   金色 ▼（对话阶段）→ 推进图标（arrow → arrow_1 → shop_herta）→ 界面标题让路（奇物商店等）
     #   → 选项图标（选项出现的标志）→ 选项识别选择 + warning/兜底选项 + 点击「确定」
-    # 选项图标都在左侧图标列，用 mask_event_icon（窗口 180x960）。
+    # 选项图标都在左侧图标列，用 MASK["event_icon"]。
     # 选项区什么都读不到时就什么都不点，并补一条 warning 说明这一帧整个函数什么都没识别到。
     # 选项图标（星号 ※）出现就代表选项出现了，它和选项文字绑定：
     # event_option_rows 先把所有选项图标都认出来，再只 OCR 每个图标右侧的文字。
     def select_event(self):
         screen = self.get_screen()
-        if self.check("arrow_dialog", 0.1781, 0.3250, mask="mask_dialog"):
+        if self.check("arrow_dialog", mask=MASK["dialog"]):
             key_mouse_manager.click(self.tx, self.ty)
             return
         for photo in ("arrow", "arrow_1", "shop_herta"):
-            if self.check(photo, 0.2865, 0.5000, mask="mask_event_icon"):
+            if self.check(photo, mask=MASK["event_icon"]):
                 key_mouse_manager.click(self.tx, self.ty)
                 return
         # 若检测到切换到奇物商店或祝福强化界面：交给对应动作处理
@@ -890,9 +883,9 @@ class SimulatedUniverse(UniverseUtils):
 
     # 选取奇物
     def select_strange(self):
-        img = self.get_small_interaction_img(x=0.5000, y=0.7333, mask="mask_strange", fresh=True)
+        img = self.get_small_interaction_img(MASK["strange_name"], fresh=True)
         res = self.ts.split_and_find(self.tk.strange, img, mode="strange")
-        key_mouse_manager.click(*self.calc_point((0.5000, 0.7333), res[0]))
+        key_mouse_manager.click(*self.calc_point(MASK["strange_name"], res[0]))
         key_mouse_manager.click(0.1365, 0.1093)
         self.wait_flag(lambda: self.click_text(text="选择奇物",box=[5, 219, 3, 111],click=False,ocr_line=False,warning=False), 1.4)
     # 丢弃奇物
@@ -905,12 +898,12 @@ class SimulatedUniverse(UniverseUtils):
         clicked = 0
         for i, ft in enumerate(self.tk.secondary[::-1]):
             if ft != self.fate or i == len(self.tk.secondary):
-                img_down = self.get_small_interaction_img(x=0.5042, y=0.3204, mask="mask", fresh=True)
+                img_down = self.get_small_interaction_img(MASK["bless_path"], fresh=True)
                 if self.debug == 2:
                     CUS_LOGGER.debug(f"St: {list(st)}, Secondary: {self.tk.secondary}")
                 res_down = self.ts.split_and_find(list(st), img_down, mode="bless")
                 if res_down[1] == 2:
-                    key_mouse_manager.click(*self.calc_point((0.5042, 0.3204), res_down[0]))
+                    key_mouse_manager.click(*self.calc_point(MASK["bless_path"], res_down[0]))
                     clicked = 1
                     break
                 st.add(ft)

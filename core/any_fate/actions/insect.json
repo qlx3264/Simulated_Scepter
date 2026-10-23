@@ -544,19 +544,7 @@
         ]
     },
     {
-        "name": "确认图片",
-        "trigger":{
-            "photo": "yes1",
-            "pos": {"x":0.5,"y":0.5},
-            "mask":"mask_end"
-        },
-        "actions":
-        [
-            "confirm_yes"
-        ]
-    },
-    {
-        "name": "确认纯文本",
+        "name": "确认",
         "trigger":{
             "text": "确认",
             "box": [232, 1690, 154, 928],

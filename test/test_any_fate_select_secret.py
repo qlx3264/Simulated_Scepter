@@ -11,9 +11,9 @@ check() 留下的位置（即使那次匹配失败也会写入），与当前界
 （命中则快速两击 + 固定偏移点「确定」，点完再 OCR 复核、没点中按文字位置补点，最长 0.5 s）
 → 都不在时退回点「秘闻」文字。
 每个分支都点自己刚匹配到的位置，不再使用残留坐标。
-- select_secret 的金色 ▼ 用 `mask_dialog` 框定右侧对话区（搜索窗口 120x120 = 掩码 60x60 + 60），
-  不再只搜「模板大小 + 60」（114x106）；事件面板里的图标改用 mask_event_icon 竖条
-  （掩码 120x900 → 窗口 180x960），「确定」按钮改成 OCR 读文字后按文字位置点。
+- select_secret 的金色 ▼ 用 `MASK["dialog"]` 框定右侧对话区（120x120），
+  不再只搜「模板大小 + 60」（114x106）；事件面板里的图标改用 `MASK["event_icon"]` 竖条
+  （180x960），「确定」按钮改成 OCR 读文字后按文字位置点。
 - select_event：选项文字不再整框 OCR，而是先认出**所有**星号（※，check() 只拿得到最高分的那个，
   一帧 3~4 条选项时会漏），再只 OCR 每条星号右侧的横条（`event_option_rows`）——说明文字因此
   不会被当成一条独立选项，一条选项的整块文字也正好落在同一个横条里，「确定」按钮的偏移就按
@@ -253,7 +253,7 @@ class _StubEngine:
         self.confirm_box = confirm_box
         self.bands = {tuple(box): list(lines) for box, lines in bands.items()} if bands else None
 
-    def _check(self, path, x, y, **kwargs):
+    def _check(self, path, x=None, y=None, mask=None, **kwargs):
         if path in self.matched:
             self.tx, self.ty = self.matched[path]
             return True

@@ -65,7 +65,7 @@ class CurrencyActionDispatchTests(unittest.TestCase):
                         currency.click_target.assert_not_called()
                     elif "pos" in trigger:
                         currency.check.assert_called_once_with(
-                            "icon", 10, 20, mask=None, threshold=0.8, use_binary=False
+                            "icon", 10, 20, threshold=0.8, use_binary=False
                         )
                         currency.click_target.assert_not_called()
                     else:
