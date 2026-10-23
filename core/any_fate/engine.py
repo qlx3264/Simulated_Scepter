@@ -138,7 +138,6 @@ class AnyFateUniverse(SimulatedUniverse):
         self.node_count=0
         self.chaoyan_seen = False  # 新轮回重置「超验之镜」已进过标记
         self.now_area=[]
-        self.area = ""
 
     def end_of_university(self):
         super().end_of_university()

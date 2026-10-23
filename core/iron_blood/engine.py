@@ -77,7 +77,6 @@ class IronBloodUniverse(AnyFateUniverse):
         self.node_count=0
         self.chaoyan_seen = False  # 新轮回重置「超验之镜」已进过标记
         self.now_area=[]
-        self.area = ""
 
     def end_of_university(self):
         SimulatedUniverse.end_of_university(self)
@@ -178,7 +177,6 @@ class IronBloodUniverse(AnyFateUniverse):
         self.click_text(text="进入位面", box=[907, 1009, 857, 891])
         self.node_count = 0
         self.new_node = True
-        self.area = ""
         key_mouse_manager.wait()
         if analysis_status == self.MAP_ANALYSIS_OK:
             analysis_status = self.analyze_map_until_stable(1, 1, captured=stable_frame)
@@ -331,7 +329,6 @@ class IronBloodUniverse(AnyFateUniverse):
         else:
             self.click_text(text="确认移动", box=[1611, 1759, 964, 998])
         self.new_node=True
-        self.area = ""
 
     def calculated_roll(self):
         if self.nodes is None or self.plane_floor==-1:
