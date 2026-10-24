@@ -3,8 +3,8 @@ from pathlib import Path
 
 import yaml
 
-from tool.storage import config_path, resource_path, write_data
 from tool import EXTRA
+from tool.storage import config_path, resource_path, write_data
 
 EXIT_PLANES = (1, 2, 3)
 DEFAULT_EXIT_PLANE = 1
@@ -82,12 +82,51 @@ def normalize_currency_settings(values=None):
             priority[key] = default_priority.get(key, [])
         priority[key] = [entry for entry in priority[key] if isinstance(entry, str)]
 
+    deployment = values.get("deployment", {})
+    if not isinstance(deployment, dict):
+        deployment = {}
+    clean_deployment = {}
+    for key in ("front_priority", "back_priority"):
+        entries = deployment.get(key, [])
+        if not isinstance(entries, list):
+            entries = []
+        clean_deployment[key] = list(dict.fromkeys(
+            entry.strip() for entry in entries if isinstance(entry, str) and entry.strip()
+        ))
+    names = deployment.get("names", {})
+    if not isinstance(names, dict):
+        names = {}
+    clean_deployment["names"] = {
+        template: name.strip()
+        for template, name in names.items()
+        if isinstance(template, str) and isinstance(name, str) and name.strip()
+    }
+
     return {
         "exit_after_plane": exit_plane,
         "exit_if_no_prior": exit_if_no_prior,
         "prior_exit_plane": prior_exit_plane,
         "priority": priority,
+        "deployment": clean_deployment,
     }
+
+def resolve_priority(deployment):
+    """把上阵优先级里的角色名换成模板文件名，直接写模板文件名也可以。
+
+    Returns:
+        (前台模板名列表, 后台模板名列表)；认不出的条目原样保留，方便先配置后采集。
+    """
+    by_name = {name: template for template, name in deployment["names"].items()}
+    resolved = []
+    for key in ("front_priority", "back_priority"):
+        entries = []
+        for entry in deployment[key]:
+            template = by_name.get(entry, entry)
+            if template not in entries:
+                entries.append(template)
+        resolved.append(entries)
+    return resolved[0], resolved[1]
+
 
 def load_currency_settings(path=None):
     """Load the currency-war settings, falling back to safe defaults."""

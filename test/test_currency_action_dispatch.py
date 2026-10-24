@@ -83,7 +83,9 @@ class CurrencyActionDispatchTests(unittest.TestCase):
                 currency.action_history = ["choice"]
                 currency.action_time = 95
 
-                self.assertEqual(currency.run_static(), ("choice", 1))
+                with patch("core.common.engine.CUS_LOGGER") as logger:
+                    self.assertEqual(currency.run_static(), ("choice", 1))
+                logger.debug.assert_not_called()
 
                 currency.do_action.assert_not_called()
                 currency._on_static_action_completed.assert_not_called()

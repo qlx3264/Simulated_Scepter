@@ -1,5 +1,6 @@
 """货币战争策略配置界面。"""
 
+from core.currency.deployment_ui import DeploymentDialog
 from core.currency.priority_ui import CurrencyPriorityDialog
 from core.currency.settings import (
     EXIT_PLANES,
@@ -28,9 +29,13 @@ class SettingsDialog(BaseDialog):
         ui.Currency_prior_exit_plane_combo.setCurrentIndex(
             ui.Currency_prior_exit_plane_combo.findData(settings["prior_exit_plane"]))
         ui.Currency_priority_settings_btn.clicked.connect(self.open_priority)
+        ui.Currency_deployment_settings_btn.clicked.connect(self.open_deployment)
 
     def open_priority(self):
         CurrencyPriorityDialog(self).exec_()
+
+    def open_deployment(self):
+        DeploymentDialog(self).exec_()
 
     def persist(self):
         ui = self.section
