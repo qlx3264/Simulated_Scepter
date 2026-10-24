@@ -788,9 +788,9 @@
     const total = p.total;
     document.getElementById('selectedExpectation').textContent = selectedExpectation.toFixed(2);
     document.getElementById('eligibleRecordCount').textContent = total;
-    document.getElementById('twoProbability').textContent = total ? ((p.two / total) * 100).toFixed(2) + '%' : '0.00%';
-    document.getElementById('threeProbability').textContent = total ? ((p.three / total) * 100).toFixed(2) + '%' : '0.00%';
-    document.getElementById('combinedProbability').textContent = total ? (((p.two + p.three) / total) * 100).toFixed(2) + '%' : '0.00%';
+    document.getElementById('twoProbability').innerHTML = `${total ? ((p.two / total) * 100).toFixed(2) : '0.00'}%<span style="color: #000; font-weight: normal;">（</span>${p.two}<span style="color: #000; font-weight: normal;"> 条）</span>`;
+    document.getElementById('threeProbability').innerHTML = `${total ? ((p.three / total) * 100).toFixed(2) : '0.00'}%<span style="color: #000; font-weight: normal;">（</span>${p.three}<span style="color: #000; font-weight: normal;"> 条）</span>`;
+    document.getElementById('combinedProbability').innerHTML = `${total ? (((p.two + p.three) / total) * 100).toFixed(2) : '0.00'}%<span style="color: #000; font-weight: normal;">（</span>${p.two + p.three}<span style="color: #000; font-weight: normal;"> 条）</span>`;
   }
 
   function updateLineSelectionSummary(value) {
@@ -798,9 +798,9 @@
     const p = calculateLineProbabilities(e);
     document.getElementById('lineSelectedExpectation').textContent = e.toFixed(2);
     document.getElementById('lineEligibleRecordCount').textContent = p.total;
-    document.getElementById('lineTwoProbability').textContent = p.twoPercent.toFixed(2) + '%';
-    document.getElementById('lineThreeProbability').textContent = p.threePercent.toFixed(2) + '%';
-    document.getElementById('lineCombinedProbability').textContent = p.combinedPercent.toFixed(2) + '%';
+    document.getElementById('lineTwoProbability').innerHTML = `${p.twoPercent.toFixed(2)}%<span style="color: #000; font-weight: normal;">（</span>${p.two}<span style="color: #000; font-weight: normal;"> 条）</span>`;
+    document.getElementById('lineThreeProbability').innerHTML = `${p.threePercent.toFixed(2)}%<span style="color: #000; font-weight: normal;">（</span>${p.three}<span style="color: #000; font-weight: normal;"> 条）</span>`;
+    document.getElementById('lineCombinedProbability').innerHTML = `${p.combinedPercent.toFixed(2)}%<span style="color: #000; font-weight: normal;">（</span>${p.two + p.three}<span style="color: #000; font-weight: normal;"> 条）</span>`;
   }
 
   function niceYAxis(values) {
