@@ -128,7 +128,7 @@ class ParameterFields(QWidget):
 
 class ScriptEditor(QDialog):
     script_saved = pyqtSignal(str)
-    sample_requested = pyqtSignal(str, str, bool)
+    sample_requested = pyqtSignal(str, bool)
     debug_requested = pyqtSignal(str, str, object, bool)
     stop_requested = pyqtSignal(str)
 
@@ -214,12 +214,9 @@ class ScriptEditor(QDialog):
     def request_sample(self, recognize):
         try:
             self.commit_event()
-            kernel = self.debug_kernel_combo.currentData()
-            if kernel is None:
-                raise ValueError("请选择可用内核")
             self.set_operation("text" if recognize else "image")
             self.status_label.setText("截图取样已提交，可点击停止取消；繁忙时按队列等待")
-            self.sample_requested.emit(self.session, kernel, recognize)
+            self.sample_requested.emit(self.session, recognize)
         except ValueError as error:
             self.status_label.setText(f"无法截取：{error}")
 
