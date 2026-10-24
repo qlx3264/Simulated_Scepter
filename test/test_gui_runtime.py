@@ -433,7 +433,7 @@ class RuntimeGuiLayoutTests(unittest.TestCase):
                         patch.object(self.window.registry, "create_engine", return_value=engine) as factory, \
                         patch.object(self.module, "capture_sample", return_value=sample,
                                      side_effect=OSError("截图失败") if failure else None):
-                    self.window.capture_script_sample(session, "Common", False)
+                    self.window.capture_script_sample(session, False)
                     self.window.task_thread.join(2)
                     self.assertFalse(self.window.is_task_running())
                     self.app.processEvents()
@@ -447,13 +447,80 @@ class RuntimeGuiLayoutTests(unittest.TestCase):
                         self.assertIs(result["sample"], sample)
                     self.window._check_task_thread()
 
+    def test_editor_sample_buttons_work_without_initializing_selected_business_kernel(self):
+        from types import SimpleNamespace
+
+        import numpy as np
+
+        from tool.gui.script_editor import ScriptEditor
+        from tool.gui.trigger_sample import TriggerSample
+
+        self.window.scheduler.timer.stop()
+        editor = ScriptEditor(self.window.registry, self.window.script_combo.currentData(), self.window)
+        self.addCleanup(editor.deleteLater)
+        editor.sample_requested.connect(self.window.capture_script_sample)
+        self.window.script_tool_result.connect(editor.receive_result)
+        frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
+        texts = [{"raw_text": "确认1", "box": [100, 220, 100, 145]}]
+        focus = SimpleNamespace(hwnd=17)
+        selections = []
+
+        def select_sample(dialog):
+            if dialog.recognize:
+                dialog.text_list.setCurrentRow(0)
+            else:
+                dialog.select_region([100, 220, 100, 145])
+            dialog.use_btn.click()
+            selections.append(dialog.trigger)
+            return dialog.result()
+
+        for kernel in ("Currency", "Divergent", None):
+            for recognize in (True, False):
+                with self.subTest(kernel=kernel, recognize=recognize):
+                    editor.debug_kernel_combo.setCurrentIndex(editor.debug_kernel_combo.findData(kernel))
+                    engine = Mock(_stop=False)
+                    engine.get_screen.return_value = frame
+                    engine.ts.res = texts
+                    selections.clear()
+
+                    def create_engine(kernel_id, *, script=False):
+                        if kernel_id != "Common":
+                            raise FileNotFoundError("所选玩法缺少模板或配置")
+                        return engine
+
+                    with patch.object(self.window, "cleanup_at"), \
+                            patch.object(self.window.registry, "create_engine", side_effect=create_engine), \
+                            patch("tool.script_tools.wait_game_focus", return_value=focus), \
+                            patch("tool.script_tools.get_foreground_game_window", return_value=focus), \
+                            patch.dict(self.module.PATHS, {"image": str(Path(self.folder.name) / "imgs")}), \
+                            patch.object(TriggerSample, "exec_", select_sample):
+                        button = editor.sample_text_btn if recognize else editor.sample_image_btn
+                        button.click()
+                        thread = self.window.task_thread
+                        if thread is not None:
+                            thread.join(2)
+                            self.assertFalse(thread.is_alive())
+                        self.app.processEvents()
+                        self.assertEqual(len(selections), 1, editor.status_label.text())
+                        trigger = editor.trigger_fields.value()
+                        if recognize:
+                            self.assertEqual(trigger["text"], "确认")
+                            self.assertEqual(trigger["box"], texts[0]["box"])
+                        else:
+                            self.assertTrue((Path(self.module.PATHS["image"]) / trigger["photo"]).is_file())
+                        engine.stop.assert_called_once()
+                        engine.prepare_script.assert_not_called()
+                        self.assertIsNone(editor.operation)
+                        self.assertTrue(editor.tabs.isEnabled())
+                        self.window._check_task_thread()
+
     def test_editor_reports_missing_game_without_waiting_for_kernel_initialization(self):
         collector = Mock()
         self.window.script_tool_result.connect(collector)
         with patch.object(self.window, "cleanup_at"), \
                 patch.object(self.module, "find_game_window", return_value=None), \
                 patch.object(self.window.registry, "create_engine") as factory:
-            self.window.capture_script_sample("no-game", "Common", True)
+            self.window.capture_script_sample("no-game", True)
             self.window.task_thread.join(2)
             self.assertFalse(self.window.is_task_running())
             self.app.processEvents()
@@ -468,7 +535,7 @@ class RuntimeGuiLayoutTests(unittest.TestCase):
         with patch.object(self.window, "cleanup_at"), \
                 patch.object(self.window.registry, "create_engine", return_value=engine), \
                 patch.object(self.module, "capture_sample", side_effect=InterruptedError("截图已停止")):
-            self.window.capture_script_sample("waiting-focus", "Common", False)
+            self.window.capture_script_sample("waiting-focus", False)
             self.window.task_thread.join(2)
             self.assertFalse(self.window.is_task_running())
             self.app.processEvents()
