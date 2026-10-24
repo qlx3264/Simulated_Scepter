@@ -29,6 +29,7 @@ from core.divergent.config import config
 from tool.GLOBAL import key_mouse_manager
 from tool.log import CUS_LOGGER, print_exc
 from tool.log import my_print as print
+from tool.mask import MASK, crop_region, region_center
 from tool.public_ocr import merge_text
 from tool.screenshot import Screen
 from tool.utils.game_window import (
@@ -281,7 +282,15 @@ class UniverseUtils(StateKernel):
         CUS_LOGGER.debug(f"获取到点：{x / self.xx:.4f},{y / self.yy:.4f}")
 
     def calc_point(self, point, offset):
-        return (point[0] - offset[0] / self.xx, point[1] - offset[1] / self.yy)
+        """
+        把识别结果相对匹配中心的偏移换算成点击坐标
+
+        point：归一化坐标，或 MASK 中的识别区域 [x1, x2, y1, y2]（取区域中心）
+        offset：识别结果相对匹配中心的像素偏移
+        """
+        if len(point) == 4:
+            point = region_center(point, self.xx, self.yy)
+        return point[0] - offset[0] / self.xx, point[1] - offset[1] / self.yy
 
     def click_box(self, box):
         x = (box[0] + box[1]) / 2
@@ -498,9 +507,14 @@ class UniverseUtils(StateKernel):
     def format_path(self, path):
         return f"resource/imgs/{path}.jpg"
 
-    # 判断截图中匹配中心点附近是否存在匹配模板
-    # path：匹配模板的路径，x,y：匹配中心点，mask：如果存在，则以mask大小为基准裁剪截图，threshold：匹配阈值
-    def check(self, path, x, y, mask=None, threshold=None, large=True,fresh=False):
+    def check(self, path, x=None, y=None, mask=None, threshold=None, fresh=False):
+        """判断截图中指定区域或匹配中心点附近是否存在匹配模板
+
+        path：匹配模板的路径，
+        x,y：匹配中心点，
+        mask：识别区域 [x1, x2, y1, y2]（见 tool/mask.py），给出时忽略 x,y，
+        threshold：匹配阈值
+        """
         if fresh:
             self.get_screen()
         if threshold is None:
@@ -515,20 +529,15 @@ class UniverseUtils(StateKernel):
             dsize=(int(self.scx * target.shape[1]), int(self.scx * target.shape[0])),
         )
         if mask is None:
-            shape = target.shape
+            center_x, center_y = x, y
+            local_screen = self.get_local(x, y, target.shape)
         else:
-            mask_img = cv.imread(self.format_path(mask))
-            shape = (
-                int(self.scx * mask_img.shape[0]),
-                int(self.scx * mask_img.shape[1]),
-            )
-        local_screen = self.get_local(x, y, shape, large)
-        if not large:
-            return local_screen
+            center_x, center_y = region_center(mask, self.xx, self.yy)
+            local_screen = crop_region(self.screen, mask)
         result = cv.matchTemplate(local_screen, target, cv.TM_CCORR_NORMED)
         min_val, max_val, min_loc, max_loc = cv.minMaxLoc(result)
-        self.tx = x - (max_loc[0] - 0.5 * local_screen.shape[1] + 0.5 * target.shape[1]) / self.xx
-        self.ty = y - (max_loc[1] - 0.5 * local_screen.shape[0] + 0.5 * target.shape[0]) / self.yy
+        self.tx = center_x - (max_loc[0] - 0.5 * local_screen.shape[1] + 0.5 * target.shape[1]) / self.xx
+        self.ty = center_y - (max_loc[1] - 0.5 * local_screen.shape[0] + 0.5 * target.shape[0]) / self.yy
         if path == "./resource/imgs/run.jpg" and 0: # 此if被设置为无法触发，可能是调试代码
             print(max_val)
             cv.imwrite('target.jpg',target)
@@ -692,9 +701,9 @@ class UniverseUtils(StateKernel):
         self.screen = self.sct.grab(self.x0, self.y0)
         return self.screen
 
-    def save_screen(self, save_path=PATHS["temp"], force=False):
+    def save_screen(self, save_path=None, force=False):
         """
-        获取截图并保存到指定路径
+        获取截图并保存到指定路径（默认保存到temp/screenshot/）
         :param save_path: 保存截图的路径
         :param force: 是否展示
         """
@@ -707,7 +716,7 @@ class UniverseUtils(StateKernel):
             nc = Image.fromarray(rgb_img)
         else:
             nc = sc
-        save_path = os.fspath(save_path)
+        save_path = os.fspath(save_path or os.path.join(PATHS["temp"], "screenshot"))
         os.makedirs(save_path, exist_ok=True)
         filename = os.path.join(save_path, datetime.now().strftime("%Y%m%d_%H%M%S") + ".png")
         nc.save(filename)
@@ -739,8 +748,11 @@ class UniverseUtils(StateKernel):
             total_img = cv.bitwise_and(total_mask, total_img)
             time.sleep(dt)
 
-        cv.imwrite("resource/imgs/fine_minimap.jpg", total_img)
-        cv.imwrite("resource/imgs/fine_mask.jpg", total_mask)
+        debug_dir = os.path.join(PATHS["temp"], "debug")
+        os.makedirs(debug_dir, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        cv.imwrite(os.path.join(debug_dir, f"fine_minimap_{stamp}.png"), total_img)
+        cv.imwrite(os.path.join(debug_dir, f"fine_mask_{stamp}.png"), total_mask)
         return total_img, total_mask
 
     # 进一步得到小地图的黑白格式
@@ -841,7 +853,7 @@ class UniverseUtils(StateKernel):
         time.sleep(1)
 
     def check_f(self, is_in=[], check_text=1):
-        if self.check("f", 0.4443, 0.4417, mask="mask_f1", threshold=0.95):
+        if self.check("f", mask=MASK["f_key"], threshold=0.95):
             if not check_text:
                 return 1
             text = self.ts.ocr_one_row(self.screen, [1206, 1437, 587, 635])
@@ -975,7 +987,7 @@ class UniverseUtils(StateKernel):
         while not ava and time.time()-tm<1.6:
             self.get_screen()
             if not self.check(
-                    "f", 0.4443, 0.4417, mask="mask_f1", threshold=0.96
+                    "f", mask=MASK["f_key"], threshold=0.96
                 ) and not self.isrun():
                 ava = 1
         CUS_LOGGER.info('交互点生效：' + str(ava))
@@ -1086,7 +1098,12 @@ class UniverseUtils(StateKernel):
                         self.real_loc[1] - 1 : self.real_loc[1] + 2,
                     ] = 49
                     # 轨迹图
-                    cv.imwrite("resource/imgs/bigmap.jpg", self.big_map)
+                    debug_dir = os.path.join(PATHS["temp"], "debug")
+                    os.makedirs(debug_dir, exist_ok=True)
+                    cv.imwrite(
+                        os.path.join(debug_dir, f"bigmap_{datetime.now():%Y%m%d_%H%M%S_%f}.png"),
+                        self.big_map,
+                    )
                 nds = self.get_dis(self.real_loc, loc)
                 # 1秒内没有离目标点更近：开始尝试绕过障碍
                 if dls[0] <= nds:
@@ -1131,7 +1148,7 @@ class UniverseUtils(StateKernel):
                         break
                 else:
                     self.get_screen()
-                    if type == 3 and self.check("f", 0.4443, 0.4417, mask="mask_f1", threshold=0.96):
+                    if type == 3 and self.check("f", mask=MASK["f_key"], threshold=0.96):
                         self.press('f')
                         keyops.keyUp("w")
                         if self.nof(must_be='tp'):
@@ -1188,7 +1205,7 @@ class UniverseUtils(StateKernel):
                     self.get_screen()
                     if self.quan and self.click_text(text="选择祝福",box=[60, 222, 0, 113],click=False,ocr_line=False,warning=False):
                         return
-                    if self.check("f", 0.4443, 0.4417, mask="mask_f1", threshold=0.96):
+                    if self.check("f", mask=MASK["f_key"], threshold=0.96):
                         CUS_LOGGER.info("大图识别到传送点")
                         self.press('f')
                         if self.nof(must_be='tp'):
@@ -1436,15 +1453,6 @@ class UniverseUtils(StateKernel):
                 except Exception:
                     pass
 
-    def check_auto(self):
-        auto = self.check("z", 0.0878,0.9630, large=False, mask="mask_auto")
-        cvt = cv.cvtColor(auto, cv.COLOR_BGR2HSV)
-        lower = np.array([22, 58, 100])
-        upper = np.array([26, 100, 255])
-        mask = cv.inRange(cvt, lower, upper)
-        result = np.sum(mask)//255
-        return result > 100 and result < 280
-
     def isrun(self):
         scr = self.screen
         shape = (int(self.scx * 12), int(self.scx * 12))
@@ -1490,7 +1498,7 @@ class UniverseUtils(StateKernel):
             nt = time.time()
             while time.time()-nt<1.3:
                 self.get_screen()
-                if self.check("f", 0.4443, 0.4417, mask="mask_f1", threshold=0.96):
+                if self.check("f", mask=MASK["f_key"], threshold=0.96):
                     self.press('f')
                     keyops.keyUp('w')
                     break
@@ -1528,7 +1536,7 @@ class UniverseUtils(StateKernel):
         while not self.ready:
             time.sleep(0.1)
         if not self.ang_off and self.mini_state == 1:
-            if self.check("z",0.5906,0.9537,mask="mask_z",threshold=0.95):
+            if self.check("z", mask=MASK["monster_info"], threshold=0.95):
                 if self.floor == 11:
                     self.floor = 12
         keyops.keyDown("w")
@@ -1549,7 +1557,7 @@ class UniverseUtils(StateKernel):
                 self.stop_move=1
                 break
             if self.mini_target==1:
-                if self.check("f", 0.4443, 0.4417, mask="mask_f1", threshold=0.96):
+                if self.check("f", mask=MASK["f_key"], threshold=0.96):
                     self.press('f')
                     CUS_LOGGER.info('发现事件交互')
                     self.stop_move=1
@@ -1580,7 +1588,7 @@ class UniverseUtils(StateKernel):
                     self.stop_move=1
                     self.mini_state+=2
                     break
-                if self.check("z",0.5906,0.9537,mask="mask_z",threshold=0.95):
+                if self.check("z", mask=MASK["monster_info"], threshold=0.95):
                     self.stop_move=1
                     time.sleep(1.7+self.slow*1.1-(self.quan and self.floor not in [3, 7, 12])*0.5)
                     if self.mini_state==1 and self.floor in [3, 7, 12] and not self.quan:
@@ -1591,13 +1599,13 @@ class UniverseUtils(StateKernel):
                                 time.sleep(0.4)
                                 self.use_e()
                                 self.get_screen()
-                                if not self.check("z",0.5906,0.9537,mask="mask_z",threshold=0.95):
+                                if not self.check("z", mask=MASK["monster_info"], threshold=0.95):
                                     break
                                 if self._stop:
                                     break
                             keyops.keyDown("w")
                     iters = 0
-                    while self.check("z",0.5906,0.9537,mask="mask_z",threshold=0.95) and not self._stop:
+                    while self.check("z", mask=MASK["monster_info"], threshold=0.95) and not self._stop:
                         iters+=1
                         if iters>4:
                             break
@@ -1648,7 +1656,7 @@ class UniverseUtils(StateKernel):
                     return
                 self.get_screen()
                 if self.mini_target==1:
-                    if self.check("f", 0.4443, 0.4417, mask="mask_f1", threshold=0.96):
+                    if self.check("f", mask=MASK["f_key"], threshold=0.96):
                         self.press('f')
                         if self.nof(must_be='event'):
                             return
@@ -1660,28 +1668,11 @@ class UniverseUtils(StateKernel):
                 time.sleep(0.4)
             pyautogui.click()
 
-    def solve_snack(self):
-        self.get_screen()
-        if self.check('snack', 0.3844,0.5065, mask='mask_snack'):
-            self.click((self.tx,self.ty))
-            time.sleep(0.3)
-            self.click_position([1184, 815])
-            time.sleep(0.4)
-        else:
-            self.allow_e = 0
-            time.sleep(1.0)
-        self.click_position([768, 815])
-        time.sleep(0.6)
-        if self.allow_e:
-            self.press('e')
-
     def use_e(self):
         self.press('e')
         time.sleep(0.4)
         if not self.quan:
             time.sleep(0.8)
-        if self.click_text(text="快速恢复",box=[864, 1058, 224, 318],click=False,ocr_line=False,warning=False):
-            self.solve_snack()
 
     def bless(self):
         self.get_screen()
@@ -1697,7 +1688,7 @@ class UniverseUtils(StateKernel):
             if self.click_text(text="重置祝福",box=[1268, 1444, 929, 1025],click=False,warning=False):
                 for _ in range(14):
                     self.get_screen()
-                    img_down = self.check("z", 0.5042, 0.3204, mask="mask", large=False)
+                    img_down = crop_region(self.screen, MASK["bless_path"])
                     if (
                         self.ts.split_and_find(self.tk.fates, img_down, mode="bless")[1]
                         or self._stop
@@ -1708,15 +1699,15 @@ class UniverseUtils(StateKernel):
                         return 1
                     time.sleep(0.2)
                 self.get_screen()
-                img_up = self.check("z", 0.5047, 0.5491, mask="mask_bless", large=False)
+                img_up = crop_region(self.screen, MASK["bless_name"])
                 res_up = self.ts.split_and_find(self.tk.prior_bless, img_up, bless_skip=self.tk.skip)
-                img_down = self.check("z", 0.5042, 0.3204, mask="mask", large=False)
+                img_down = crop_region(self.screen, MASK["bless_path"])
                 res_down = self.ts.split_and_find([self.fate], img_down, mode="bless")
                 if res_up[1] == 2:
-                    self.click(self.calc_point((0.5047, 0.5491), res_up[0]))
+                    self.click(self.calc_point(MASK["bless_name"], res_up[0]))
                     chose = 1
                 elif res_down[1] == 2:
-                    self.click(self.calc_point((0.5042, 0.3204), res_down[0]))
+                    self.click(self.calc_point(MASK["bless_path"], res_down[0]))
                     chose = 1
                 if not chose:
                     self.click((0.2990, 0.1046))
@@ -1725,7 +1716,7 @@ class UniverseUtils(StateKernel):
             if not chose:
                 for _ in range(8):
                     self.get_screen()
-                    img_down = self.check("z", 0.5042, 0.3204, mask="mask", large=False)
+                    img_down = crop_region(self.screen, MASK["bless_path"])
                     if self.ts.split_and_find(self.tk.fates, img_down)[1] or self._stop:
                         time.sleep(0.2)
                         break
@@ -1733,18 +1724,18 @@ class UniverseUtils(StateKernel):
                         return 1
                     time.sleep(0.2)
                 self.get_screen()
-                img_up = self.check("z", 0.5047, 0.5491, mask="mask_bless", large=False)
+                img_up = crop_region(self.screen, MASK["bless_name"])
                 res_up = self.ts.split_and_find(self.tk.prior_bless, img_up,bless_skip=self.tk.skip)
-                img_down = self.check("z", 0.5042, 0.3204, mask="mask", large=False)
+                img_down = crop_region(self.screen, MASK["bless_path"])
                 res_down = self.ts.split_and_find(
                     self.tk.secondary, img_down, mode="bless"
                 )
                 if res_up[1] == 2:
-                    self.click(self.calc_point((0.5047, 0.5491), res_up[0]))
+                    self.click(self.calc_point(MASK["bless_name"], res_up[0]))
                 elif res_down[1] >= 2:
-                    self.click(self.calc_point((0.5042, 0.3204), res_down[0]))
+                    self.click(self.calc_point(MASK["bless_path"], res_down[0]))
                 else:
-                    self.click(self.calc_point((0.5047, 0.5491), res_up[0]))
+                    self.click(self.calc_point(MASK["bless_name"], res_up[0]))
                 time.sleep(0.5)
             self.click((0.1203, 0.1093))
             time.sleep(1.7)

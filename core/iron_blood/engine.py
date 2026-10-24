@@ -1,9 +1,8 @@
 import datetime
+import json
 import os
 import shutil
 import time
-
-import yaml
 
 from route import PATHS
 from tool.storage import load_module_settings, resource_path
@@ -19,14 +18,12 @@ from tool.utils.analysis_map import evaluate_best_single_replacement
 from tool.utils.image_tool import find_image_by_name
 from tool.utils.ocr_num import (
     extract_number,
-    match_cheat_count_in_region,
     match_numbers_in_region,
-    match_roll_count_in_region,
 )
 
 
 class IronBloodUniverse(AnyFateUniverse):
-    """铁血战士：毁灭命途专属，累计「肉体帝候」击杀数达成成就。"""
+    """铁血战士：毁灭命途专属，累计40击杀数以达成成就。"""
 
     def __init__(self):
         super().__init__()
@@ -45,9 +42,9 @@ class IronBloodUniverse(AnyFateUniverse):
         # 保存开局期望。-5 表示本局还没走到开局节点图识别，直接开局的局会以这个值写入记录
         self.first_plane_weight = self.MAP_ANALYSIS_NO_INIT
         # 铁血战士使用毁灭专属事件优先级
-        event_iron_blood = resource_path(__file__, "config/event_iron_blood.yml")
+        event_iron_blood = resource_path(__file__, "config/event_iron_blood.json")
         with open(event_iron_blood, encoding="utf-8", errors="ignore") as f:
-            self.event_prior = yaml.safe_load(f)["event"]
+            self.event_prior = json.load(f)["event"]
 
     def restart_recording(self):
         if self.record and self.cut_video and self.YKItDYvq3FpnOYx:
@@ -59,21 +56,33 @@ class IronBloodUniverse(AnyFateUniverse):
                 minutes_divide_kill = minutes/self.kill_count
             # 演算时间过长保留录制仅服务于调试
             recording_keep_long_run_threshold = self.opt.get("recording_keep_long_run_threshold", 1.2)
+            del_time = (
+                self.del_record_time
+                and self.del_record_time>self.kill_count
+            )
             keep_long_run = (
                 self.debug
                 and self.opt.get("recording_keep_long_run", False)
                 and minutes_divide_kill >= recording_keep_long_run_threshold # 演算时间过长录制保留阈值（分钟数÷战斗数）
             )
-            need_del = self.del_record_time and self.del_record_time>self.kill_count and not keep_long_run
-            CUS_LOGGER.debug(f"是否可删除{need_del}，限制数目{self.del_record_time}，当前数目{self.kill_count}；本局演算时间{minutes:.2f}分钟，与战斗数比值{minutes_divide_kill:.2f}")
-            self.recorder.stop_recording(need_del, battle_count=self.kill_count)
+            abnormal_first_plane_weight = (
+                self.debug
+                and self.opt.get("record_abnormal_first_plane_weight", False)
+                and self.first_plane_weight <= 0 # 开局期望值异常（≤0）时保留录制
+            )
+            need_del = del_time and not keep_long_run and not abnormal_first_plane_weight
+            if self.first_plane_weight > 0:
+                CUS_LOGGER.debug(f"是否可删除{need_del}，限制数目{self.del_record_time}，当前数目{self.kill_count}；本局演算时间{minutes:.2f}分钟，与战斗数比值{minutes_divide_kill:.2f}；开局期望{self.first_plane_weight:.2f}")
+            else:
+                CUS_LOGGER.debug(f"是否可删除{need_del}，限制数目{self.del_record_time}，当前数目{self.kill_count}；本局演算时间{minutes:.2f}分钟，与战斗数比值{minutes_divide_kill:.2f}；开局期望{self.first_plane_weight}")
+            self.recorder.stop_recording(need_del, battle_count=self.kill_count, elapsed_time=self.elapsed_time, first_plane_weight=self.first_plane_weight)
             time.sleep(0.8)
             self.recorder.start_recording(self.count + 1)
             self.update_state("re_start")
         self.elapsed_time = 0  # 重置演算持续时间
         self.kill_count = 0
-        # 开局期望不在这里清零：退出流程中「点击空白结算」可能先于「结算界面」触发，
-        # 在这里清零会让本局记录丢掉「开局期望」条目。改为 end_of_university 写完记录后清零。
+        # 本局记录已写完，重置为「还没做开局识别」，避免下一局沿用本局的读数
+        self.first_plane_weight = self.MAP_ANALYSIS_NO_INIT
         self.fail_match_count=0
         self.node_count=0
         self.chaoyan_seen = False  # 新轮回重置「超验之镜」已进过标记
@@ -91,14 +100,15 @@ class IronBloodUniverse(AnyFateUniverse):
             total_min = self.elapsed_time // 60
             total_sec = self.elapsed_time % 60
             # 「开局期望」一律写入：确认识别到写真实值（0 也是真读数），识别失败或本局没做识别写负数原因码
-            line = f"轮回次数:{self.count}, 开始时间:{start_time_str}, 用时:{total_min}分{total_sec}秒, 击杀数:{self.kill_count:02d}, 开局期望:{self.first_plane_weight:.2f}"
+            if self.first_plane_weight > 0:
+                line = f"轮回次数:{self.count}, 开始时间:{start_time_str}, 用时:{total_min}分{total_sec}秒, 击杀数:{self.kill_count:02d}, 开局期望:{self.first_plane_weight:.2f}"
+            else:
+                line = f"轮回次数:{self.count}, 开始时间:{start_time_str}, 用时:{total_min}分{total_sec}秒, 击杀数:{self.kill_count:02d}, 开局期望:{self.first_plane_weight}"
             with open(record_file, "a", encoding="utf-8") as file:
                 file.write(line + "\n")
         except Exception as e:
             CUS_LOGGER.error(f"写入击杀记录文件失败{e}")
         self.run_start_time = time.time()  # 开始下一局计时
-        # 本局记录已写完，重置为「还没做开局识别」，避免下一局沿用本局的读数
-        self.first_plane_weight = self.MAP_ANALYSIS_NO_INIT
         self.need_end=False
         self.init_map()
         if self.kill_count>=40:
@@ -332,16 +342,17 @@ class IronBloodUniverse(AnyFateUniverse):
         self.new_node=True
 
     def calculated_roll(self):
+        # 点过「作弊」按钮后窗口约 0.3 s 才弹出来，这期间「重投界面」还会反复触发，
+        # 那时背景的「确认效果」照样认得到。不在这里挡住，就会再点一次「作弊」，
+        # 而那一下会落到已经打开的列表上，可能选中别的骰面。
+        if self.click_text(text="作弊", box=[923, 996, 230, 270], click=False, allow_fail=True):
+            CUS_LOGGER.debug("作弊选项窗还开着，先不处理重投界面")
+            return
         if self.nodes is None or self.plane_floor==-1:
             self.click_target(find_image_by_name("inmap"), 0.9, flag=False, click=True)
             key_mouse_manager.wait()
             return
-        roll_count = match_roll_count_in_region(self.screen)
-        if roll_count is not None:
-            CUS_LOGGER.debug(f"当前重投次数: {roll_count}")
-        cheat_count = match_cheat_count_in_region(self.screen)
-        if cheat_count is not None:
-            CUS_LOGGER.debug(f"当前作弊次数: {cheat_count}")
+        _, cheat_count = self.read_action_counts()
         if not self.check("fast_roll", 0.1281,0.9074, threshold=0.9):
             self.click_text(text="快速投掷", box=[1700, 1823, 80, 117])
         if self.plane_floor in [2,3]:
@@ -350,6 +361,9 @@ class IronBloodUniverse(AnyFateUniverse):
             CUS_LOGGER.info(f"拿去吧…我背负的一切。(当前效果{text})")
             if "肉体" not in text:
                 cheating =not self.check("zero", 0.3046,0.3324, threshold=0.95)
+                if cheat_count == 0:
+                    # 作弊次数 0（含没解锁作弊功能）就没法作弊，别去点那个不存在的「作弊」按钮
+                    cheating = False
                 redo=not self.check("zero", 0.1297,0.3315, threshold=0.95)
                 CUS_LOGGER.debug(f"决策可用动作{cheating},{redo}")
                 if cheating or redo:
@@ -360,7 +374,9 @@ class IronBloodUniverse(AnyFateUniverse):
                         if best_path[1]['idx'] == self.replace_idx or self.plane_floor == 3:
                             CUS_LOGGER.debug(f"期权最佳代替节点{self.replace_idx},替换后最佳路径{best_path}")
                             if cheating:
-                                self.click_text(text="作弊", box=[1261, 1321, 761, 792])
+                                self.cheat_target = "肉体帝侯"
+                                if not self.click_text(text="作弊", box=[1261, 1321, 761, 792], allow_fail=True):
+                                    CUS_LOGGER.warning("没点到「作弊」按钮，等下一轮重新决策")
                                 return
                             elif redo:
                                 self.click_text(text="重投", box=[1599, 1657, 760, 795])
@@ -368,6 +384,13 @@ class IronBloodUniverse(AnyFateUniverse):
         self.click_text(text="确认效果", box=[1584, 1687, 961, 994])
         self.init_map()
         self.mini_state = 1
+
+    def cheat(self):
+        """
+        铁血战士的作弊目标只会是「肉体帝侯」，它在毁灭系骰面列表的最后一行，
+        第一屏必定认不到，所以跳过首次识别、先把列表往下滚一屏再认；其余流程和公共实现一样。
+        """
+        super().cheat(skip_first_ocr=True)
 
 
 def create_engine(*, script=False):

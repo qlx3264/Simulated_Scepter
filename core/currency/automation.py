@@ -1,7 +1,5 @@
-import json
 import os
 import re
-import shutil
 import time
 
 import cv2
@@ -27,10 +25,11 @@ from core.currency.run_history import (
 from core.currency.settings import load_currency_settings, resolve_priority
 from core.currency.utils import CurrencyUtils, set_forground
 from route import PATHS
-from tool import EXTRA, GLOBAL
+from tool import GLOBAL
 from tool.GLOBAL import key_mouse_manager
 from tool.log import CUS_LOGGER
 from tool.public_ocr import load_actions, merge_text
+from tool.settings import load_settings
 from tool.storage import resource_path
 from tool.utils.Error import NormalEndError
 from tool.utils.tool import get_hwnd_and_text
@@ -103,13 +102,8 @@ class SimulatedCurrency(CurrencyUtils):
         CUS_LOGGER.debug (f"开始运行,初始计数：{self.count}")
         self.last_interact_time = time.time ()
 
-        settings_path = os.path.join(PATHS["config"], "settings.json")
-        example_path = os.path.join(PATHS["example"], "settings_example.json")
-        if not os.path.exists(settings_path) and os.path.exists(example_path):
-            shutil.copy2(example_path, settings_path)
-        with EXTRA.FILE_LOCK:
-            with open(settings_path, encoding="UTF-8") as file:
-                json.load(file)
+        # 首次运行时用默认配置补全游戏与脚本设置。
+        load_settings()
 
         currency_settings = load_currency_settings()
         self.preparation = BattlePreparation()

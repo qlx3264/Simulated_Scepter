@@ -11,7 +11,6 @@ import cv2
 import numpy as np
 import win32gui
 import win32ui
-from PIL import ImageGrab
 
 from route import PATHS
 from tool.log import CUS_LOGGER
@@ -26,11 +25,18 @@ from tool.utils.game_window import (
 )
 from tool.window_recorder.recorder_writer import RecorderWriter
 from tool.window_recorder.video_remux import convert_in_background
+from tool.window_recorder.wgc_capture import WgcCapture
+
+
+def is_remote_session():
+    """当前进程是否运行在远程桌面会话中。"""
+    return bool(ctypes.windll.user32.GetSystemMetrics(0x1000))  # 0x1000 = SM_REMOTESESSION
 
 
 class WindowRecorder:
     def __init__(self, output_path=PATHS["video"], handle=None, fps=30.0, window_title=None, window_class_name=None, see_time=False, is_show=False, offsets=None, overlay_map=False, map_alpha=0.7, simul_instance=None, task_owner=None):
         self.output_path = output_path
+        # 成片帧率：采集按 0.1 秒固定节拍进行，两者之比即成片的加速倍数
         self.fps = fps
         self.window_title = window_title
         self.window_class_name = window_class_name
@@ -38,6 +44,8 @@ class WindowRecorder:
         self.recording_thread = None
         self.hwnd = handle
         self.out = None
+        # Graphics Capture 会话，只在录制期间存在
+        self.capture = None
         self.width = 0
         self.height = 0
         self.window_kind = None
@@ -246,26 +254,37 @@ class WindowRecorder:
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
-        # 应用偏移后的实际录制尺寸
-        self.capture_left = self.left + self.offsets[0]
-        self.capture_top = self.top + self.offsets[1]
-        self.capture_right = self.right - self.offsets[2]
-        self.capture_bottom = self.bottom - self.offsets[3]
-        actual_width = self.capture_right - self.capture_left
-        actual_height = self.capture_bottom - self.capture_top
-        # 常见编码器要求偶数宽高。云窗口可能是 1920x1079，裁剪后为奇数。
-        if actual_width % 2:
-            self.capture_right -= 1
-            actual_width -= 1
-        if actual_height % 2:
-            self.capture_bottom -= 1
-            actual_height -= 1
-        if actual_width <= 0 or actual_height <= 0:
-            raise ValueError(f"录像区域无效: {actual_width}x{actual_height}")
+        # 远程桌面会话里图形捕获的取帧延迟明显升高，且常驻采集会让远程端持续合成而变卡
+        if is_remote_session():
+            CUS_LOGGER.warning("当前处于远程桌面会话：画面采集更慢，录像期间远程桌面会明显变卡")
+
+        # 应用偏移后的录制区域（屏幕坐标）。区域换算成帧内坐标、宽高取偶都由采集器完成：
+        # 只有拿到实际画面才知道帧的真实范围。
+        capture_region = (
+            self.left + self.offsets[0],
+            self.top + self.offsets[1],
+            self.right - self.offsets[2],
+            self.bottom - self.offsets[3],
+        )
+        # 此处 0.1 为采集节拍：每 0.1 秒取一帧，成片按 fps 播放，因此成片是 fps × 0.1 倍速。
+        # 录制与游戏运行同时进行，采集越密越贵：整屏拷贝、编码以及和游戏抢 CPU 都随帧数增长。
+        self.capture = WgcCapture(self.hwnd, capture_region, 0.1)
 
         # 设置视频写入器
-        CUS_LOGGER.info(f"初始化视频写入器，尺寸: {actual_width}x{actual_height}")
-        self.out = RecorderWriter(self.output_file, actual_width, actual_height, self.fps)
+        try:
+            # 先等首帧：写入器宽高必须取实际画面尺寸
+            self.capture.start()
+            CUS_LOGGER.info(
+                f"初始化视频写入器，尺寸: {self.capture.width}x{self.capture.height}")
+            self.out = RecorderWriter(
+                self.output_file,
+                self.capture.width,
+                self.capture.height,
+                self.fps,
+            )
+        except Exception:
+            self._abort_start()
+            raise
 
         # 初始化期间可能已经收到停止请求，此时不要启动录制线程，并丢弃刚创建的空文件
         with self.state_lock:
@@ -292,17 +311,26 @@ class WindowRecorder:
             CUS_LOGGER.warning(f"删除视频文件失败：{e}")
 
     def _abort_start(self):
-        """释放因停止请求而取消的启动所创建的空视频文件。"""
+        """释放因停止请求或启动失败而取消的启动所创建的空视频文件。"""
+        self._stop_capture()
+
         if self.out:
             self.out.stop()
             self.out = None
 
         self._remove_output()
 
+    def _stop_capture(self):
+        """释放采集会话，可重复调用。"""
+        if self.capture:
+            self.capture.stop()
+            self.capture = None
+
     def _record_window(self):
         """实际的窗口录制线程"""
         frame_count = 0
         started_at = time.monotonic()
+        next_capture = started_at
         try:
             while self.recording and not self.stop_event.is_set():
                 owner = self.task_owner
@@ -316,18 +344,8 @@ class WindowRecorder:
                     )
                     break
                 try:
-                    # 应用偏移值来收缩录制范围 [left, top, right, bottom]
-                    # 使用ImageGrab直接捕获窗口区域
-                    bbox = (
-                        self.capture_left,
-                        self.capture_top,
-                        self.capture_right,
-                        self.capture_bottom,
-                    )
-                    img = ImageGrab.grab(bbox=bbox)
-
-                    # 转换为OpenCV格式
-                    img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+                    # 取走采集线程准备的最新一帧 BGR 画面
+                    img_cv = self.capture.read()
 
                     # 检查是否需要叠加地图窗口
                     if self.overlay_map:
@@ -501,18 +519,24 @@ class WindowRecorder:
                             self.stop_recording()
                             break
 
-                    # 控制帧率
-                    time.sleep(1 / self.fps)
-
                 except Exception as e:
                     CUS_LOGGER.warning(f"录制单帧时发生错误: {e}")
-                    continue
+
+                # 固定节拍：每 0.1 秒取一帧，成片按 fps 播放。按绝对时刻对齐，单帧处理耗时不会累积成播放速度漂移。
+                next_capture += 0.1
+                delay = next_capture - time.monotonic()
+                if delay > 0:
+                    time.sleep(delay)
+                else:
+                    # 已经落后一整拍（处理卡住或机器过载），从当前时刻重新起算，不补帧追赶
+                    next_capture = time.monotonic()
 
         except Exception:
             import traceback
             traceback.print_exc()
         finally:
             # 释放资源
+            self._stop_capture()
             if self.out:
                 self.out.stop()
                 self.out = None
@@ -523,7 +547,7 @@ class WindowRecorder:
             if frame_count == 0:
                 self._abort_start()
 
-    def stop_recording(self, delete_video=False, battle_count=None):
+    def stop_recording(self, delete_video=False, battle_count=None, elapsed_time=0, first_plane_weight=0):
         """停止录制
 
         Args:
@@ -545,6 +569,8 @@ class WindowRecorder:
         # 等待录制线程完全退出，避免编码器资源竞争。
         # 无论线程是否退出，下面都必须释放写入器：这是唯一能止住文件继续增长的动作。
         thread_stopped = self._stop_recording_thread()
+        # 线程可能卡在取帧里不再回到循环开头，这里直接释放采集会话
+        self._stop_capture()
         if not thread_stopped:
             # 线程卡在无法中断的截图或写盘调用里；它可能永远不再回到循环开头，
             # 此时若继续持有写入器，文件就会一直增长。释放后已写入的分片仍可播放，
@@ -576,7 +602,10 @@ class WindowRecorder:
         if battle_count is not None:
             try:
                 head, tail = self.output_file.rsplit("次轮回-", 1)
-                new_path = f"{head}次轮回-{battle_count}战-{tail}"
+                if first_plane_weight > 0:
+                    new_path = f"{head}次轮回-{battle_count}战-用时{elapsed_time//60}分{elapsed_time%60}秒-开局期望{first_plane_weight:.2f}-{tail}"
+                else:
+                    new_path = f"{head}次轮回-{battle_count}战-用时{elapsed_time//60}分{elapsed_time%60}秒-开局期望({first_plane_weight})-{tail}"
                 os.rename(self.output_file, new_path)
                 self.output_file = new_path
             except Exception as e:

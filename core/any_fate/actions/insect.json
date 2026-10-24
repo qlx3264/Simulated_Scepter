@@ -441,6 +441,20 @@
         ]
     },
         {
+        "name": "角色重置",
+        "trigger":{
+            "text": "角色重置",
+            "box": [105, 201, 65, 96],
+            "redundancy": 30
+        },
+        "actions":
+        [
+            {
+                "press": "esc"
+            }
+        ]
+    },
+        {
         "name": "开始寰宇蝗灾",
         "trigger":{
             "text": "开始探索",
@@ -480,7 +494,7 @@
         "actions":
         [
             {
-                "position": [1270,598]
+                "position": [1190,580]
             }
         ]
     },
@@ -530,22 +544,11 @@
         ]
     },
     {
-        "name": "确认图片",
-        "trigger":{
-            "photo": "yes1",
-            "pos": {"x":0.5,"y":0.5},
-            "mask":"mask_end"
-        },
-        "actions":
-        [
-            "confirm_yes"
-        ]
-    },
-    {
-        "name": "确认纯文本",
+        "name": "确认",
         "trigger":{
             "text": "确认",
             "box": [232, 1690, 154, 928],
+            "interval": 1,
             "redundancy": 30
         },
         "actions":

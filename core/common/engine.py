@@ -7,6 +7,7 @@ import numpy as np
 
 from tool.GLOBAL import factor, key_mouse_manager
 from tool.log import CUS_LOGGER, log_emitter
+from tool.mask import MASK, crop_region, region_center
 from tool.public_ocr import load_actions, merge_text
 from tool.utils.image_tool import find_image_by_name
 
@@ -61,10 +62,17 @@ class StateKernel:
                 elif trigger.get("photo"):
                     if condition is not None and condition != self.state:
                         continue
-                    if "pos" in trigger:
+                    mask_name = trigger.get("mask")
+                    if mask_name:
+                        matched = self.check(
+                            trigger["photo"], mask=MASK[mask_name],
+                            threshold=trigger.get("threshold"),
+                            use_binary=trigger.get("binary", False),
+                        )
+                    elif "pos" in trigger:
                         matched = self.check(
                             trigger["photo"], trigger["pos"]["x"], trigger["pos"]["y"],
-                            mask=trigger.get("mask"), threshold=trigger.get("threshold"),
+                            threshold=trigger.get("threshold"),
                             use_binary=trigger.get("binary", False),
                         )
                     else:
@@ -186,12 +194,12 @@ class StateKernel:
             :,
         ]
 
-    def check(self, path, x, y, mask=None, threshold=None, use_binary=False,fresh=False):
+    def check(self, path, x=None, y=None, mask=None, threshold=None, use_binary=False,fresh=False):
         """
-        判断截图中匹配中心点附近是否存在匹配模板
+        判断截图中指定区域或匹配中心点附近是否存在匹配模板
         path：匹配模板的路径，
         x,y：匹配中心点，
-        mask：如果存在，则以mask大小为基准裁剪截图，
+        mask：识别区域 [x1, x2, y1, y2]（见 tool/mask.py），给出时忽略 x,y，
         threshold：匹配阈值
         """
         if fresh:
@@ -208,14 +216,11 @@ class StateKernel:
             dsize=(int(self.scx * target.shape[1]), int(self.scx * target.shape[0])),
         )
         if mask is None:
-            shape = target.shape
+            center_x, center_y = x, y
+            local_screen = self.get_local(x, y, target.shape)
         else:
-            mask_img = find_image_by_name(mask)
-            shape = (
-                int(self.scx * mask_img.shape[0]),
-                int(self.scx * mask_img.shape[1]),
-            )
-        local_screen = self.get_local(x, y, shape)
+            center_x, center_y = region_center(mask, self.xx, self.yy)
+            local_screen = crop_region(self.screen, mask)
         if use_binary:
             # 将截图和模板图像转换为灰度图
             if len(local_screen.shape) == 3:
@@ -241,8 +246,8 @@ class StateKernel:
                 CUS_LOGGER.error(f"{path}匹配失败，源图像{local_screen.shape}，目标图像{target.shape}")
                 raise
         min_val, max_val, min_loc, max_loc = cv.minMaxLoc(result)
-        self.tx = x - (max_loc[0] - 0.5 * local_screen.shape[1] + 0.5 * target.shape[1]) / self.xx
-        self.ty = y - (max_loc[1] - 0.5 * local_screen.shape[0] + 0.5 * target.shape[0]) / self.yy
+        self.tx = center_x - (max_loc[0] - 0.5 * local_screen.shape[1] + 0.5 * target.shape[1]) / self.xx
+        self.ty = center_y - (max_loc[1] - 0.5 * local_screen.shape[0] + 0.5 * target.shape[0]) / self.yy
         self.tm = max_val
         if max_val > threshold:
             if self.last_info != path:

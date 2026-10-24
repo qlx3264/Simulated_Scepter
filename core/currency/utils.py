@@ -28,6 +28,7 @@ from tool.GLOBAL import (
     set_global_stop_flag,
 )
 from tool.log import CUS_LOGGER, log_emitter
+from tool.mask import MASK, crop_region, region_center
 from tool.screenshot import Screen
 from tool.timer import timer
 from tool.utils.game_window import (
@@ -276,6 +277,14 @@ class CurrencyUtils(StateKernel):
             key_mouse_manager.click(0.386,0.294)
 
     def calc_point(self, point, offset):
+        """
+        把识别结果相对匹配中心的偏移换算成点击坐标
+
+        point：归一化坐标，或 MASK 中的识别区域 [x1, x2, y1, y2]（取区域中心）
+        offset：识别结果相对匹配中心的像素偏移
+        """
+        if len(point) == 4:
+            point = region_center(point, self.xx, self.yy)
         return point[0] - offset[0] / self.xx, point[1] - offset[1] / self.yy
 
     def click_text(self, text,delay=0,box=None,after_delay=0,click=True,find_all=False,warning=True,ocr_line=True,need_fresh=True,allow_fail=False):
@@ -322,31 +331,15 @@ class CurrencyUtils(StateKernel):
             CUS_LOGGER.warning(f"{text}文本未找到")
         return False
 
-    def get_small_interaction_img(self,x, y, mask=None,fresh=False):
+    def get_small_interaction_img(self,mask,fresh=False):
         """
-        截取指定点位特定模板大小的图片
-        x,y：匹配中心点，
-        mask：以mask大小为基准裁剪截图
+        截取识别区域对应的画面
+
+        mask：识别区域 [x1, x2, y1, y2]（见 tool/mask.py）
         """
         if fresh:
             self.get_screen()
-        # CUS_LOGGER.debug(f"正在获取小交互图片{x},{y}遮罩{mask}")
-
-        if mask is None:
-            target = find_image_by_name("z")
-            target = cv.resize(
-                target,
-                dsize=(int(self.scx * target.shape[1]), int(self.scx * target.shape[0])),
-            )
-            shape = target.shape
-        else:
-            mask_img = find_image_by_name(mask)
-            shape = (
-                int(self.scx * mask_img.shape[0]),
-                int(self.scx * mask_img.shape[1]),
-            )
-        local_screen = self.get_local(x, y, shape, False)
-        return local_screen
+        return crop_region(self.screen, mask)
 
 
 
@@ -422,7 +415,7 @@ class CurrencyUtils(StateKernel):
         if must_be is None and (self.ts.similar("区域") or self.ts.similar("觐见")):
             must_be='tp'
         while not ava and time.time()-tm<1.8:
-            if not self.check("f", 0.4443, 0.4417, mask="mask_f1", threshold=0.96,fresh=True):
+            if not self.check("f", mask=MASK["f_key"], threshold=0.96,fresh=True):
                 if not self.is_run():
                     CUS_LOGGER.info("仿佛连深不见底的最初混沌，也能够烧却。")
                     ava = True
@@ -433,11 +426,11 @@ class CurrencyUtils(StateKernel):
                 if not self.is_run():
                     CUS_LOGGER.info("…我以为，那就是世间最极致的力量，再无其他。")
                     ava=True
-                elif (not self.check("f", 0.4443, 0.4417, mask="mask_f1", threshold=0.96,fresh=True)) and must_be == 'tp':
+                elif (not self.check("f", mask=MASK["f_key"], threshold=0.96,fresh=True)) and must_be == 'tp':
                     CUS_LOGGER.info("或许只要短短万年的时光——它便会被烧成哀毁骨立的焦炭盗火行者了吧。")
                     ava=True
             else:
-                if not self.check("f", 0.4443, 0.4417, mask="mask_f1", threshold=0.96, fresh=True):
+                if not self.check("f", mask=MASK["f_key"], threshold=0.96, fresh=True):
                     ava=True
 
         if ava:
@@ -463,9 +456,9 @@ class CurrencyUtils(StateKernel):
         else:
             CUS_LOGGER.warning('……那我偏偏，绝不顺从……')
         return ava
-    def save_screen(self, save_path=PATHS["temp"], force=False, not_now=False):
+    def save_screen(self, save_path=None, force=False, not_now=False):
         """
-        获取截图并保存到指定路径
+        获取截图并保存到指定路径（默认保存到temp/screenshot/）
         :param save_path: 保存截图的路径
         :param force: 是否展示
         """
@@ -473,6 +466,7 @@ class CurrencyUtils(StateKernel):
             sc=self.screen
         else:
             sc = self.get_screen()
+        save_path = save_path or os.path.join(PATHS["temp"], "screenshot")
         os.makedirs(save_path, exist_ok=True)
         filename = os.path.join(save_path, datetime.now().strftime("%Y%m%d_%H%M%S") + ".png")
         cv.imwrite(filename,sc)

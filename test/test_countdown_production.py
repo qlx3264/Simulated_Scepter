@@ -111,7 +111,9 @@ class CountdownProductionTests(unittest.TestCase):
         self.assertLess(
             calculated_roll.index("pending_effect = self._pending_cheat_effect"),
             calculated_roll.index("recommend_effect(observed)"))
-        self.assertIn("self._pending_cheat_effect = int(action[1])", calculated_roll)
+        # 点「作弊」按钮时只记「已请求」，等 cheat() 确认成功后才会记回显用的 pending
+        self.assertIn("self._cheat_requested_effect = int(action[1])", calculated_roll)
+        self.assertNotIn("self._pending_cheat_effect = int(action[1])", calculated_roll)
 
     def test_target_selection_ignores_cyan_borders_and_detects_green_applied_nodes(self):
         import cv2
@@ -169,7 +171,7 @@ class CountdownProductionTests(unittest.TestCase):
 
     def test_every_decision_mode_resolves_its_real_early_stop_key(self):
         settings = load_finger_snap_settings(Path(__file__).parents[1]
-                                             / "config/config/settings_example.json")
+                                             / "resource/gui_settings_default.json")
         self.assertEqual(
             {"dp_early_stop", "win_rate_dp_early_stop", "mc_dp_early_stop"},
             {EARLY_STOP_FIELDS[mode] for mode in (

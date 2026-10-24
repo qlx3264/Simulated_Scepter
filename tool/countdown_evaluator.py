@@ -39,16 +39,6 @@ EFFECT_TEXT_ALIASES = {
     EFFECT_RANDOM_INFECT: ("归心",),
     EFFECT_NOTHING: ("可憎",),
 }
-# 作弊界面各效果按钮上实际显示的文字，与骰子结果文本（EFFECT_TEXT_ALIASES）分开：
-# 慈怀的作弊按钮写「选择」，而骰子结果文本是「慈怀」。
-EFFECT_CHEAT_TEXT = {
-    EFFECT_SPREAD: "浇灌",
-    EFFECT_BONUS: "为善",
-    EFFECT_ADJACENT: "对症",
-    EFFECT_SELECT: "选择",
-    EFFECT_RANDOM_INFECT: "归心",
-    EFFECT_NOTHING: "可憎",
-}
 _EFFECT_ALIASES = {name: effect for effect, names in EFFECT_TEXT_ALIASES.items()
                    for name in names}
 
@@ -1483,8 +1473,7 @@ __all__ = [
     "ALL_EFFECTS", "CAMPAIGN_DEFAULT_TARGETS", "CampaignProgress",
     "CountdownDecisionAgent", "CountdownMap", "CountdownSession",
     "CountdownState", "DecisionContext",
-    "DEFAULT_MAP_FILES", "EFFECT_ADJACENT", "EFFECT_BONUS", "EFFECT_CHEAT_TEXT",
-    "EFFECT_NAMES",
+    "DEFAULT_MAP_FILES", "EFFECT_ADJACENT", "EFFECT_BONUS", "EFFECT_NAMES",
     "EFFECT_NOTHING", "EFFECT_RANDOM_INFECT", "EFFECT_SELECT", "EFFECT_SPREAD",
     "EFFECT_TEXT_ALIASES",
     "MCConfig", "MCRecommendation", "MCSampleStats", "MonteCarloController",
