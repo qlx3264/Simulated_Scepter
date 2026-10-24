@@ -859,10 +859,10 @@ class SimulatedUniverse(UniverseUtils):
             # 事件名先读出来：下面不管是「先等面板淡入」还是兜底，日志里都要写事件名。
             # 读到的名字会缓存进 self.event，本帧只读这一次，后面的帧直接用缓存。
             event_name = self.event_name_for_log(screen)
-            if self._option_shown_at is not None and time.time() - self._option_shown_at < 0.8:
-                # 选项面板是淡入的：先出选项文字、后出选项图标，在这不到 0.8 s 的窗口里按兜底点会点错。
+            if self._option_shown_at is not None and time.time() - self._option_shown_at < 1.5:
+                # 选项面板是淡入的：先出选项文字、后出选项图标，在这不到 1.5 s 的窗口里按兜底点会点错。
                 # 所以本帧先不决定，也不 sleep：直接返回，下一帧重新截图重新认，
-                # 那时图标已经正常显示，优选项自然就命中了。等满 0.8 s 还没命中才照旧走兜底。
+                # 那时图标已经正常显示，优选项自然就命中了。等满 1.5 s 还没命中才照旧走兜底。
                 CUS_LOGGER.debug(f"事件「{event_name}」选项面板刚出现（图标可能还在淡入），本帧不点击")
                 return
             # 没有战斗的事件不存在优选项
