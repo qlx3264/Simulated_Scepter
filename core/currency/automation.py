@@ -35,6 +35,92 @@ from tool.utils.Error import NormalEndError
 from tool.utils.tool import get_hwnd_and_text
 
 
+def count_color(patch):
+    """人数数字的主色：占比够大且最亮的颜色。
+
+    数字比背景亮得多；未满员时是青色，满员后整行变成灰色，按最亮的显著颜色取色可以跟着变。
+    取不到时返回 None。
+    """
+    bright = patch.max(axis=2) >= 140
+    colors = patch[bright].reshape(-1, 3) // 16 * 16
+    if not colors.size:
+        return None
+    values, counts = np.unique(colors, axis=0, return_counts=True)
+    significant = counts >= max(8, counts.sum() * 0.02)
+    values = values[significant]
+    if not values.size:
+        return None
+    return values[np.argmax(values.max(axis=1))]
+
+
+def count_mask(patch):
+    """按人数数字的主色取笔画，背景、图标和星点都不会落进来。"""
+    color = count_color(patch)
+    if color is None:
+        return np.zeros(patch.shape[:2], dtype=bool)
+    return np.abs(patch.astype("int16") - color.astype("int16")).max(axis=2) <= 40
+
+
+def count_shows_full(patch):
+    """人数数字不再是青色（满员后变成灰色）时说明人数已满。
+
+    Returns:
+        True 已满、False 未满、None 取不到主色。
+    """
+    color = count_color(patch)
+    if color is None:
+        return None
+    blue, green, red = (int(channel) for channel in color)
+    return not (blue - red > 60 and green - red > 60)
+
+
+def split_count_line(patch):
+    """按斜杠把人数裁片切成左右两段，两段各只含一个数字。
+
+    斜杠是唯一从一端移到另一端的细笔画字形，据此把它和两侧数字分开。
+
+    Returns:
+        (左段, 右段)；找不到斜杠时返回 None。
+    """
+    mask = count_mask(patch)
+    groups = []
+    start = None
+    for index, column in enumerate(mask.any(axis=0)):
+        if column and start is None:
+            start = index
+        elif not column and start is not None:
+            groups.append((start, index))
+            start = None
+    if start is not None:
+        groups.append((start, mask.shape[1]))
+    for left, right in groups:
+        rows = [np.flatnonzero(row) for row in mask[:, left:right]]
+        rows = [row for row in rows if row.size]
+        if not rows:
+            continue
+        width = right - left
+        widths = np.array([row.size for row in rows])
+        centers = np.array([row.mean() for row in rows])
+        steps = np.diff(centers)
+        moving = bool((steps >= 0).all() or (steps <= 0).all())
+        if (
+            moving
+            and max(widths[0], widths[-1]) <= width * 0.5
+            and np.median(widths) <= width * 0.35
+            and abs(centers[-1] - centers[0]) >= width * 0.5
+        ):
+            return patch[:, :left], patch[:, right:]
+    return None
+
+
+def read_count_number(recognizer, patch):
+    """识别人数裁片一侧的数字；识别结果不是一个数字时返回 None。"""
+    digits = re.findall(r"\d+", recognizer.ocr_one_row(patch))
+    if len(digits) != 1:
+        return None
+    return int(digits[0])
+
+
 class SimulatedCurrency(CurrencyUtils):
     def static_completed(self, name, result):
         if name == "开始退出" and result == 0:
@@ -596,18 +682,39 @@ class SimulatedCurrency(CurrencyUtils):
         """读取上阵人数及人数上限；OCR 暂未识别完整时返回 None。
 
         画面上的数字是前台与后台之和，上限随对局进度增长，超过前台落点数仍合法。
-        左侧人物图标会被识别成数字，裁片从图标右侧开始，右侧留出两位数余量。
+        整行识别容易把斜杠读成数字（灰色满员时的“7/7”会读成“777”），所以按斜杠切成
+        左右两段各识别一次；切不开或数字没认全时退回整行识别。满员后数字由青色变灰，
+        这个颜色本身也是满员的依据：认不出数字但颜色已变灰时按满员处理。人数裁片从左侧
+        人物图标右侧开始，右侧留出两位数上限的宽度。
         """
-        text = self.ts.ocr_one_row(self.screen, self.TEAM_COUNT_BOX)
-        match = re.search(r"(\d+)\s*[/／]\s*(\d+)", text)
-        if match is None:
-            CUS_LOGGER.debug("上阵人数识别未得到有效数字：%r", text)
-            return None
-        placed, capacity = map(int, match.groups())
+        box = self.TEAM_COUNT_BOX
+        patch = self.screen[box[2]:box[3], box[0]:box[1]]
+        counts = None
+        halves = split_count_line(patch)
+        if halves is not None:
+            placed = read_count_number(self.ts, halves[0])
+            capacity = read_count_number(self.ts, halves[1])
+            if placed is not None and capacity is not None:
+                counts = placed, capacity
+            else:
+                CUS_LOGGER.debug("上阵人数左右分开识别不完整：%r/%r", placed, capacity)
+        if counts is None:
+            text = self.ts.ocr_one_row(self.screen, box)
+            match = re.search(r"(\d+)\s*[/／]\s*(\d+)", text)
+            if match is not None:
+                counts = tuple(map(int, match.groups()))
+            elif count_shows_full(patch):
+                # 满员时数字是灰色；认不出数字也不该继续补位，按“已满、上限未知”处理。
+                CUS_LOGGER.debug("人数数字已变灰（满员），但没认出数字；按满员处理")
+                return 1, 1
+            else:
+                CUS_LOGGER.debug("上阵人数识别未得到有效数字：%r", text)
+                return None
+        placed, capacity = counts
         if not 0 < capacity <= TEAM_CAPACITY or placed > capacity:
-            CUS_LOGGER.debug("上阵人数超出有效范围：%r", text)
+            CUS_LOGGER.debug("上阵人数超出有效范围：%s/%s", placed, capacity)
             return None
-        return placed, capacity
+        return counts
 
     def prepare_battle(self):
         """先补满阵容，再按优先级替换，截图确认完成后才允许出战。
