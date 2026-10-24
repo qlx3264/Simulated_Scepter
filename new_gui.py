@@ -1035,8 +1035,9 @@ class MainWindow(QMainWindowLog):
         finally:
             dialog.deleteLater()
 
-    def capture_script_sample(self, session, kernel, recognize):
-        self.run_editor_task(session, kernel, lambda engine: {"sample": capture_sample(engine, recognize)},
+    def capture_script_sample(self, session, recognize):
+        # 取样只需通用截图和 OCR，避免玩法内核的模板、配置及初始化阻断截图。
+        self.run_editor_task(session, "Common", lambda engine: {"sample": capture_sample(engine, recognize)},
                              "识别文字取样" if recognize else "框选图片取样")
 
     def debug_script_events(self, session, kernel, events, direct):
