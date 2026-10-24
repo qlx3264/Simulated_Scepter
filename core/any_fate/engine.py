@@ -330,7 +330,8 @@ class AnyFateUniverse(SimulatedUniverse):
                         if self.navigate_battle():
                             return 1
                 else:
-                    #背景有光污染，字都认不出来
+                    #背景有光污染，未能成功识别区域名
+                    self.area=""
                     key_mouse_manager.mouse_move(1)
                     key_mouse_manager.wait()
             # 长时间未交互/战斗，暂离或重开
