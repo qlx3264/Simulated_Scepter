@@ -1,30 +1,124 @@
 import os
+import re
 import time
 
 import cv2
 import numpy as np
 import pyautogui
 
-from tool.public_ocr import load_actions, merge_text
-from route import PATHS
-from tool.storage import resource_path
-from tool.settings import load_settings
-from tool import GLOBAL
 from core.currency.config import config
 from core.currency.investment_selection import choose_fallback_investment
 from core.currency.investment_state import InvestmentSelectionTracker, SelectionKind
+from core.currency.preparation import (
+    AREA_BOXES,
+    BENCH_BOXES,
+    TEAM_CAPACITY,
+    BattlePreparation,
+    Deployment,
+    plan_deployment,
+)
 from core.currency.run_history import (
     RUN_END_ACTION,
-    RUN_START_ACTION,
     CurrencyRunHistory,
     get_newly_unlocked_investment,
 )
-from core.currency.settings import load_currency_settings
+from core.currency.settings import load_currency_settings, resolve_priority
 from core.currency.utils import CurrencyUtils, set_forground
+from route import PATHS
+from tool import GLOBAL
 from tool.GLOBAL import key_mouse_manager
 from tool.log import CUS_LOGGER
+from tool.public_ocr import load_actions, merge_text
+from tool.settings import load_settings
+from tool.storage import resource_path
 from tool.utils.Error import NormalEndError
 from tool.utils.tool import get_hwnd_and_text
+
+
+def count_color(patch):
+    """人数数字的主色：占比够大且最亮的颜色。
+
+    数字比背景亮得多；未满员时是青色，满员后整行变成灰色，按最亮的显著颜色取色可以跟着变。
+    取不到时返回 None。
+    """
+    bright = patch.max(axis=2) >= 140
+    colors = patch[bright].reshape(-1, 3) // 16 * 16
+    if not colors.size:
+        return None
+    values, counts = np.unique(colors, axis=0, return_counts=True)
+    significant = counts >= max(8, counts.sum() * 0.02)
+    values = values[significant]
+    if not values.size:
+        return None
+    return values[np.argmax(values.max(axis=1))]
+
+
+def count_mask(patch):
+    """按人数数字的主色取笔画，背景、图标和星点都不会落进来。"""
+    color = count_color(patch)
+    if color is None:
+        return np.zeros(patch.shape[:2], dtype=bool)
+    return np.abs(patch.astype("int16") - color.astype("int16")).max(axis=2) <= 40
+
+
+def count_shows_full(patch):
+    """人数数字不再是青色（满员后变成灰色）时说明人数已满。
+
+    Returns:
+        True 已满、False 未满、None 取不到主色。
+    """
+    color = count_color(patch)
+    if color is None:
+        return None
+    blue, green, red = (int(channel) for channel in color)
+    return not (blue - red > 60 and green - red > 60)
+
+
+def split_count_line(patch):
+    """按斜杠把人数裁片切成左右两段，两段各只含一个数字。
+
+    斜杠是唯一从一端移到另一端的细笔画字形，据此把它和两侧数字分开。
+
+    Returns:
+        (左段, 右段)；找不到斜杠时返回 None。
+    """
+    mask = count_mask(patch)
+    groups = []
+    start = None
+    for index, column in enumerate(mask.any(axis=0)):
+        if column and start is None:
+            start = index
+        elif not column and start is not None:
+            groups.append((start, index))
+            start = None
+    if start is not None:
+        groups.append((start, mask.shape[1]))
+    for left, right in groups:
+        rows = [np.flatnonzero(row) for row in mask[:, left:right]]
+        rows = [row for row in rows if row.size]
+        if not rows:
+            continue
+        width = right - left
+        widths = np.array([row.size for row in rows])
+        centers = np.array([row.mean() for row in rows])
+        steps = np.diff(centers)
+        moving = bool((steps >= 0).all() or (steps <= 0).all())
+        if (
+            moving
+            and max(widths[0], widths[-1]) <= width * 0.5
+            and np.median(widths) <= width * 0.35
+            and abs(centers[-1] - centers[0]) >= width * 0.5
+        ):
+            return patch[:, :left], patch[:, right:]
+    return None
+
+
+def read_count_number(recognizer, patch):
+    """识别人数裁片一侧的数字；识别结果不是一个数字时返回 None。"""
+    digits = re.findall(r"\d+", recognizer.ocr_one_row(patch))
+    if len(digits) != 1:
+        return None
+    return int(digits[0])
 
 
 class SimulatedCurrency(CurrencyUtils):
@@ -41,6 +135,8 @@ class SimulatedCurrency(CurrencyUtils):
     DIFFICULTY_DOWN_POSITION = (960, 844)
     ENVIRONMENT_TITLE_BOX = [897, 1018, 80, 114]
     ENVIRONMENT_CONFIRM_BOX = [1053, 1108, 967, 998]
+    # 上阵人数裁片：避开左侧人物图标，右侧留出两位数上限的宽度。
+    TEAM_COUNT_BOX = [884, 1150, 202, 280]
     BLESS_REFRESH_POSITIONS = ((384, 869), (868, 869), (1380, 869))
 
     def __init__ (self, find, debug, speed, consumable, slow, nums = -1, bonus = False):
@@ -92,9 +188,19 @@ class SimulatedCurrency(CurrencyUtils):
         CUS_LOGGER.debug (f"开始运行,初始计数：{self.count}")
         self.last_interact_time = time.time ()
 
-        data = load_settings()
+        # 首次运行时用默认配置补全游戏与脚本设置。
+        load_settings()
 
-        currency_settings = load_currency_settings()
+        self.preparation = BattlePreparation()
+        currency_settings = load_currency_settings()  # 模板去重可能已迁移角色优先级。
+        self.front_priority, self.back_priority = resolve_priority(
+            currency_settings["deployment"]
+        )
+        if not self.front_priority and not self.back_priority:
+            CUS_LOGGER.warning(
+                "尚未配置前台或后台角色优先级，备战角色只会作为补位进入前台空位；"
+                "请先在货币战争设置里配置"
+            )
 
         # 本局默认退出位面，以及 prior 投资环境出现后可能使用的退出位面
         self.set_exit_plane = currency_settings["exit_after_plane"]
@@ -104,8 +210,9 @@ class SimulatedCurrency(CurrencyUtils):
 
         # 记录本局是否刷出了必选（prior）投资环境
         self.prior_environment_found = False
-
-        CUS_LOGGER.info(f"货币战争退出位面设置为: 第{self.set_exit_plane}面")
+        self.has_fresh = False
+        exit_plane_text = "不退出" if self.set_exit_plane is None else f"第{self.set_exit_plane}面"
+        CUS_LOGGER.info(f"货币战争退出位面设置为: {exit_plane_text}")
 
     def recognize_options (self, boxes, redundancy = 30):
         """对多个选项区域进行 OCR 识别，返回文字列表"""
@@ -132,7 +239,6 @@ class SimulatedCurrency(CurrencyUtils):
                 if not warn_game:
                     warn_game = True
                     CUS_LOGGER.warning (f"等待游戏窗口，当前窗口：{Text}")
-                time.sleep (0.5)
                 cnt += 1
                 if cnt == 1200:
                     set_forground () # 将游戏窗口设为前台
@@ -233,20 +339,11 @@ class SimulatedCurrency(CurrencyUtils):
             )
             key_mouse_manager.click(*self.DIFFICULTY_DOWN_POSITION)
             key_mouse_manager.wait()
-            time.sleep(self.DIFFICULTY_SETTLE_SECONDS)
 
         CUS_LOGGER.warning("达到向下选择上限，仍未识别到难度1；停止点击并等待下一轮识别")
         return False
 
     def handle_difficulty_selection(self):
-        # 如果已经进入本局，但“开始对局”按钮由于加载延迟仍然存在，
-        # 再次点击按钮，但不要重复初始化本局状态和计时。
-        if self.state == "currency_main":
-            CUS_LOGGER.debug("本局已开始，但“开始对局”按钮仍存在，尝试重新点击")
-            key_mouse_manager.click(1692, 965)
-            key_mouse_manager.wait()
-            return 1
-
         if self.state not in (None, "difficulty_select"):
             return 0
 
@@ -274,7 +371,6 @@ class SimulatedCurrency(CurrencyUtils):
         self.exit_started = False
         self.run_history.start_run()
         CUS_LOGGER.info("货币战争对局计时开始")
-        self.update_state("currency_main")
         return True
 
     def auto_battle(self):
@@ -285,8 +381,7 @@ class SimulatedCurrency(CurrencyUtils):
 
     def select_envir (self):
         CUS_LOGGER.info ("=== 进入投资环境选择阶段===")
-        time.sleep (1) # 等待界面加载
-        self.ts.forward (self.get_screen ())
+        # self.ts.forward (self.get_screen ())
         boxes = self.ENVIR_BOXES
         def match_prior (texts):
             for pri in self.prior_envir:
@@ -299,18 +394,15 @@ class SimulatedCurrency(CurrencyUtils):
         CUS_LOGGER.info (f"OCR 识别结果: {texts}")
         matched, selected_idx = match_prior (texts)
 
-        if not matched:
+        if not matched and not self.has_fresh:
             CUS_LOGGER.info ("未匹配到必选环境，点击刷新按钮")
             key_mouse_manager.click (672, 984)  # 刷新按钮坐标
             key_mouse_manager.wait()
-            time.sleep (4) # 等待刷新完成
-            self.ts.forward (self.get_screen ())
-            # 刷新后重新识别并再次尝试匹配必选
-            texts = self.recognize_options (self.ENVIR_BOXES)
-            CUS_LOGGER.info (f"刷新后 OCR 结果: {texts}")
-            matched, selected_idx = match_prior (texts)
+            self.has_fresh=True
+            return
         # 构建完整的优先级列表（按顺序）
-        if not matched:
+        elif not matched:
+            self.has_fresh=False
             # 顺序：prior_envir + envir[0] + envir[1] + ... + envir[4]
             prior_list = self.prior_envir[:] # 复制最高优先级列表
             for envir in self.envir: # 遍历envir列表，将每个子列表的元素按顺序添加到prior_list中
@@ -345,7 +437,6 @@ class SimulatedCurrency(CurrencyUtils):
         selected_text = texts[selected_idx] if selected_idx < len(texts) else ""
         key_mouse_manager.click (centers[selected_idx][0], centers[selected_idx][1])
         key_mouse_manager.wait()
-        time.sleep(0.4)
 
         self._confirm_environment_selection()
 
@@ -369,6 +460,7 @@ class SimulatedCurrency(CurrencyUtils):
             if not self.prior_environment_found:
                 self.prior_environment_found = True
 
+                # 必选环境指定的退出位面优先于默认设置，包括默认的“不退出”。
                 if self.prior_exit_plane is not None:
                     self.exit_plane = self.prior_exit_plane
                     CUS_LOGGER.info(
@@ -400,7 +492,6 @@ class SimulatedCurrency(CurrencyUtils):
         ]
 
         for attempt in range(max_attempts):
-            time.sleep(0.6)
             if not self.click_text(
                 text="投资环境",
                 box=self.ENVIRONMENT_TITLE_BOX,
@@ -426,7 +517,6 @@ class SimulatedCurrency(CurrencyUtils):
 
             key_mouse_manager.click(*centers[selected_idx])
             key_mouse_manager.wait()
-            time.sleep(0.4)
             self._confirm_environment_selection()
 
             CUS_LOGGER.info(
@@ -456,9 +546,7 @@ class SimulatedCurrency(CurrencyUtils):
             for idx in pending:
                 key_mouse_manager.click(*self.BLESS_REFRESH_POSITIONS[idx])
                 key_mouse_manager.wait()
-                time.sleep(0.4)
 
-            time.sleep(0.8)
             self.ts.forward(self.get_screen())
             latest_texts = self.recognize_options(self.BLESS_BOXES)
             pending = [
@@ -493,7 +581,6 @@ class SimulatedCurrency(CurrencyUtils):
             f"=== 进入投资策略选择：{kind_text}，"
             f"已完成{self.investment_tracker.plane_count}面 ==="
         )
-        time.sleep (1)
         self.ts.forward (self.get_screen ())
         boxes = self.BLESS_BOXES
 
@@ -563,10 +650,8 @@ class SimulatedCurrency(CurrencyUtils):
             )
 
         key_mouse_manager.click (centers[selected_idx][0], centers[selected_idx][1])
-        time.sleep (0.1)
 
         self.click_text (text = "确认", box = [948, 1005, 968, 999], click = True)
-        time.sleep (5)
         CUS_LOGGER.info ("投资策略选择完成")
         self.ts.forward (self.get_screen())
 
@@ -579,9 +664,10 @@ class SimulatedCurrency(CurrencyUtils):
             and self.run_history.record_unlocked_investment(unlocked_investment)
         ):
             CUS_LOGGER.info(f"本局新解锁投资策略：{unlocked_investment}")
+        exit_plane_text = "不退出" if self.exit_plane is None else str(self.exit_plane)
         CUS_LOGGER.info(
             f"投资进度：普通位面={self.investment_tracker.plane_count}/"
-            f"{self.exit_plane}，立即奖励={self.investment_tracker.immediate_count}，"
+            f"{exit_plane_text}，立即奖励={self.investment_tracker.immediate_count}，"
             f"延迟奖励={self.investment_tracker.delayed_count}"
         )
 
@@ -592,32 +678,165 @@ class SimulatedCurrency(CurrencyUtils):
 
         return 1
 
-    def drag_characters(self):
-        '''用于拖拽角色'''
-        time.sleep(1)
-        key_mouse_manager.drag(
-            0.7703, 0.1569, 0.6107, 0.6306
+    def read_team_count(self):
+        """读取上阵人数及人数上限；OCR 暂未识别完整时返回 None。
+
+        画面上的数字是前台与后台之和，上限随对局进度增长，超过前台落点数仍合法。
+        整行识别容易把斜杠读成数字（灰色满员时的“7/7”会读成“777”），所以按斜杠切成
+        左右两段各识别一次；切不开或数字没认全时退回整行识别。满员后数字由青色变灰，
+        这个颜色本身也是满员的依据：认不出数字但颜色已变灰时按满员处理。人数裁片从左侧
+        人物图标右侧开始，右侧留出两位数上限的宽度。
+        """
+        box = self.TEAM_COUNT_BOX
+        patch = self.screen[box[2]:box[3], box[0]:box[1]]
+        counts = None
+        halves = split_count_line(patch)
+        if halves is not None:
+            placed = read_count_number(self.ts, halves[0])
+            capacity = read_count_number(self.ts, halves[1])
+            if placed is not None and capacity is not None:
+                counts = placed, capacity
+            else:
+                CUS_LOGGER.debug("上阵人数左右分开识别不完整：%r/%r", placed, capacity)
+        if counts is None:
+            text = self.ts.ocr_one_row(self.screen, box)
+            match = re.search(r"(\d+)\s*[/／]\s*(\d+)", text)
+            if match is not None:
+                counts = tuple(map(int, match.groups()))
+            elif count_shows_full(patch):
+                # 满员时数字是灰色；认不出数字也不该继续补位，按“已满、上限未知”处理。
+                CUS_LOGGER.debug("人数数字已变灰（满员），但没认出数字；按满员处理")
+                return 1, 1
+            else:
+                CUS_LOGGER.debug("上阵人数识别未得到有效数字：%r", text)
+                return None
+        placed, capacity = counts
+        if not 0 < capacity <= TEAM_CAPACITY or placed > capacity:
+            CUS_LOGGER.debug("上阵人数超出有效范围：%s/%s", placed, capacity)
+            return None
+        return counts
+
+    def prepare_battle(self):
+        """先补满阵容，再按优先级替换，截图确认完成后才允许出战。
+
+        每次只执行一个拖拽并重新采集，避免备战栏压缩后使用过期的格子坐标。
+        返回 1 表示已准备好，0 表示仍需准备；识别和落位失败均不放行。
+        """
+        if self._stop or self.exit_requested:
+            return 0
+        if self.state == "battle_ready":
+            self.update_state("currency_main")
+        if self.state == "1-1":
+            self.handle_1_1_reward()
+        # 同一轮限制补位和身份确认次数；未完成时留待下一次触发继续。
+        blocked = set()  # 按身份阻止本轮重试，不依赖会压缩变动的备战格序号。
+        for _ in range(2 * len(BENCH_BOXES) + 1):
+            if self._stop or self.exit_requested:
+                return 0
+            self.ts.forward(self.get_screen())
+            counts = self.read_team_count()
+            if counts is None:
+                CUS_LOGGER.debug("上阵人数未能识别，等待下一轮")
+                return 0
+            slots = self.preparation.scan_bench(self.screen)
+            vacancies = self.preparation.read_areas(self.screen)
+            front_occupied = len(AREA_BOXES["front"]) - len(vacancies["front"])
+            deployed = self.preparation.deployed_templates(self.screen, vacancies)
+            moves = plan_deployment(
+                [slot for slot in slots if slot.template not in blocked],
+                vacancies, counts, self.front_priority, self.back_priority,
+                self.preparation.read_members(vacancies, counts[0]),
+                deployed=deployed,
+            )
+            sources = {slot.index: slot.template for slot in slots if slot.kind == "character"}
+            if not moves:
+                if front_occupied == 0:
+                    CUS_LOGGER.debug("前台尚无角色，继续等待备战")
+                    return 0
+                self.update_state("battle_ready")
+                CUS_LOGGER.info("阵容已就位，可以出战！")
+                return 1
+            move = moves[0]
+            result = self.deploy_character(move, slots, counts)
+            if result is None:
+                blocked.add(sources[move.source])
+                continue
+            after_slots, outgoing, verified = result
+            if outgoing is None:
+                if not verified:
+                    return 0
+                continue
+            incoming = next(slot.template for slot in slots if slot.index == move.source)
+            priority = self.front_priority if move.area == "front" else self.back_priority
+            ranks = {name: index for index, name in enumerate(priority)}
+            if ranks.get(incoming, len(ranks)) < ranks.get(outgoing, len(ranks)):
+                if not verified:
+                    return 0
+                continue
+            # 接管已有阵容时，先核对交换回来的人物；原角色更优则立即换回，保留已确认身份。
+            previous = next(slot for slot in after_slots if slot.kind == "character" and slot.template == outgoing)
+            restore = Deployment(previous.index, move.area, move.target, incoming)
+            restored = self.deploy_character(restore, after_slots, counts)
+            if restored is None or restored[1] != incoming or not restored[2]:
+                return 0
+            CUS_LOGGER.debug("原上阵角色优先级更高，已恢复：%s", outgoing)
+        return 0
+
+    def deploy_character(self, move, slots, counts):
+        """执行一次补位或交换，核对人数、落点和备战栏角色变化。
+
+        Returns:
+            身份变化可确认时返回 (备战快照, 被换回的角色或 None, 人数及落点是否核对通过)，
+            无身份变化或停止时返回 None。人数未确认时保留身份，但不放行出战。
+        """
+        if self._stop or self.exit_requested:
+            return None
+        source = BENCH_BOXES[move.source]
+        target = AREA_BOXES[move.area][move.target]
+        CUS_LOGGER.debug(
+            "准备拖拽角色：备战格%d -> %s第%d格（%s）", move.source + 1,
+            "前台" if move.area == "front" else "后台", move.target + 1,
+            "补位" if move.outgoing is None else "替换",
         )
-        time.sleep(1.5)
         key_mouse_manager.drag(
-            0.7047, 0.1560, 0.5354, 0.6310
+            (source[0] + source[1]) // 2, (source[2] + source[3]) // 2,
+            (target[0] + target[1]) // 2, (target[2] + target[3]) // 2,
         )
-        time.sleep(1.5)
-        key_mouse_manager.drag(
-            0.6396, 0.1551, 0.4617, 0.6310
-        )
-        time.sleep(1.5)
+        key_mouse_manager.sleep(0.5)  # 等待交换或落位动画及人数刷新。
+        key_mouse_manager.wait()
+        if self._stop or self.exit_requested:
+            return None
+        self.ts.forward(self.get_screen())
+        after_slots = self.preparation.scan_bench(self.screen)
+        vacancies = self.preparation.read_areas(self.screen)
+        after_count = self.read_team_count()
+        if self._stop or self.exit_requested:
+            return None
+        # 补位都会让人数加一，交换不改变人数；补位和交换都不改变人数上限。
+        expected = (counts[0] + 1, counts[1]) if move.outgoing is None else counts
+        confirmed, outgoing = self.preparation.confirm_move(move, slots, after_slots)
+        if confirmed:
+            verified = move.target not in vacancies[move.area] and after_count == expected
+            if not verified:
+                CUS_LOGGER.debug("角色身份变化已确认，等待人数与落点核对：%s，人数=%s", move, after_count)
+            return after_slots, outgoing, verified
+        # 一次无效拖拽不能撤销其他已确认角色，否则下一轮会重复拖动同名份。
+        CUS_LOGGER.debug("角色拖拽未确认，本轮跳过该动作：%s，人数=%s", move, after_count)
+        return None
+
+    def start_battle(self):
+        """仅在可出战状态点击出战，等待输入完成后进入战斗状态。"""
+        key_mouse_manager.click(1818, 750)
+        key_mouse_manager.wait()
+        self.update_state("startbattle")
         return 1
 
     def handle_1_1_reward(self):
         """处理1-1投资环境选择后的奖励界面。"""
 
         if self.prior_environment_found or not self.exit_if_no_prior:
-            CUS_LOGGER.info("进入1-1，准备拖动")
-            time.sleep(4.5)
-            self.drag_characters()
-            key_mouse_manager.click(1818, 750) # 点击出战
-            key_mouse_manager.wait()
+            self.preparation.reset_members()
+            CUS_LOGGER.debug("进入1-1，等待备战识别")
             self.update_state("startbattle")
             return 1
 
@@ -639,30 +858,6 @@ class SimulatedCurrency(CurrencyUtils):
 
         return False
 
-    def front_area_no_character(self):
-        '''处理前台无角色的情况。'''
-        self.drag_characters()
-
-        key_mouse_manager.click(1818, 750) # 点击出战
-        key_mouse_manager.wait()
-        time.sleep(3.5)
-
-        # 判断是否进入战斗
-        max_attempts = 10
-        for attempt in range(max_attempts):
-            if self._stop:
-                CUS_LOGGER.info("检测到停止标志，提前退出检测终止")
-                return False
-
-            CUS_LOGGER.debug(f"正在检测是否位于战斗中，次数 {attempt + 1}/{max_attempts}")
-            if self.is_battle_started():
-                return 1
-            time.sleep(0.5)
-
-        CUS_LOGGER.warning("超出最大检测次数，未能检测到进入战斗，尝试退出")
-        self.exit_requested = True
-        self.update_state("exit")
-        return 1
 
     def exit(self):
         """执行当前货币战争对局的统一退出流程。"""
@@ -689,7 +884,6 @@ class SimulatedCurrency(CurrencyUtils):
             CUS_LOGGER.debug("当前处于战斗中，按 ESC 并点击撤退")
             key_mouse_manager.press("esc")
             key_mouse_manager.wait()
-            time.sleep(1.5)
             key_mouse_manager.click(1223, 985) # 点击撤退
             key_mouse_manager.wait()
             self.ts.forward(self.get_screen())
@@ -737,7 +931,6 @@ class SimulatedCurrency(CurrencyUtils):
 
             key_mouse_manager.press("esc")
             key_mouse_manager.wait()
-            time.sleep(0.1)
 
         CUS_LOGGER.warning("未能确认进入“放弃并结算”页面，本次退出尝试失败，将在下一轮重试")
         return 0

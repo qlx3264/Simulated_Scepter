@@ -2,6 +2,11 @@
     "exit_after_plane": 1,
     "exit_if_no_prior": false,
     "prior_exit_plane": null,
+    "deployment": {
+        "front_priority": [],
+        "back_priority": [],
+        "names": {}
+    },
     "priority": {
         "prior_envir": [
             "银金彩",

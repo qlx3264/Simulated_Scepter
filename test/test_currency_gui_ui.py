@@ -22,6 +22,7 @@ class CurrencyGuiUiTests(unittest.TestCase):
             tab.find(".//widget[@class='QComboBox'][@name='Currency_exit_plane_combo']")
         )
         self.assertIsNotNone(tab.find(".//widget[@name='Currency_priority_settings_btn']"))
+        self.assertIsNotNone(tab.find(".//widget[@name='Currency_deployment_settings_btn']"))
 
 
 if __name__ == "__main__":

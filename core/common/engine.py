@@ -92,12 +92,12 @@ class StateKernel:
                     if name in self.latched_events:
                         continue
                     self.latched_events.add(name)
-                CUS_LOGGER.debug("%s触发并执行指令%s，条件：%s", factor, name,
-                                 trigger.get("text") or trigger.get("photo") or "state_only")
                 interval = trigger.get("interval")
                 if interval and self.action_history and self.action_history[-1] == name:
                     if time.time() - self.action_time < interval:
                         return name, 1
+                CUS_LOGGER.debug("%s触发并执行指令%s，条件：%s", factor, name,
+                                 trigger.get("text") or trigger.get("photo") or "state_only")
                 result = None
                 for step in action["actions"]:
                     result = self.do_action(step)

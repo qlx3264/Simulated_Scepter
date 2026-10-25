@@ -8,6 +8,7 @@ from core.currency.settings import (
     EXIT_PLANES,
     load_currency_settings,
     load_default_priority,
+    resolve_priority,
     save_currency_settings,
 )
 
@@ -74,6 +75,25 @@ class CurrencySettingsTests(unittest.TestCase):
 
         self.assertEqual(settings["exit_after_plane"], 3)
 
+    def test_loads_no_exit_plane(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "currency.json"
+            path.write_text(json.dumps({"exit_after_plane": None}), encoding="utf-8")
+
+            settings = load_currency_settings(path)
+
+        self.assertIsNone(settings["exit_after_plane"])
+
+    def test_save_no_exit_plane_round_trips(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "currency.json"
+            path.write_text(json.dumps({"exit_after_plane": 2}), encoding="utf-8")
+
+            saved = save_currency_settings({"exit_after_plane": None}, path)
+
+            self.assertIsNone(saved["exit_after_plane"])
+            self.assertIsNone(load_currency_settings(path)["exit_after_plane"])
+
     def test_invalid_exit_plane_falls_back_to_first_plane(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "currency.json"
@@ -93,6 +113,33 @@ class CurrencySettingsTests(unittest.TestCase):
 
         self.assertEqual(saved["exit_after_plane"], 2)
         self.assertEqual(values, {"future_setting": True, "exit_after_plane": 2})
+
+    def test_deployment_priority_round_trips_and_filters_invalid_entries(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "currency.json"
+            save_currency_settings({"deployment": {
+                "front_priority": ["character_A", None, "character_B", "character_A", ""],
+                "back_priority": "invalid",
+            }}, path)
+            self.assertEqual(load_currency_settings(path)["deployment"], {
+                "front_priority": ["character_A", "character_B"], "back_priority": [], "names": {},
+            })
+            save_currency_settings({"exit_after_plane": 2}, path)
+            self.assertEqual(load_currency_settings(path)["deployment"]["front_priority"], ["character_A", "character_B"])
+
+    def test_deployment_names_are_kept_and_resolved_to_templates(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "currency.json"
+            save_currency_settings({"deployment": {
+                "front_priority": ["三月七", "character_B"],
+                "back_priority": ["空名", "", "  "],
+                "names": {"character_A": "三月七", "character_C": "空名"},
+            }}, path)
+            deployment = load_currency_settings(path)["deployment"]
+            self.assertEqual(deployment["names"], {"character_A": "三月七", "character_C": "空名"})
+            self.assertEqual(resolve_priority(deployment), (
+                ["character_A", "character_B"], ["character_C"],
+            ))
 
 
 if __name__ == "__main__":

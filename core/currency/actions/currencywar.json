@@ -121,6 +121,27 @@
         ]
     },
     {
+        "name": "继续进度",
+        "trigger": {
+            "redundancy": 30,
+            "text": "继续进度",
+            "box": [
+                1640,
+                1743,
+                944,
+                976
+            ]
+        },
+        "actions": [
+            {
+                "position": [
+                    1700,
+                    950
+                ]
+            }
+        ]
+    },
+    {
         "name": "开始货币战争",
         "trigger": {
             "text": "数据银行",
@@ -289,7 +310,8 @@
                 617
             ],
             "interval": 2,
-            "redundancy": 30
+            "redundancy": 30,
+            "condition": "startbattle"
         },
         "actions": [
             {
@@ -535,8 +557,7 @@
                     978,
                     671
                 ]
-            },
-            "front_area_no_character"
+            }
         ]
     },
     {
@@ -568,7 +589,7 @@
         ]
     },
     {
-        "name": "1-1主界面",
+        "name": "1-1主界面进战",
         "trigger": {
             "text": "奖励",
             "box": [
@@ -578,6 +599,7 @@
                 103
             ],
             "redundancy": 30,
+            "interval": 3,
             "condition": "1-1"
         },
         "actions": [
@@ -588,29 +610,6 @@
         "name": "跳过战斗",
         "trigger": {
             "text": "跳过",
-            "box": [
-                1784,
-                1852,
-                730,
-                770
-            ],
-            "interval": 3,
-            "redundancy": 60,
-            "condition": "currency_main"
-        },
-        "actions": [
-            {
-                "position": [
-                    1818,
-                    750
-                ]
-            }
-        ]
-    },
-    {
-        "name": "出战",
-        "trigger": {
-            "text": "出战",
             "box": [
                 1784,
                 1852,
@@ -715,23 +714,6 @@
         ]
     },
     {
-        "name": "大世界",
-        "trigger": {
-            "photo": "smartphone",
-            "pos": {
-                "x": 0.9833,
-                "y": 0.9380
-            },
-            "threshold": 0.96
-        },
-        "actions": [
-            {
-                "set_state": "goto_currency"
-            },
-            "goto_currency"
-        ]
-    },
-    {
         "name": "点击前往参与货币战争",
         "trigger": {
             "text": "旷宇纷争",
@@ -801,8 +783,7 @@
                 912
             ],
             "interval": 2,
-            "redundancy": 30,
-            "condition": "exit"
+            "redundancy": 30
         },
         "actions": [
             {
@@ -824,8 +805,7 @@
                 913
             ],
             "interval": 2,
-            "redundancy": 30,
-            "condition": "exit"
+            "redundancy": 30
         },
         "actions": [
             {
@@ -847,8 +827,7 @@
                 913
             ],
             "interval": 2,
-            "redundancy": 30,
-            "condition": "exit"
+            "redundancy": 30
         },
         "actions": [
             {
@@ -857,6 +836,95 @@
                     898
                 ]
             }
+        ]
+    },
+    {
+        "name": "前往结算",
+        "trigger": {
+            "interval": 2,
+            "redundancy": 30,
+            "text": "前往结算",
+            "box": [
+                909,
+                1012,
+                879,
+                911
+            ]
+        },
+        "actions": [
+            {
+                "position": [
+                    958,
+                    898
+                ]
+            }
+        ]
+    },
+    {
+        "name": "出战",
+        "trigger": {
+            "state_only": true,
+            "condition": "battle_ready",
+            "interval": 3
+        },
+        "actions": [
+            "start_battle"
+        ]
+    },
+    {
+        "name": "商店",
+        "trigger": {
+            "text": "收起",
+            "box": [
+                1597,
+                1644,
+                967,
+                992
+            ],
+            "interval": 3,
+            "redundancy": 60
+        },
+        "actions": [
+            {
+                "position": [
+                    1620,
+                    980
+                ]
+            }
+        ]
+    },
+    {
+        "name": "出战前准备",
+        "trigger": {
+            "text": "出战",
+            "box": [
+                1784,
+                1852,
+                730,
+                770
+            ],
+            "interval": 3,
+            "redundancy": 60
+        },
+        "actions": [
+            "prepare_battle"
+        ]
+    },
+    {
+        "name": "大世界",
+        "trigger": {
+            "photo": "smartphone",
+            "pos": {
+                "x": 0.9833,
+                "y": 0.938
+            },
+            "threshold": 0.96
+        },
+        "actions": [
+            {
+                "set_state": "goto_currency"
+            },
+            "goto_currency"
         ]
     }
 ]

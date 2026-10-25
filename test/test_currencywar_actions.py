@@ -100,6 +100,16 @@ class CurrencyWarActionsTest(unittest.TestCase):
 
         self.assertEqual(action["actions"], ["select_envir"])
 
+    def test_battle_requires_ready_and_preparation_can_resume_current_screen(self):
+        by_name = {action["name"]: action for action in self.actions}
+        self.assertEqual(by_name["出战"]["trigger"]["condition"], "battle_ready")
+        self.assertTrue(by_name["出战"]["trigger"]["state_only"])
+        self.assertEqual(by_name["出战"]["actions"], ["start_battle"])
+        self.assertNotIn("condition", by_name["出战前准备"]["trigger"])
+        self.assertEqual(by_name["出战前准备"]["actions"], ["prepare_battle"])
+        self.assertEqual(by_name["1-1主界面进战"]["trigger"]["condition"], "1-1")
+        self.assertEqual(by_name["出战人数"]["trigger"]["condition"], "startbattle")
+
     def test_peace_token_skip_action_handles_both_remaining_counts(self):
         skip_action = next(
             action for action in self.actions if action.get("name") == "跳过战斗"

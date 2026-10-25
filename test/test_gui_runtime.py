@@ -420,6 +420,90 @@ class RuntimeGuiLayoutTests(unittest.TestCase):
                         manager.stop()
                         self.window._check_task_thread()
 
+    def test_debug_buttons_activate_idle_kernel_and_run_unsaved_actions(self):
+        from core.common.engine import StateKernel
+        from tool.gui.script_editor import ScriptEditor
+
+        self.window.scheduler.timer.stop()
+        editor = ScriptEditor(self.window.registry, self.window.script_combo.currentData(), self.window)
+        self.addCleanup(editor.deleteLater)
+        editor.debug_kernel_combo.setCurrentIndex(editor.debug_kernel_combo.findData("Currency"))
+        editor.debug_requested.connect(self.window.debug_script_events)
+        self.window.script_tool_result.connect(editor.receive_result)
+        editor.load_document([{"name": "原事件", "trigger": {"state_only": True},
+                               "actions": [{"set_state": "调试状态"}, "editor_probe"]}], None)
+
+        for direct in (False, True):
+            with self.subTest(direct=direct):
+                engine = StateKernel()
+                engine._stop = True  # 玩法内核初始化后等待 start()，编辑器调试同样需要激活。
+                engine.ts, engine.get_screen = Mock(), Mock()
+                engine.editor_probe = Mock(return_value=1)
+                engine.stop = Mock(side_effect=lambda: setattr(engine, "_stop", True))
+                editor.event_name.setText("未保存事件")
+                manager = Mock()
+                with patch.object(self.window, "cleanup_at"), \
+                        patch.object(self.window.registry, "create_engine", return_value=engine) as factory, \
+                        patch("tool.script_tools.wait_game_focus"), \
+                        patch("core.common.engine.key_mouse_manager", manager), \
+                        patch("tool.script_tools.key_mouse_manager", manager):
+                    button = editor.debug_direct_btn if direct else editor.debug_trigger_btn
+                    button.click()
+                    self.window.task_thread.join(2)
+                    self.assertFalse(self.window.is_task_running())
+                    self.app.processEvents()
+                    self.assertEqual(engine.state, "调试状态", editor.status_label.text())
+                    engine.editor_probe.assert_called_once()
+                    factory.assert_called_once_with("Currency", script=True)
+                    manager.start.assert_called_once()
+                    engine.stop.assert_called_once()
+                    self.assertTrue(engine._stop)
+                    self.assertIn("完成", editor.status_label.text())
+                    self.assertIsNone(editor.operation)
+                    if direct:
+                        engine.get_screen.assert_not_called()
+                        engine.ts.forward.assert_not_called()
+                    else:
+                        self.assertEqual(engine.action_history, ["未保存事件"])
+                        engine.ts.forward.assert_called_once()
+                    self.window._check_task_thread()
+
+    def test_stop_during_debug_initialization_prevents_actions_and_releases_engine(self):
+        self.window.scheduler.timer.stop()
+        collector = Mock()
+        self.window.script_tool_result.connect(collector)
+        for direct in (False, True):
+            with self.subTest(direct=direct):
+                entered, release = Event(), Event()
+                engine = Mock(_stop=True)
+                engine.stop.side_effect = lambda: setattr(engine, "_stop", True)
+
+                def create_engine(*_args, **_kwargs):
+                    entered.set()
+                    release.wait(2)
+                    return engine
+
+                with patch.object(self.window, "cleanup_at"), \
+                        patch.object(self.window.registry, "create_engine", side_effect=create_engine), \
+                        patch.object(self.module, "debug_events") as debug:
+                    try:
+                        self.window.debug_script_events("initializing-debug", "Currency", [], direct)
+                        self.assertTrue(entered.wait(2))
+                        self.window.stop_editor_task("initializing-debug")
+                        release.set()
+                        self.window.task_thread.join(2)
+                        self.assertFalse(self.window.is_task_running())
+                        self.app.processEvents()
+                        debug.assert_not_called()
+                        engine.stop.assert_called_once()
+                        self.assertTrue(engine._stop)
+                        self.assertEqual(collector.call_args.args,
+                                         ("initializing-debug", {"message": "操作已停止"}))
+                    finally:
+                        release.set()
+                        self.window.task_thread.join(2)
+                        self.window._check_task_thread()
+
     def test_editor_sample_reports_result_or_error_and_releases_engine(self):
         self.window.scheduler.timer.stop()
         collector = Mock()
