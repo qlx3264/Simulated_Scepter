@@ -191,8 +191,8 @@ class SimulatedCurrency(CurrencyUtils):
         # 首次运行时用默认配置补全游戏与脚本设置。
         load_settings()
 
-        currency_settings = load_currency_settings()
         self.preparation = BattlePreparation()
+        currency_settings = load_currency_settings()  # 模板去重可能已迁移角色优先级。
         self.front_priority, self.back_priority = resolve_priority(
             currency_settings["deployment"]
         )
@@ -722,24 +722,33 @@ class SimulatedCurrency(CurrencyUtils):
         每次只执行一个拖拽并重新采集，避免备战栏压缩后使用过期的格子坐标。
         返回 1 表示已准备好，0 表示仍需准备；识别和落位失败均不放行。
         """
-        if self._stop:
+        if self._stop or self.exit_requested:
             return 0
+        if self.state == "battle_ready":
+            self.update_state("currency_main")
         if self.state == "1-1":
             self.handle_1_1_reward()
         # 同一轮限制补位和身份确认次数；未完成时留待下一次触发继续。
+        blocked = set()  # 按身份阻止本轮重试，不依赖会压缩变动的备战格序号。
         for _ in range(2 * len(BENCH_BOXES) + 1):
+            if self._stop or self.exit_requested:
+                return 0
             self.ts.forward(self.get_screen())
-            slots = self.preparation.scan_bench(self.screen)
-            vacancies = self.preparation.read_areas(self.screen)
             counts = self.read_team_count()
             if counts is None:
                 CUS_LOGGER.debug("上阵人数未能识别，等待下一轮")
                 return 0
+            slots = self.preparation.scan_bench(self.screen)
+            vacancies = self.preparation.read_areas(self.screen)
             front_occupied = len(AREA_BOXES["front"]) - len(vacancies["front"])
+            deployed = self.preparation.deployed_templates(self.screen, vacancies)
             moves = plan_deployment(
-                slots, vacancies, counts, self.front_priority, self.back_priority,
+                [slot for slot in slots if slot.template not in blocked],
+                vacancies, counts, self.front_priority, self.back_priority,
                 self.preparation.read_members(vacancies, counts[0]),
+                deployed=deployed,
             )
+            sources = {slot.index: slot.template for slot in slots if slot.kind == "character"}
             if not moves:
                 if front_occupied == 0:
                     CUS_LOGGER.debug("前台尚无角色，继续等待备战")
@@ -750,22 +759,25 @@ class SimulatedCurrency(CurrencyUtils):
             move = moves[0]
             result = self.deploy_character(move, slots, counts)
             if result is None:
-                self.update_state("battle_ready")
-                return 1
-            after_slots, outgoing = result
+                blocked.add(sources[move.source])
+                continue
+            after_slots, outgoing, verified = result
             if outgoing is None:
+                if not verified:
+                    return 0
                 continue
             incoming = next(slot.template for slot in slots if slot.index == move.source)
             priority = self.front_priority if move.area == "front" else self.back_priority
             ranks = {name: index for index, name in enumerate(priority)}
             if ranks.get(incoming, len(ranks)) < ranks.get(outgoing, len(ranks)):
+                if not verified:
+                    return 0
                 continue
             # 接管已有阵容时，先核对交换回来的人物；原角色更优则立即换回，保留已确认身份。
             previous = next(slot for slot in after_slots if slot.kind == "character" and slot.template == outgoing)
             restore = Deployment(previous.index, move.area, move.target, incoming)
             restored = self.deploy_character(restore, after_slots, counts)
-            if restored is None or restored[1] != incoming:
-                self.preparation.reset_members()
+            if restored is None or restored[1] != incoming or not restored[2]:
                 return 0
             CUS_LOGGER.debug("原上阵角色优先级更高，已恢复：%s", outgoing)
         return 0
@@ -774,7 +786,8 @@ class SimulatedCurrency(CurrencyUtils):
         """执行一次补位或交换，核对人数、落点和备战栏角色变化。
 
         Returns:
-            成功时返回 (拖拽后的备战快照, 被换回的角色或 None)，失败或停止时返回 None。
+            身份变化可确认时返回 (备战快照, 被换回的角色或 None, 人数及落点是否核对通过)，
+            无身份变化或停止时返回 None。人数未确认时保留身份，但不放行出战。
         """
         if self._stop or self.exit_requested:
             return None
@@ -792,23 +805,23 @@ class SimulatedCurrency(CurrencyUtils):
         key_mouse_manager.sleep(0.5)  # 等待交换或落位动画及人数刷新。
         key_mouse_manager.wait()
         if self._stop or self.exit_requested:
-            self.preparation.reset_members()
             return None
         self.ts.forward(self.get_screen())
         after_slots = self.preparation.scan_bench(self.screen)
         vacancies = self.preparation.read_areas(self.screen)
         after_count = self.read_team_count()
         if self._stop or self.exit_requested:
-            self.preparation.reset_members()
             return None
         # 补位都会让人数加一，交换不改变人数；补位和交换都不改变人数上限。
         expected = (counts[0] + 1, counts[1]) if move.outgoing is None else counts
-        if move.target not in vacancies[move.area] and after_count == expected:
-            confirmed, outgoing = self.preparation.confirm_move(move, slots, after_slots)
-            if confirmed:
-                return after_slots, outgoing
-        self.preparation.reset_members()
-        CUS_LOGGER.debug("角色拖拽未确认，本轮停止备战：%s，人数=%s", move, after_count)
+        confirmed, outgoing = self.preparation.confirm_move(move, slots, after_slots)
+        if confirmed:
+            verified = move.target not in vacancies[move.area] and after_count == expected
+            if not verified:
+                CUS_LOGGER.debug("角色身份变化已确认，等待人数与落点核对：%s，人数=%s", move, after_count)
+            return after_slots, outgoing, verified
+        # 一次无效拖拽不能撤销其他已确认角色，否则下一轮会重复拖动同名份。
+        CUS_LOGGER.debug("角色拖拽未确认，本轮跳过该动作：%s，人数=%s", move, after_count)
         return None
 
     def start_battle(self):

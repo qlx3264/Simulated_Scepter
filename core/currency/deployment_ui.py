@@ -27,7 +27,7 @@ class DeploymentDialog(BaseDialog):
         self.names = dict(deployment["names"])
         catalog = resource_path(__file__, "templates/bench")
         templates = {path.stem: path for path in sorted(catalog.glob("character_*.png"))}
-        hint = QLabel("前台、后台列表里的角色只进入对应区域，越靠前越优先；未设优先级的角色只补剩余空位，前台优先。满员后按列表优先级替换较低优先级角色，道具暂不处理。“重命名”可以给头像起名字，配置和列表都会显示该名字。")
+        hint = QLabel("前台、后台列表越靠前越优先，角色按允许的区域上阵。前台为空时先用补位角色保底，再安排后台优先角色，最后补满剩余空位；必要时借用能上前台的后台角色保底。补位完成后按同区优先级替换较低优先级角色。道具可在备战栏任意位置，不参与上阵。“重命名”可给头像起名字。")
         hint.setWordWrap(True)
         self.content_layout.addWidget(hint)
         if not templates:

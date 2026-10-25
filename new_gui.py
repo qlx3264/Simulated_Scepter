@@ -1051,7 +1051,10 @@ class MainWindow(QMainWindowLog):
             try:
                 if find_game_window() is None:
                     raise RuntimeError("未找到游戏窗口，请启动游戏后重新截取或调试")
-                self.current_task = engine = self.registry.create_engine(kernel, script=True)
+                engine = self.registry.create_engine(kernel, script=True)
+                # 玩法内核初始化后默认待启动；先激活再交给停止入口，避免覆盖停止请求。
+                engine._stop = False
+                self.current_task = engine
                 if not engine._stop and not get_global_stop_flag():
                     CUS_LOGGER.info("脚本编辑器开始%s，使用 %s 内核；按 %s 可停止。",
                                     description, kernel, self.load_hotkey_config()["stop"].upper())

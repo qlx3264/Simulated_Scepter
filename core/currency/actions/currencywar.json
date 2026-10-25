@@ -121,6 +121,27 @@
         ]
     },
     {
+        "name": "继续进度",
+        "trigger": {
+            "redundancy": 30,
+            "text": "继续进度",
+            "box": [
+                1640,
+                1743,
+                944,
+                976
+            ]
+        },
+        "actions": [
+            {
+                "position": [
+                    1700,
+                    950
+                ]
+            }
+        ]
+    },
+    {
         "name": "开始货币战争",
         "trigger": {
             "text": "数据银行",
@@ -762,8 +783,7 @@
                 912
             ],
             "interval": 2,
-            "redundancy": 30,
-            "condition": "exit"
+            "redundancy": 30
         },
         "actions": [
             {
@@ -785,8 +805,7 @@
                 913
             ],
             "interval": 2,
-            "redundancy": 30,
-            "condition": "exit"
+            "redundancy": 30
         },
         "actions": [
             {
@@ -808,8 +827,29 @@
                 913
             ],
             "interval": 2,
+            "redundancy": 30
+        },
+        "actions": [
+            {
+                "position": [
+                    958,
+                    898
+                ]
+            }
+        ]
+    },
+    {
+        "name": "前往结算",
+        "trigger": {
+            "interval": 2,
             "redundancy": 30,
-            "condition": "exit"
+            "text": "前往结算",
+            "box": [
+                909,
+                1012,
+                879,
+                911
+            ]
         },
         "actions": [
             {
