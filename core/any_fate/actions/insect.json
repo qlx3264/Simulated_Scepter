@@ -163,6 +163,24 @@
             "strange_shop"
         ]
     },
+    {
+        "name": "战斗暂停",
+        "trigger":{
+            "text": "继续战斗",
+            "box": [1580, 1679, 970, 998],
+            "interval": 1,
+            "redundancy": 30
+        },
+        "actions":
+        [
+            {
+                "position": [1631, 983]
+            },
+            {
+                "set_state": "battle"
+            }
+        ]
+    },
         {
         "name": "自动战斗检测",
         "trigger":{
